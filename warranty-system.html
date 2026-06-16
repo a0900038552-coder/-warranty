@@ -326,7 +326,6 @@
 
 <div class="tabs">
   <button class="tab-btn active" onclick="switchTab('search')">🔍 查詢</button>
-  <button class="tab-btn" onclick="switchTab('add')">➕ 新增</button>
   <button class="tab-btn" onclick="switchTab('onedrive')">☁️ OneDrive</button>
   <button class="tab-btn" onclick="switchTab('manage')">⚙️ 管理</button>
 </div>
@@ -336,78 +335,11 @@
   <div class="stats" id="stats"></div>
 
   <div class="search-bar">
-    <input id="searchInput" type="text" placeholder="輸入電話號碼 或 手機型號…" oninput="doSearch()" />
+    <input id="searchInput" type="text" placeholder="輸入電話號碼、姓名 或 品項關鍵字…" oninput="doSearch()" />
     <button class="btn btn-ghost btn-sm" onclick="clearSearch()">清除</button>
   </div>
 
   <div id="searchResults"></div>
-</div>
-
-<!-- 新增頁 -->
-<div id="page-add" class="page">
-  <div class="form-card">
-    <div class="form-title">新增維修保固記錄</div>
-    <div class="form-grid">
-      <div class="form-group">
-        <label>客戶姓名 *</label>
-        <input id="f-name" type="text" placeholder="王小明">
-      </div>
-      <div class="form-group">
-        <label>電話號碼 *</label>
-        <input id="f-phone" type="tel" placeholder="0912345678">
-      </div>
-      <div class="form-group">
-        <label>手機型號 *</label>
-        <input id="f-model" type="text" placeholder="iPhone 15 / Samsung S24">
-      </div>
-      <div class="form-group">
-        <label>維修項目 *</label>
-        <select id="f-type">
-          <option value="">選擇維修類型</option>
-          <option>換螢幕</option>
-          <option>換電池</option>
-          <option>尾插維修</option>
-          <option>主機板維修</option>
-          <option>泡水維修</option>
-          <option>其他</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>維修日期 *</label>
-        <input id="f-date" type="date">
-      </div>
-      <div class="form-group">
-        <label>保固期限</label>
-        <select id="f-warranty">
-          <option value="1">1 個月</option>
-          <option value="3" selected>3 個月</option>
-          <option value="6">6 個月</option>
-          <option value="12">12 個月</option>
-          <option value="0">無保固</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>零件類型</label>
-        <select id="f-parts">
-          <option value="原廠">原廠零件</option>
-          <option value="副廠">副廠零件</option>
-          <option value="客供">客供零件</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>維修金額（NT$）</label>
-        <input id="f-price" type="number" placeholder="1500">
-      </div>
-      <div class="form-group full">
-        <label>備註</label>
-        <textarea id="f-note" placeholder="特殊狀況、客戶要求、注意事項…"></textarea>
-      </div>
-    </div>
-    <div class="form-actions">
-      <button class="btn btn-ghost" onclick="resetForm()">清除</button>
-      <button class="btn btn-success" onclick="saveRecord()">儲存保固記錄</button>
-    </div>
-  </div>
 </div>
 
 <!-- 匯入報表頁 -->
@@ -495,20 +427,9 @@
         <label>電話號碼</label>
         <input id="e-phone" type="tel">
       </div>
-      <div class="form-group">
-        <label>手機型號</label>
-        <input id="e-model" type="text">
-      </div>
-      <div class="form-group">
-        <label>維修項目</label>
-        <select id="e-type">
-          <option>換螢幕</option>
-          <option>換電池</option>
-          <option>尾插維修</option>
-          <option>主機板維修</option>
-          <option>泡水維修</option>
-          <option>其他</option>
-        </select>
+      <div class="form-group full">
+        <label>售出品項</label>
+        <input id="e-type" type="text">
       </div>
       <div class="form-group">
         <label>維修日期</label>
@@ -524,23 +445,6 @@
           <option value="0">無保固</option>
         </select>
       </div>
-      <div class="form-group">
-        <label>零件類型</label>
-        <select id="e-parts">
-          <option value="原廠">原廠零件</option>
-          <option value="副廠">副廠零件</option>
-          <option value="客供">客供零件</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>維修金額（NT$）</label>
-        <input id="e-price" type="number">
-      </div>
-      <div class="form-group full">
-        <label>備註</label>
-        <textarea id="e-note"></textarea>
-      </div>
-    </div>
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal()">取消</button>
       <button class="btn btn-success" onclick="saveEdit()">儲存修改</button>
@@ -632,11 +536,8 @@ function renderList(list) {
         <span class="badge badge-${ws.status}">${ws.label}</span>
       </div>
       <div class="card-grid">
-        <div class="card-item"><span class="label">手機型號</span><span class="value">${esc(r.model)}</span></div>
-        <div class="card-item"><span class="label">維修項目</span><span class="value">${esc(r.type)}</span></div>
+        <div class="card-item"><span class="label">售出品項</span><span class="value">${esc(r.type)}</span></div>
         <div class="card-item"><span class="label">維修日期</span><span class="value">${r.repairDate}</span></div>
-        <div class="card-item"><span class="label">保固到期</span><span class="value">${expireDate}</span></div>
-        <div class="card-item"><span class="label">零件</span><span class="value">${esc(r.parts || '—')}</span></div>
         <div class="card-item"><span class="label">金額</span><span class="value">${r.price ? 'NT$ ' + Number(r.price).toLocaleString() : '—'}</span></div>
       </div>
       ${r.note ? `<div class="card-note">📝 ${esc(r.note)}</div>` : ''}
@@ -656,15 +557,14 @@ function esc(s) {
 function saveRecord() {
   const name = document.getElementById('f-name').value.trim();
   const phone = document.getElementById('f-phone').value.trim();
-  const model = document.getElementById('f-model').value.trim();
-  const type = document.getElementById('f-type').value;
+  const type = document.getElementById('f-type').value.trim();
   const date = document.getElementById('f-date').value;
-  if (!name || !phone || !model || !type || !date) {
+  if (!name || !phone || !type || !date) {
     showToast('⚠️ 請填寫所有必填欄位'); return;
   }
   const record = {
     id: Date.now().toString(36) + Math.random().toString(36).slice(2),
-    name, phone, model, type,
+    name, phone, model: type, type,
     repairDate: date,
     warrantyMonths: Number(document.getElementById('f-warranty').value),
     parts: document.getElementById('f-parts').value,
@@ -680,7 +580,7 @@ function saveRecord() {
 }
 
 function resetForm() {
-  ['f-name','f-phone','f-model','f-price','f-note'].forEach(id => document.getElementById(id).value = '');
+  ['f-name','f-phone','f-price','f-note'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('f-type').value = '';
   document.getElementById('f-warranty').value = '3';
   document.getElementById('f-parts').value = '原廠';
@@ -694,8 +594,7 @@ function openEdit(id) {
   editingId = id;
   document.getElementById('e-name').value = r.name;
   document.getElementById('e-phone').value = r.phone;
-  document.getElementById('e-model').value = r.model;
-  document.getElementById('e-type').value = r.type;
+  document.getElementById('e-type').value = r.type || r.model || '';
   document.getElementById('e-date').value = r.repairDate;
   document.getElementById('e-warranty').value = r.warrantyMonths;
   document.getElementById('e-parts').value = r.parts || '原廠';
@@ -714,8 +613,8 @@ function saveEdit() {
   if (!r) return;
   r.name = document.getElementById('e-name').value.trim();
   r.phone = document.getElementById('e-phone').value.trim();
-  r.model = document.getElementById('e-model').value.trim();
-  r.type = document.getElementById('e-type').value;
+  r.type = document.getElementById('e-type').value.trim();
+  r.model = r.type;
   r.repairDate = document.getElementById('e-date').value;
   r.warrantyMonths = Number(document.getElementById('e-warranty').value);
   r.parts = document.getElementById('e-parts').value;
@@ -748,14 +647,14 @@ function exportJSON() {
 }
 
 function exportCSV() {
-  const header = ['姓名','電話','手機型號','維修項目','維修日期','保固月數','到期日','零件','金額','備註'];
+  const header = ['姓名','電話','售出品項','維修日期','保固月數','金額','備註'];
   const rows = records.map(r => {
     const exp = r.warrantyMonths > 0 ? (() => {
       const d = new Date(r.repairDate);
       d.setMonth(d.getMonth() + Number(r.warrantyMonths));
       return d.toLocaleDateString('zh-TW');
     })() : '無保固';
-    return [r.name, r.phone, r.model, r.type, r.repairDate, r.warrantyMonths, exp, r.parts||'', r.price||'', r.note||''];
+    return [r.name, r.phone, r.type, r.repairDate, r.warrantyMonths, r.price||'', r.note||''];
   });
   const csv = '\uFEFF' + [header, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
@@ -844,14 +743,14 @@ function parseXlsx(buf, fileName) {
   wb.SheetNames.forEach(sheetName => {
     if (sheetName.includes('廢')) return;
     const ws = wb.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true, cellDates: true });
 
-    // 找標題行（含「連絡電話」）
-    let headerIdx = rows.findIndex(r => r.some(c => String(c).includes('連絡電話') || String(c).includes('聯絡電話')));
-    if (headerIdx < 0) return; // 此工作表沒有標題，跳過
+    // 找標題行（含「連絡電話」），去除全形空格後比對
+    let headerIdx = rows.findIndex(r => r.some(c => String(c).replace(/\s/g,'').includes('連絡電話') || String(c).replace(/\s/g,'').includes('聯絡電話')));
+    if (headerIdx < 0) return;
 
-    const headers = rows[headerIdx].map(c => String(c).trim());
-    const idxOf = ks => { for (const k of ks) { const i = headers.findIndex(h => h.includes(k)); if (i >= 0) return i; } return -1; };
+    const headers = rows[headerIdx].map(c => String(c).replace(/\s+/g,'').trim());
+    const idxOf = ks => { for (const k of ks) { const i = headers.findIndex(h => h.includes(k.replace(/\s+/g,''))); if (i >= 0) return i; } return -1; };
 
     const col = {
       date:  idxOf(['日期']),
@@ -864,9 +763,9 @@ function parseXlsx(buf, fileName) {
 
     let currentDate = '';
     rows.slice(headerIdx + 1).forEach(r => {
-      // 追蹤日期（合併儲存格）
-      const dv = col.date >= 0 ? String(r[col.date]).trim() : '';
-      if (dv && dv !== '') currentDate = fmtDate(dv);
+      // 追蹤日期（合併儲存格），支援 Date 物件和字串
+      const rawDate = col.date >= 0 ? r[col.date] : '';
+      if (rawDate && rawDate !== '') currentDate = fmtDate(rawDate);
 
       const phone = col.phone >= 0 ? String(r[col.phone]).trim() : '';
       if (!phone.match(/^09\d{8}$/)) return; // 只取 09 開頭 10 碼
@@ -884,6 +783,14 @@ function parseXlsx(buf, fileName) {
   });
 
   showPreview(fileName);
+}
+
+function autoWarranty(type) {
+  const t = String(type).replace(/\s+/g, '');
+  if (/電池/.test(t)) return 6;
+  if (/液晶|螢幕|面板/.test(t)) return 3;
+  if (/尾插|充電/.test(t)) return 3;
+  return 1; // 預設1個月
 }
 
 function fmtDate(v) {
@@ -943,7 +850,7 @@ function confirmImport() {
       model: row.type || '（未填）',
       type: row.type || '（未填）',
       repairDate: row.date || new Date().toISOString().split('T')[0],
-      warrantyMonths: 3,
+      warrantyMonths: autoWarranty(row.type),
       parts: '副廠',
       price: row.price,
       note: row.note,
