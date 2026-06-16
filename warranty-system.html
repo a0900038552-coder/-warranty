@@ -836,37 +836,68 @@ function processXlsxFile(file) {
 }
 
 function parseXlsx(buf, fileName) {
-  // 使用 SheetJS（CDN）
   if (!window.XLSX) { showToast('⚠️ 請稍候，函式庫載入中'); return; }
   const wb = XLSX.read(buf, { type: 'array', cellDates: true });
   const ws = wb.Sheets[wb.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
-  // 找標題行（含「日期」的列）
-  let headerIdx = rows.findIndex(r => r.some(c => String(c).includes('日期')));
-  if (headerIdx < 0) headerIdx = 0;
+  // 找到含「連絡電話」的標題行
+  let headerIdx = rows.findIndex(r => r.some(c => String(c).includes('連絡電話') || String(c).includes('聯絡電話')));
+  if (headerIdx < 0) {
+    // fallback：找含「日期」的行
+    headerIdx = rows.findIndex(r => r.some(c => String(c).includes('日期')));
+  }
+  if (headerIdx < 0) headerIdx = 2; // 預設第3行
+
   const headers = rows[headerIdx].map(c => String(c).trim());
 
   // 欄位 mapping
-  const idxOf = ks => { for (const k of ks) { const i = headers.findIndex(h => h.includes(k)); if (i >= 0) return i; } return -1; };
-  const col = {
-    date:    idxOf(['日期']),
-    type:    idxOf(['維修品項','品項','項目']),
-    phone:   idxOf(['聯絡電話','電話','手機']),
-    name:    idxOf(['姓名','客戶']),
-    note:    idxOf(['備注','備註','備']),
-    price:   idxOf(['毛利','收費','金額']),
+  const idxOf = ks => {
+    for (const k of ks) {
+      const i = headers.findIndex(h => h.includes(k));
+      if (i >= 0) return i;
+    }
+    return -1;
   };
 
-  const dataRows = rows.slice(headerIdx + 1).filter(r => r.some(c => c !== ''));
-  pendingRows = dataRows.map(r => ({
-    date:  col.date  >= 0 ? fmtDate(r[col.date])  : '',
-    type:  col.type  >= 0 ? String(r[col.type])  : '',
-    phone: col.phone >= 0 ? String(r[col.phone]) : '',
-    name:  col.name  >= 0 ? String(r[col.name])  : '',
-    note:  col.note  >= 0 ? String(r[col.note])  : '',
-    price: col.price >= 0 ? String(r[col.price]) : '',
-  })).filter(r => r.phone || r.name);
+  const col = {
+    date:  idxOf(['日期']),
+    type:  idxOf(['售出品項','維修品項','品項','項目']),
+    phone: idxOf(['連絡電話','聯絡電話','電話','手機']),
+    name:  idxOf(['單號','姓名','客戶']),  // 你的報表姓名在「單號」欄（許文耀R）
+    note:  idxOf(['備注','備註']),
+    price: idxOf(['毛利']),
+    cost:  idxOf(['成本']),
+    amount:idxOf(['金額']),
+  };
+
+  // 處理合併儲存格日期（日期欄位可能跨多行）
+  let currentDate = '';
+  const dataRows = rows.slice(headerIdx + 1);
+  pendingRows = [];
+
+  dataRows.forEach(r => {
+    // 更新當前日期（合併儲存格造成日期只出現在某些行）
+    const dateVal = col.date >= 0 ? r[col.date] : '';
+    if (dateVal && String(dateVal).trim() !== '') {
+      currentDate = fmtDate(dateVal);
+    }
+
+    const phone = col.phone >= 0 ? String(r[col.phone]).trim() : '';
+    const name  = col.name  >= 0 ? String(r[col.name]).trim()  : '';
+
+    // 只取有電話號碼的行（跳過合計、支出、空行）
+    if (!phone || phone === '0' || !phone.match(/^0\d{8,9}$/)) return;
+
+    pendingRows.push({
+      date:  currentDate,
+      type:  col.type >= 0 ? String(r[col.type]).trim() : '',
+      phone: phone,
+      name:  name.replace(/[RS]$/, '').trim(), // 去掉結尾的 R/S 標記
+      note:  col.note >= 0 ? String(r[col.note]).trim() : '',
+      price: col.price >= 0 ? String(r[col.price]).trim() : '',
+    });
+  });
 
   showPreview(fileName);
 }
