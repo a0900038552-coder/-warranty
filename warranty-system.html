@@ -410,48 +410,45 @@
   </div>
 </div>
 
-<!-- OneDrive 頁 -->
+<!-- 匯入報表頁 -->
 <div id="page-onedrive" class="page">
-  <div id="od-login-section">
-    <div class="form-card" style="text-align:center; padding: 36px 20px;">
-      <div style="font-size:48px; margin-bottom:16px;">☁️</div>
-      <div style="font-size:18px; font-weight:700; margin-bottom:8px;">連接 OneDrive</div>
-      <div style="font-size:13px; color:var(--muted); margin-bottom:24px; line-height:1.7;">
-        登入後自動讀取<br>
-        <code style="color:var(--accent);">文件 / 每日銷售報表 / 114年</code><br>
-        資料夾裡的 xlsx 報表
-      </div>
-      <button class="btn btn-primary" onclick="msLogin()" style="font-size:15px; padding:14px 32px;">
-        🔐 使用微軟帳號登入
-      </button>
+  <div class="form-card" style="text-align:center; padding:28px 20px; margin-bottom:16px;">
+    <div style="font-size:40px; margin-bottom:12px;">📊</div>
+    <div style="font-size:17px; font-weight:700; margin-bottom:8px;">匯入每月銷售報表</div>
+    <div style="font-size:13px; color:var(--muted); margin-bottom:20px; line-height:1.8;">
+      從 OneDrive 下載當月 xlsx 報表<br>
+      拖進來或點下方按鈕選擇檔案<br>
+      自動讀取電話、姓名、維修品項
     </div>
+
+    <div id="drop-zone" style="
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 32px 20px;
+      margin-bottom: 16px;
+      cursor: pointer;
+      transition: all .2s;
+    " onclick="document.getElementById('xlsxFile').click()"
+       ondragover="event.preventDefault(); this.style.borderColor='var(--accent)'"
+       ondragleave="this.style.borderColor='var(--border)'"
+       ondrop="handleDrop(event)">
+      <div style="font-size:32px; margin-bottom:8px;">📂</div>
+      <div style="font-size:14px; color:var(--muted);">拖曳 xlsx 到這裡，或點此選擇</div>
+    </div>
+    <input id="xlsxFile" type="file" accept=".xlsx,.xls" style="display:none" onchange="handleXlsxFile(event)">
+    <button class="btn btn-primary" onclick="document.getElementById('xlsxFile').click()" style="width:100%; padding:14px;">
+      📥 選擇 xlsx 報表檔案
+    </button>
   </div>
 
-  <div id="od-main-section" style="display:none;">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:8px;">
-      <div>
-        <div style="font-size:15px; font-weight:700;" id="od-username"></div>
-        <div style="font-size:12px; color:var(--muted);">已連接 OneDrive</div>
-      </div>
-      <button class="btn btn-ghost btn-sm" onclick="msLogout()">登出</button>
-    </div>
-
-    <div class="form-card" style="margin-bottom:16px;">
-      <div style="font-size:14px; font-weight:600; margin-bottom:12px; color:var(--muted);">選擇要匯入的月份報表</div>
-      <div id="od-file-list" style="display:flex; flex-direction:column; gap:8px;">
-        <div style="color:var(--muted); font-size:13px;">載入中…</div>
-      </div>
-    </div>
-
-    <div id="od-preview" style="display:none;">
-      <div class="form-card">
-        <div style="font-size:14px; font-weight:600; margin-bottom:4px; color:var(--accent);" id="od-preview-title"></div>
-        <div style="font-size:12px; color:var(--muted); margin-bottom:14px;" id="od-preview-count"></div>
-        <div id="od-preview-table" style="overflow-x:auto; margin-bottom:14px;"></div>
-        <div style="display:flex; gap:10px; justify-content:flex-end;">
-          <button class="btn btn-ghost" onclick="closePreview()">取消</button>
-          <button class="btn btn-success" onclick="confirmImport()">✅ 確認匯入保固記錄</button>
-        </div>
+  <div id="od-preview" style="display:none;">
+    <div class="form-card">
+      <div style="font-size:14px; font-weight:600; margin-bottom:4px; color:var(--accent);" id="od-preview-title"></div>
+      <div style="font-size:12px; color:var(--muted); margin-bottom:14px;" id="od-preview-count"></div>
+      <div id="od-preview-table" style="overflow-x:auto; margin-bottom:14px;"></div>
+      <div style="display:flex; gap:10px; justify-content:flex-end;">
+        <button class="btn btn-ghost" onclick="closePreview()">取消</button>
+        <button class="btn btn-success" onclick="confirmImport()">✅ 確認匯入保固記錄</button>
       </div>
     </div>
   </div>
@@ -814,106 +811,28 @@ function showToast(msg) {
   setTimeout(() => t.classList.remove('show'), 2500);
 }
 
-// ── OneDrive / Microsoft Graph ──
-const CLIENT_ID = 'Sac1760b-eef9-4286-b73a-b3bda45f311e';
-const SCOPES = 'Files.Read User.Read offline_access';
-const FOLDER_PATH = '/me/drive/root:/文件/每日銷售報表/114年:/children';
-let msToken = null;
+// ── 匯入報表（本機上傳）──
 let pendingRows = [];
 
-function msLogin() {
-  const params = new URLSearchParams({
-    client_id: CLIENT_ID,
-    response_type: 'token',
-    redirect_uri: window.location.href.split('?')[0].split('#')[0],
-    scope: SCOPES,
-    response_mode: 'fragment',
-    prompt: 'select_account'
-  });
-  window.location.href = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?${params}`;
+function handleDrop(event) {
+  event.preventDefault();
+  document.getElementById('drop-zone').style.borderColor = 'var(--border)';
+  const file = event.dataTransfer.files[0];
+  if (file) processXlsxFile(file);
 }
 
-function msLogout() {
-  msToken = null;
-  sessionStorage.removeItem('ms_token');
-  document.getElementById('od-login-section').style.display = '';
-  document.getElementById('od-main-section').style.display = 'none';
-  closePreview();
+function handleXlsxFile(event) {
+  const file = event.target.files[0];
+  if (file) processXlsxFile(file);
+  event.target.value = '';
 }
 
-async function msInit() {
-  // 從 URL hash 取 token（登入後回來）
-  const hash = window.location.hash;
-  if (hash.includes('access_token')) {
-    const p = new URLSearchParams(hash.slice(1));
-    msToken = p.get('access_token');
-    sessionStorage.setItem('ms_token', msToken);
-    history.replaceState(null, '', window.location.pathname);
-  } else {
-    msToken = sessionStorage.getItem('ms_token');
-  }
-  if (msToken) await showOdMain();
-}
-
-async function showOdMain() {
-  document.getElementById('od-login-section').style.display = 'none';
-  document.getElementById('od-main-section').style.display = '';
-
-  // 取得使用者名稱
-  try {
-    const r = await msGet('https://graph.microsoft.com/v1.0/me');
-    document.getElementById('od-username').textContent = r.displayName || r.userPrincipalName || '微軟帳號';
-  } catch(e) {}
-
-  loadFileList();
-}
-
-async function msGet(url) {
-  const r = await fetch(url, { headers: { Authorization: `Bearer ${msToken}` } });
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  return r.json();
-}
-
-async function loadFileList() {
-  const el = document.getElementById('od-file-list');
-  el.innerHTML = '<div style="color:var(--muted);font-size:13px;">讀取 OneDrive 資料夾中…</div>';
-  try {
-    const data = await msGet(`https://graph.microsoft.com/v1.0${FOLDER_PATH}`);
-    const files = (data.value || []).filter(f => f.name.endsWith('.xlsx')).sort((a,b) => {
-      const mn = s => { const m = s.match(/(\d+)月/); return m ? parseInt(m[1]) : 99; };
-      return mn(a.name) - mn(b.name);
-    });
-    if (!files.length) { el.innerHTML = '<div style="color:var(--muted);font-size:13px;">找不到 xlsx 檔案</div>'; return; }
-    el.innerHTML = files.map(f => `
-      <div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px 14px;">
-        <div>
-          <div style="font-size:14px;font-weight:600;">📊 ${f.name}</div>
-          <div style="font-size:11px;color:var(--muted);">${(f.size/1024).toFixed(0)} KB · 最後修改 ${new Date(f.lastModifiedDateTime).toLocaleDateString('zh-TW')}</div>
-        </div>
-        <button class="btn btn-primary btn-sm" onclick="loadFile('${f['@microsoft.graph.downloadUrl'] || ''}','${f.name}','${f.id}')">匯入</button>
-      </div>
-    `).join('');
-  } catch(e) {
-    el.innerHTML = `<div style="color:var(--danger);font-size:13px;">讀取失敗：${e.message}<br>請重新登入</div>`;
-    msToken = null; sessionStorage.removeItem('ms_token');
-  }
-}
-
-async function loadFile(downloadUrl, fileName, fileId) {
-  showToast('讀取檔案中…');
-  try {
-    // 若 downloadUrl 空的，透過 Graph 取得
-    let url = downloadUrl;
-    if (!url) {
-      const meta = await msGet(`https://graph.microsoft.com/v1.0/me/drive/items/${fileId}`);
-      url = meta['@microsoft.graph.downloadUrl'];
-    }
-    const resp = await fetch(url);
-    const buf = await resp.arrayBuffer();
-    parseXlsx(buf, fileName);
-  } catch(e) {
-    showToast('⚠️ 下載失敗：' + e.message);
-  }
+function processXlsxFile(file) {
+  if (!file.name.match(/\.xlsx?$/i)) { showToast('⚠️ 請選擇 xlsx 格式的檔案'); return; }
+  showToast('讀取中…');
+  const reader = new FileReader();
+  reader.onload = e => parseXlsx(e.target.result, file.name);
+  reader.readAsArrayBuffer(file);
 }
 
 function parseXlsx(buf, fileName) {
@@ -1023,9 +942,6 @@ function confirmImport() {
   showToast(`✅ 成功匯入 ${added} 筆（跳過 ${pendingRows.length - added} 筆重複）`);
   renderStats();
 }
-
-// ── 初始化 OneDrive ──
-msInit();
 
 document.getElementById('editModal').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeModal();
