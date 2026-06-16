@@ -816,7 +816,7 @@ function showToast(msg) {
 
 // ── OneDrive / Microsoft Graph ──
 const CLIENT_ID = 'Sac1760b-eef9-4286-b73a-b3bda45f311e';
-const SCOPES = 'Files.Read User.Read';
+const SCOPES = 'Files.Read User.Read offline_access';
 const FOLDER_PATH = '/me/drive/root:/文件/每日銷售報表/114年:/children';
 let msToken = null;
 let pendingRows = [];
@@ -830,7 +830,7 @@ function msLogin() {
     response_mode: 'fragment',
     prompt: 'select_account'
   });
-  window.location.href = `https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize?${params}`;
+  window.location.href = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?${params}`;
 }
 
 function msLogout() {
