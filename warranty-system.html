@@ -445,6 +445,10 @@
           <option value="0">無保固</option>
         </select>
       </div>
+      <div class="form-group full">
+        <label>後續服務 / 客戶狀態</label>
+        <textarea id="e-followup" placeholder="例如：已回修一次、客訴處理中、加購保護貼…"></textarea>
+      </div>
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal()">取消</button>
       <button class="btn btn-success" onclick="saveEdit()">儲存修改</button>
@@ -454,18 +458,87 @@
 
 <div class="toast" id="toast"></div>
 
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {
+  getFirestore, collection, doc, setDoc, deleteDoc,
+  onSnapshot, writeBatch
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDyg9BqlmIgHQRIxtgk0Bm6_kpmfmNRcWs",
+  authDomain: "warranty-system-4d18d.firebaseapp.com",
+  projectId: "warranty-system-4d18d",
+  storageBucket: "warranty-system-4d18d.firebasestorage.app",
+  messagingSenderId: "357168697896",
+  appId: "1:357168697896:web:79b3f2faa217d7ad449b1d"
+};
+
+const fbApp = initializeApp(firebaseConfig);
+const db = getFirestore(fbApp);
+const recordsCol = collection(db, "warranty_records");
+
+// 將 Firebase 函式掛到 window，讓外層一般 script 能呼叫
+window.fbDoc = doc;
+window.fbSetDoc = setDoc;
+window.fbDeleteDoc = deleteDoc;
+window.fbCollection = recordsCol;
+window.fbWriteBatch = writeBatch;
+window.fbDb = db;
+
+onSnapshot(recordsCol, (snapshot) => {
+  records = [];
+  snapshot.forEach(d => records.push({ id: d.id, ...d.data() }));
+  records.sort((a, b) => new Date(b.repairDate) - new Date(a.repairDate));
+  window.dispatchEvent(new Event('records-updated'));
+});
+</script>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const STORE_KEY = 'warranty_records_v1';
 let records = [];
 let editingId = null;
 
-function load() {
-  try { records = JSON.parse(localStorage.getItem(STORE_KEY)) || []; }
-  catch { records = []; }
+// 監聽 Firebase 即時更新，自動刷新畫面
+window.addEventListener('records-updated', () => {
+  renderStats();
+  doSearch();
+});
+
+// save()：把單筆或全部 records 寫回 Firestore
+async function save(singleRecord) {
+  try {
+    if (singleRecord) {
+      const ref = window.fbDoc(window.fbDb, "warranty_records", singleRecord.id);
+      const { id, ...data } = singleRecord;
+      await window.fbSetDoc(ref, data);
+    }
+  } catch (e) {
+    showToast('⚠️ 雲端同步失敗：' + e.message);
+  }
 }
-function save() {
-  localStorage.setItem(STORE_KEY, JSON.stringify(records));
+
+async function deleteRecordFromCloud(id) {
+  try {
+    const ref = window.fbDoc(window.fbDb, "warranty_records", id);
+    await window.fbDeleteDoc(ref);
+  } catch (e) {
+    showToast('⚠️ 刪除失敗：' + e.message);
+  }
+}
+
+async function batchSave(recordList) {
+  try {
+    const batch = window.fbWriteBatch(window.fbDb);
+    recordList.forEach(r => {
+      const { id, ...data } = r;
+      const ref = window.fbDoc(window.fbDb, "warranty_records", id);
+      batch.set(ref, data);
+    });
+    await batch.commit();
+  } catch (e) {
+    showToast('⚠️ 批次同步失敗：' + e.message);
+  }
 }
 
 // ── 保固狀態 ──
@@ -500,7 +573,7 @@ function doSearch() {
   let list = q
     ? records.filter(r =>
         r.phone.includes(q) ||
-        r.model.toLowerCase().includes(q.toLowerCase()) ||
+        (r.type || '').toLowerCase().includes(q.toLowerCase()) ||
         r.name.includes(q)
       )
     : [...records].sort((a, b) => new Date(b.repairDate) - new Date(a.repairDate));
@@ -530,7 +603,7 @@ function renderList(list) {
     <div class="warranty-card ${ws.status}">
       <div class="card-top">
         <div>
-          <div class="card-name">${esc(r.name)}</div>
+          <div class="card-name">${esc(r.name)} ${r.branch ? `<span style="font-size:11px;font-weight:600;color:var(--accent);background:rgba(79,142,247,.15);padding:2px 8px;border-radius:10px;margin-left:6px;">${esc(r.branch)}</span>` : ''}</div>
           <div class="card-phone">📞 ${esc(r.phone)}</div>
         </div>
         <span class="badge badge-${ws.status}">${ws.label}</span>
@@ -540,7 +613,7 @@ function renderList(list) {
         <div class="card-item"><span class="label">維修日期</span><span class="value">${r.repairDate}</span></div>
         <div class="card-item"><span class="label">金額</span><span class="value">${r.price ? 'NT$ ' + Number(r.price).toLocaleString() : '—'}</span></div>
       </div>
-      ${r.note ? `<div class="card-note">📝 ${esc(r.note)}</div>` : ''}
+      ${r.followup ? `<div class="card-note">📌 後續服務：${esc(r.followup)}</div>` : ''}
       <div class="card-actions">
         <button class="btn btn-ghost btn-sm" onclick="openEdit('${r.id}')">編輯</button>
         <button class="btn btn-danger btn-sm" onclick="deleteRecord('${r.id}')">刪除</button>
@@ -597,9 +670,7 @@ function openEdit(id) {
   document.getElementById('e-type').value = r.type || r.model || '';
   document.getElementById('e-date').value = r.repairDate;
   document.getElementById('e-warranty').value = r.warrantyMonths;
-  document.getElementById('e-parts').value = r.parts || '原廠';
-  document.getElementById('e-price').value = r.price || '';
-  document.getElementById('e-note').value = r.note || '';
+  document.getElementById('e-followup').value = r.followup || '';
   document.getElementById('editModal').classList.add('open');
 }
 
@@ -608,7 +679,7 @@ function closeModal() {
   editingId = null;
 }
 
-function saveEdit() {
+async function saveEdit() {
   const r = records.find(x => x.id === editingId);
   if (!r) return;
   r.name = document.getElementById('e-name').value.trim();
@@ -617,23 +688,16 @@ function saveEdit() {
   r.model = r.type;
   r.repairDate = document.getElementById('e-date').value;
   r.warrantyMonths = Number(document.getElementById('e-warranty').value);
-  r.parts = document.getElementById('e-parts').value;
-  r.price = document.getElementById('e-price').value;
-  r.note = document.getElementById('e-note').value.trim();
-  save();
+  r.followup = document.getElementById('e-followup').value.trim();
+  await save(r);
   closeModal();
-  doSearch();
-  renderStats();
   showToast('✅ 已儲存修改');
 }
 
 // ── 刪除 ──
-function deleteRecord(id) {
+async function deleteRecord(id) {
   if (!confirm('確定要刪除這筆保固記錄？')) return;
-  records = records.filter(r => r.id !== id);
-  save();
-  doSearch();
-  renderStats();
+  await deleteRecordFromCloud(id);
   showToast('已刪除');
 }
 
@@ -647,14 +711,14 @@ function exportJSON() {
 }
 
 function exportCSV() {
-  const header = ['姓名','電話','售出品項','維修日期','保固月數','金額','備註'];
+  const header = ['姓名','電話','售出品項','維修日期','保固月數','金額','備註','後續服務'];
   const rows = records.map(r => {
     const exp = r.warrantyMonths > 0 ? (() => {
       const d = new Date(r.repairDate);
       d.setMonth(d.getMonth() + Number(r.warrantyMonths));
       return d.toLocaleDateString('zh-TW');
     })() : '無保固';
-    return [r.name, r.phone, r.type, r.repairDate, r.warrantyMonths, r.price||'', r.note||''];
+    return [r.name, r.phone, r.type, r.repairDate, r.warrantyMonths, r.price||'', r.note||'', r.followup||''];
   });
   const csv = '\uFEFF' + [header, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
@@ -668,24 +732,25 @@ function importJSON(event) {
   const file = event.target.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = e => {
+  reader.onload = async e => {
     try {
       const data = JSON.parse(e.target.result);
       if (!Array.isArray(data)) throw new Error();
       const existing = new Set(records.map(r => r.id));
-      let added = 0;
-      data.forEach(r => { if (!existing.has(r.id)) { records.unshift(r); added++; } });
-      save(); doSearch(); renderStats();
-      showToast(`✅ 匯入完成，新增 ${added} 筆`);
+      const toAdd = data.filter(r => !existing.has(r.id));
+      if (toAdd.length) await batchSave(toAdd);
+      showToast(`✅ 匯入完成，新增 ${toAdd.length} 筆`);
     } catch { showToast('⚠️ 檔案格式錯誤'); }
   };
   reader.readAsText(file);
   event.target.value = '';
 }
 
-function confirmClearAll() {
+async function confirmClearAll() {
   if (prompt('確定清除所有資料？請輸入「確認刪除」') === '確認刪除') {
-    records = []; save(); doSearch(); renderStats();
+    for (const r of records) {
+      await deleteRecordFromCloud(r.id);
+    }
     showToast('已清除所有資料');
   }
 }
@@ -758,8 +823,22 @@ function parseXlsx(buf, fileName) {
       phone: idxOf(['連絡電話','聯絡電話']),
       name:  idxOf(['單號','姓名']),
       note:  idxOf(['備注','備註']),
-      price: idxOf(['毛利']),
+      amount: idxOf(['金額']),
     };
+
+    // 偵測分店：找「單位：復原者OO店」這格
+    let branch = '';
+    for (const r of rows.slice(0, headerIdx + 1)) {
+      for (const c of r) {
+        const s = String(c);
+        if (s.includes('單位') && s.includes('復原者')) {
+          if (s.includes('楠梓')) branch = '楠梓店';
+          else if (s.includes('德賢')) branch = '德賢店';
+          break;
+        }
+      }
+      if (branch) break;
+    }
 
     let currentDate = '';
     rows.slice(headerIdx + 1).forEach(r => {
@@ -776,8 +855,9 @@ function parseXlsx(buf, fileName) {
         type:  col.type  >= 0 ? String(r[col.type]).trim()  : '',
         phone: phone,
         name:  name,
-        note:  col.note  >= 0 ? String(r[col.note]).trim()  : '',
-        price: col.price >= 0 ? String(r[col.price]).trim() : '',
+        note:   col.note   >= 0 ? String(r[col.note]).trim()   : '',
+        price:  col.amount >= 0 ? String(r[col.amount]).trim() : '',
+        branch: branch,
       });
     });
   });
@@ -837,32 +917,30 @@ function closePreview() {
   pendingRows = [];
 }
 
-function confirmImport() {
-  let added = 0;
+async function confirmImport() {
   const existing = new Set(records.map(r => r.phone + '_' + r.repairDate + '_' + r.type));
+  const toAdd = [];
   pendingRows.forEach(row => {
     const key = row.phone + '_' + row.date + '_' + row.type;
     if (existing.has(key)) return; // 跳過重複
-    records.unshift({
-      id: Date.now().toString(36) + Math.random().toString(36).slice(2) + added,
+    toAdd.push({
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2) + toAdd.length,
       name: row.name || '（未填）',
       phone: row.phone || '（未填）',
       model: row.type || '（未填）',
       type: row.type || '（未填）',
       repairDate: row.date || new Date().toISOString().split('T')[0],
       warrantyMonths: autoWarranty(row.type),
-      parts: '副廠',
+      branch: row.branch || '',
       price: row.price,
       note: row.note,
       createdAt: new Date().toISOString(),
-      source: 'onedrive'
+      source: 'excel'
     });
-    added++;
   });
-  save();
+  if (toAdd.length) await batchSave(toAdd);
   closePreview();
-  showToast(`✅ 成功匯入 ${added} 筆（跳過 ${pendingRows.length - added} 筆重複）`);
-  renderStats();
+  showToast(`✅ 成功匯入 ${toAdd.length} 筆（跳過 ${pendingRows.length - toAdd.length} 筆重複）`);
 }
 
 document.getElementById('editModal').addEventListener('click', e => {
@@ -870,8 +948,7 @@ document.getElementById('editModal').addEventListener('click', e => {
 });
 
 // ── 初始化 ──
-load();
-document.getElementById('f-date').value = new Date().toISOString().split('T')[0];
+// records 由 Firebase onSnapshot 自動載入並觸發 records-updated
 renderStats();
 doSearch();
 </script>
