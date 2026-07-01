@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>保固管理系統｜手機維修</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --card: #22263a;
+    --border: #2e3354;
+    --accent: #4f8ef7;
+    --accent2: #38e5b0;
+    --warn: #f7884f;
+    --danger: #f75f5f;
+    --text: #e8eaf2;
+    --muted: #7a7f9a;
+    --radius: 12px;
+    --font: 'Noto Sans TC', system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    min-height: 100vh;
+    font-size: 15px;
+  }
+
+  /* ── 頂部 ── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  header .logo {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    color: var(--accent);
+  }
+  header .logo span { color: var(--accent2); }
+  header .subtitle {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  /* ── 分頁 ── */
+  .tabs {
+    display: flex;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 16px;
+  }
+  .tab-btn {
+    padding: 12px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--muted);
+    border: none;
+    background: none;
+    cursor: pointer;
+    border-bottom: 3px solid transparent;
+    transition: all .2s;
+  }
+  .tab-btn.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
+  /* ── 主內容 ── */
+  .page { display: none; padding: 20px 16px; max-width: 800px; margin: 0 auto; }
+  .page.active { display: block; }
+
+  /* ── 搜尋區 ── */
+  .search-bar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .search-bar input {
+    flex: 1;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 16px;
+    color: var(--text);
+    font-size: 15px;
+    outline: none;
+    transition: border-color .2s;
+  }
+  .search-bar input:focus { border-color: var(--accent); }
+  .search-bar input::placeholder { color: var(--muted); }
+
+  /* ── 按鈕 ── */
+  .btn {
+    padding: 10px 18px;
+    border-radius: var(--radius);
+    border: none;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .15s;
+    white-space: nowrap;
+  }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: #3a7de8; }
+  .btn-success { background: var(--accent2); color: #0f1117; }
+  .btn-success:hover { filter: brightness(1.1); }
+  .btn-danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+  .btn-danger:hover { background: var(--danger); color: #fff; }
+  .btn-ghost { background: var(--card); color: var(--text); border: 1px solid var(--border); }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-sm { padding: 6px 12px; font-size: 12px; }
+
+  /* ── 統計小卡 ── */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .stat-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+    text-align: center;
+  }
+  .stat-num { font-size: 26px; font-weight: 700; }
+  .stat-num.blue { color: var(--accent); }
+  .stat-num.green { color: var(--accent2); }
+  .stat-num.orange { color: var(--warn); }
+  .stat-label { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  /* ── 保固卡片 ── */
+  .warranty-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-bottom: 12px;
+    transition: border-color .2s;
+  }
+  .warranty-card:hover { border-color: var(--accent); }
+  .warranty-card.expired { border-left: 3px solid var(--danger); opacity: .75; }
+  .warranty-card.expiring { border-left: 3px solid var(--warn); }
+  .warranty-card.valid { border-left: 3px solid var(--accent2); }
+
+  .card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .card-name { font-size: 16px; font-weight: 700; }
+  .card-phone { font-size: 13px; color: var(--muted); margin-top: 2px; }
+
+  .badge {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 20px;
+    white-space: nowrap;
+  }
+  .badge-valid { background: rgba(56,229,176,.15); color: var(--accent2); }
+  .badge-expiring { background: rgba(247,136,79,.15); color: var(--warn); }
+  .badge-expired { background: rgba(247,95,95,.15); color: var(--danger); }
+
+  .card-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 12px;
+    font-size: 13px;
+    margin-bottom: 12px;
+  }
+  .card-item { display: flex; flex-direction: column; gap: 2px; }
+  .card-item .label { color: var(--muted); font-size: 11px; }
+  .card-item .value { font-weight: 500; }
+
+  .card-note {
+    font-size: 12px;
+    color: var(--muted);
+    background: rgba(255,255,255,.03);
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-bottom: 10px;
+    line-height: 1.5;
+  }
+
+  .card-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+  /* ── 新增表單 ── */
+  .form-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+  .form-title {
+    font-size: 17px;
+    font-weight: 700;
+    margin-bottom: 18px;
+    color: var(--accent);
+  }
+  .form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  .form-group { display: flex; flex-direction: column; gap: 6px; }
+  .form-group.full { grid-column: 1 / -1; }
+  .form-group label { font-size: 12px; color: var(--muted); font-weight: 600; }
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    color: var(--text);
+    font-size: 14px;
+    font-family: var(--font);
+    outline: none;
+    transition: border-color .2s;
+  }
+  .form-group input:focus,
+  .form-group select:focus,
+  .form-group textarea:focus { border-color: var(--accent); }
+  .form-group textarea { resize: vertical; min-height: 72px; }
+  .form-group select option { background: var(--bg); }
+  .form-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 18px;
+  }
+
+  /* ── 空狀態 ── */
+  .empty {
+    text-align: center;
+    padding: 50px 20px;
+    color: var(--muted);
+  }
+  .empty .icon { font-size: 40px; margin-bottom: 12px; }
+  .empty p { font-size: 14px; }
+
+  /* ── toast ── */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(80px);
+    background: var(--accent2);
+    color: #0f1117;
+    font-weight: 700;
+    padding: 12px 24px;
+    border-radius: 30px;
+    font-size: 14px;
+    z-index: 999;
+    transition: transform .3s ease;
+    pointer-events: none;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+
+  /* ── modal ── */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.6);
+    z-index: 200;
+    align-items: flex-end;
+    justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--surface);
+    border-radius: var(--radius) var(--radius) 0 0;
+    padding: 24px 20px;
+    width: 100%;
+    max-width: 600px;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+  .modal-title {
+    font-size: 17px;
+    font-weight: 700;
+    margin-bottom: 18px;
+    color: var(--accent);
+  }
+
+  /* ── 匯入匯出 ── */
+  .io-section { margin-bottom: 28px; }
+  .io-section h3 { font-size: 14px; color: var(--muted); margin-bottom: 12px; font-weight: 600; letter-spacing: .5px; text-transform: uppercase; }
+  .io-row { display: flex; gap: 10px; flex-wrap: wrap; }
+
+  /* 手機 RWD */
+  @media (max-width: 500px) {
+    .form-grid { grid-template-columns: 1fr; }
+    .stats { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    .stat-card { padding: 10px 6px; }
+    .stat-num { font-size: 22px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="logo">🔧 保固<span>管理</span></div>
+    <div class="subtitle">手機維修保固查詢系統</div>
+  </div>
+</header>
+
+<div class="tabs">
+  <button class="tab-btn active" onclick="switchTab('search')">🔍 查詢</button>
+  <button class="tab-btn" onclick="switchTab('onedrive')">☁️ OneDrive</button>
+  <button class="tab-btn" onclick="switchTab('manage')">⚙️ 管理</button>
+</div>
+
+<!-- 查詢頁 -->
+<div id="page-search" class="page active">
+  <div class="stats" id="stats"></div>
+
+  <div class="search-bar">
+    <input id="searchInput" type="text" placeholder="輸入電話號碼、姓名 或 品項關鍵字…" oninput="doSearch()" />
+    <button class="btn btn-ghost btn-sm" onclick="clearSearch()">清除</button>
+  </div>
+
+  <div id="searchResults"></div>
+</div>
+
+<!-- 匯入報表頁 -->
+<div id="page-onedrive" class="page">
+  <div class="form-card" style="text-align:center; padding:28px 20px; margin-bottom:16px;">
+    <div style="font-size:40px; margin-bottom:12px;">📊</div>
+    <div style="font-size:17px; font-weight:700; margin-bottom:8px;">匯入每月銷售報表</div>
+    <div style="font-size:13px; color:var(--muted); margin-bottom:20px; line-height:1.8;">
+      從 OneDrive 下載當月 xlsx 報表<br>
+      拖進來或點下方按鈕選擇檔案<br>
+      自動讀取電話、姓名、維修品項
+    </div>
+
+    <div id="drop-zone" style="
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 32px 20px;
+      margin-bottom: 16px;
+      cursor: pointer;
+      transition: all .2s;
+    " onclick="document.getElementById('xlsxFile').click()"
+       ondragover="event.preventDefault(); this.style.borderColor='var(--accent)'"
+       ondragleave="this.style.borderColor='var(--border)'"
+       ondrop="handleDrop(event)">
+      <div style="font-size:32px; margin-bottom:8px;">📂</div>
+      <div style="font-size:14px; color:var(--muted);">拖曳 xlsx 到這裡，或點此選擇</div>
+    </div>
+    <input id="xlsxFile" type="file" accept=".xlsx,.xls" style="display:none" onchange="handleXlsxFile(event)">
+    <button class="btn btn-primary" onclick="document.getElementById('xlsxFile').click()" style="width:100%; padding:14px;">
+      📥 選擇 xlsx 報表檔案
+    </button>
+  </div>
+
+  <div id="od-preview" style="display:none;">
+    <div class="form-card">
+      <div style="font-size:14px; font-weight:600; margin-bottom:4px; color:var(--accent);" id="od-preview-title"></div>
+      <div style="font-size:12px; color:var(--muted); margin-bottom:14px;" id="od-preview-count"></div>
+      <div id="od-preview-table" style="overflow-x:auto; margin-bottom:14px;"></div>
+      <div style="display:flex; gap:10px; justify-content:flex-end;">
+        <button class="btn btn-ghost" onclick="closePreview()">取消</button>
+        <button class="btn btn-success" onclick="confirmImport()">✅ 確認匯入保固記錄</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<div id="page-manage" class="page">
+  <div class="io-section">
+    <h3>匯出 / 備份</h3>
+    <div class="io-row">
+      <button class="btn btn-ghost" onclick="exportJSON()">📦 匯出備份 (JSON)</button>
+      <button class="btn btn-ghost" onclick="exportCSV()">📊 匯出 Excel (CSV)</button>
+    </div>
+  </div>
+  <div class="io-section">
+    <h3>匯入</h3>
+    <div class="io-row">
+      <button class="btn btn-ghost" onclick="document.getElementById('importFile').click()">📂 匯入備份 (JSON)</button>
+      <input id="importFile" type="file" accept=".json" style="display:none" onchange="importJSON(event)">
+    </div>
+  </div>
+  <div class="io-section">
+    <h3>危險操作</h3>
+    <div class="io-row">
+      <button class="btn btn-danger" onclick="confirmClearAll()">🗑️ 清除所有資料</button>
+    </div>
+  </div>
+  <div style="font-size:12px; color:var(--muted); line-height:1.7; margin-top:8px;">
+    • 資料存在此裝置瀏覽器中，換裝置請先「匯出備份」再「匯入」<br>
+    • 建議每週匯出一次 CSV，存進 Google Drive 當備份
+  </div>
+</div>
+
+<!-- 編輯 Modal -->
+<div class="modal-overlay" id="editModal">
+  <div class="modal">
+    <div class="modal-title">✏️ 編輯保固記錄</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>客戶姓名</label>
+        <input id="e-name" type="text">
+      </div>
+      <div class="form-group">
+        <label>電話號碼</label>
+        <input id="e-phone" type="tel">
+      </div>
+      <div class="form-group full">
+        <label>售出品項</label>
+        <input id="e-type" type="text">
+      </div>
+      <div class="form-group">
+        <label>維修日期</label>
+        <input id="e-date" type="date">
+      </div>
+      <div class="form-group">
+        <label>保固期限</label>
+        <select id="e-warranty">
+          <option value="1">1 個月</option>
+          <option value="3">3 個月</option>
+          <option value="6">6 個月</option>
+          <option value="12">12 個月</option>
+          <option value="0">無保固</option>
+        </select>
+      </div>
+      <div class="form-group full">
+        <label>後續服務 / 客戶狀態</label>
+        <textarea id="e-followup" placeholder="例如：已回修一次、客訴處理中、加購保護貼…"></textarea>
+      </div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">取消</button>
+      <button class="btn btn-success" onclick="saveEdit()">儲存修改</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {
+  getFirestore, collection, doc, setDoc, deleteDoc,
+  onSnapshot, writeBatch
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDyg9BqlmIgHQRIxtgk0Bm6_kpmfmNRcWs",
+  authDomain: "warranty-system-4d18d.firebaseapp.com",
+  projectId: "warranty-system-4d18d",
+  storageBucket: "warranty-system-4d18d.firebasestorage.app",
+  messagingSenderId: "357168697896",
+  appId: "1:357168697896:web:79b3f2faa217d7ad449b1d"
+};
+
+const fbApp = initializeApp(firebaseConfig);
+const db = getFirestore(fbApp);
+const recordsCol = collection(db, "warranty_records");
+
+// 將 Firebase 函式掛到 window，讓外層一般 script 能呼叫
+window.fbDoc = doc;
+window.fbSetDoc = setDoc;
+window.fbDeleteDoc = deleteDoc;
+window.fbCollection = recordsCol;
+window.fbWriteBatch = writeBatch;
+window.fbDb = db;
+
+onSnapshot(recordsCol, (snapshot) => {
+  records = [];
+  snapshot.forEach(d => records.push({ id: d.id, ...d.data() }));
+  records.sort((a, b) => new Date(b.repairDate) - new Date(a.repairDate));
+  window.dispatchEvent(new Event('records-updated'));
+});
+</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+let records = [];
+let editingId = null;
+
+// ── 分店密碼 ──
+const BRANCH_PASSWORDS = { '楠梓店': '3223', '德賢店': '8688' };
+let unlockedBranch = null; // 目前已解鎖的分店
+
+function checkBranchAuth(branch) {
+  if (!branch) {
+    // 沒有分店標記，不需要密碼
+    return true;
+  }
+  if (unlockedBranch === branch) return true;
+  const pwd = prompt(`此記錄屬於「${branch}」，請輸入該店密碼：`);
+  if (pwd === BRANCH_PASSWORDS[branch]) {
+    unlockedBranch = branch;
+    // 10分鐘後自動鎖定
+    setTimeout(() => { unlockedBranch = null; }, 10 * 60 * 1000);
+    return true;
+  }
+  showToast('⚠️ 密碼錯誤，無法編輯');
+  return false;
+}
+
+
+// 監聽 Firebase 即時更新，自動刷新畫面
+window.addEventListener('records-updated', () => {
+  renderStats();
+  doSearch();
+});
+
+// save()：把單筆或全部 records 寫回 Firestore
+async function save(singleRecord) {
+  try {
+    if (singleRecord) {
+      const ref = window.fbDoc(window.fbDb, "warranty_records", singleRecord.id);
+      const { id, ...data } = singleRecord;
+      await window.fbSetDoc(ref, data);
+    }
+  } catch (e) {
+    showToast('⚠️ 雲端同步失敗：' + e.message);
+  }
+}
+
+async function deleteRecordFromCloud(id) {
+  try {
+    const ref = window.fbDoc(window.fbDb, "warranty_records", id);
+    await window.fbDeleteDoc(ref);
+  } catch (e) {
+    showToast('⚠️ 刪除失敗：' + e.message);
+  }
+}
+
+async function batchSave(recordList) {
+  try {
+    const batch = window.fbWriteBatch(window.fbDb);
+    recordList.forEach(r => {
+      const { id, ...data } = r;
+      const ref = window.fbDoc(window.fbDb, "warranty_records", id);
+      batch.set(ref, data);
+    });
+    await batch.commit();
+  } catch (e) {
+    showToast('⚠️ 批次同步失敗：' + e.message);
+  }
+}
+
+// ── 保固狀態 ──
+function warrantyStatus(record) {
+  if (record.warrantyMonths === 0) return { status: 'expired', label: '無保固', daysLeft: -1 };
+  const repair = new Date(record.repairDate);
+  const expire = new Date(repair);
+  expire.setMonth(expire.getMonth() + Number(record.warrantyMonths));
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  const daysLeft = Math.ceil((expire - today) / 86400000);
+  if (daysLeft < 0) return { status: 'expired', label: '已過期', daysLeft };
+  if (daysLeft <= 30) return { status: 'expiring', label: `剩 ${daysLeft} 天`, daysLeft };
+  return { status: 'valid', label: `剩 ${daysLeft} 天`, daysLeft };
+}
+
+// ── 統計 ──
+function renderStats() {
+  const total = records.length;
+  const valid = records.filter(r => warrantyStatus(r).status !== 'expired').length;
+  const expiring = records.filter(r => warrantyStatus(r).status === 'expiring').length;
+  document.getElementById('stats').innerHTML = `
+    <div class="stat-card"><div class="stat-num blue">${total}</div><div class="stat-label">總記錄數</div></div>
+    <div class="stat-card"><div class="stat-num green">${valid}</div><div class="stat-label">保固中</div></div>
+    <div class="stat-card"><div class="stat-num orange">${expiring}</div><div class="stat-label">即將到期</div></div>
+  `;
+}
+
+// ── 搜尋 ──
+function doSearch() {
+  const q = document.getElementById('searchInput').value.trim();
+  let list = q
+    ? records.filter(r =>
+        r.phone.includes(q) ||
+        (r.type || '').toLowerCase().includes(q.toLowerCase()) ||
+        r.name.includes(q)
+      )
+    : [...records].sort((a, b) => new Date(b.repairDate) - new Date(a.repairDate));
+  renderList(list);
+}
+
+function clearSearch() {
+  document.getElementById('searchInput').value = '';
+  doSearch();
+}
+
+function renderList(list) {
+  const el = document.getElementById('searchResults');
+  if (!list.length) {
+    el.innerHTML = `<div class="empty"><div class="icon">🔍</div><p>${records.length ? '找不到符合的記錄' : '還沒有任何保固記錄，點「新增」開始建立'}</p></div>`;
+    return;
+  }
+  el.innerHTML = list.map(r => {
+    const ws = warrantyStatus(r);
+    const expireDate = (() => {
+      if (r.warrantyMonths === 0) return '無保固';
+      const d = new Date(r.repairDate);
+      d.setMonth(d.getMonth() + Number(r.warrantyMonths));
+      return d.toLocaleDateString('zh-TW');
+    })();
+    return `
+    <div class="warranty-card ${ws.status}">
+      <div class="card-top">
+        <div>
+          <div class="card-name">${esc(r.name)} ${r.branch ? `<span style="font-size:11px;font-weight:600;color:var(--accent);background:rgba(79,142,247,.15);padding:2px 8px;border-radius:10px;margin-left:6px;">${esc(r.branch)}</span>` : ''}</div>
+          <div class="card-phone">📞 ${esc(r.phone)}</div>
+        </div>
+        <span class="badge badge-${ws.status}">${ws.label}</span>
+      </div>
+      <div class="card-grid">
+        <div class="card-item"><span class="label">售出品項</span><span class="value">${esc(r.type)}</span></div>
+        <div class="card-item"><span class="label">維修日期</span><span class="value">${r.repairDate}</span></div>
+        <div class="card-item"><span class="label">金額</span><span class="value">${r.price ? 'NT$ ' + Number(r.price).toLocaleString() : '—'}</span></div>
+      </div>
+      ${r.followup ? `<div class="card-note">📌 後續服務：${esc(r.followup)}</div>` : ''}
+      <div class="card-actions">
+        <button class="btn btn-ghost btn-sm" onclick="openEdit('${r.id}')">編輯</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteRecord('${r.id}')">刪除</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── 新增 ──
+function saveRecord() {
+  const name = document.getElementById('f-name').value.trim();
+  const phone = document.getElementById('f-phone').value.trim();
+  const type = document.getElementById('f-type').value.trim();
+  const date = document.getElementById('f-date').value;
+  if (!name || !phone || !type || !date) {
+    showToast('⚠️ 請填寫所有必填欄位'); return;
+  }
+  const record = {
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2),
+    name, phone, model: type, type,
+    repairDate: date,
+    warrantyMonths: Number(document.getElementById('f-warranty').value),
+    parts: document.getElementById('f-parts').value,
+    price: document.getElementById('f-price').value,
+    note: document.getElementById('f-note').value.trim(),
+    createdAt: new Date().toISOString()
+  };
+  records.unshift(record);
+  save();
+  resetForm();
+  showToast('✅ 保固記錄已儲存');
+  switchTab('search');
+}
+
+function resetForm() {
+  ['f-name','f-phone','f-price','f-note'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('f-type').value = '';
+  document.getElementById('f-warranty').value = '3';
+  document.getElementById('f-parts').value = '原廠';
+  document.getElementById('f-date').value = new Date().toISOString().split('T')[0];
+}
+
+// ── 編輯 ──
+function openEdit(id) {
+  const r = records.find(x => x.id === id);
+  if (!r) return;
+  if (!checkBranchAuth(r.branch)) return;
+  editingId = id;
+  document.getElementById('e-name').value = r.name;
+  document.getElementById('e-phone').value = r.phone;
+  document.getElementById('e-type').value = r.type || r.model || '';
+  document.getElementById('e-date').value = r.repairDate;
+  document.getElementById('e-warranty').value = r.warrantyMonths;
+  document.getElementById('e-followup').value = r.followup || '';
+  document.getElementById('editModal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('editModal').classList.remove('open');
+  editingId = null;
+}
+
+async function saveEdit() {
+  const r = records.find(x => x.id === editingId);
+  if (!r) return;
+  r.name = document.getElementById('e-name').value.trim();
+  r.phone = document.getElementById('e-phone').value.trim();
+  r.type = document.getElementById('e-type').value.trim();
+  r.model = r.type;
+  r.repairDate = document.getElementById('e-date').value;
+  r.warrantyMonths = Number(document.getElementById('e-warranty').value);
+  r.followup = document.getElementById('e-followup').value.trim();
+  await save(r);
+  closeModal();
+  showToast('✅ 已儲存修改');
+}
+
+// ── 刪除 ──
+async function deleteRecord(id) {
+  const r = records.find(x => x.id === id);
+  if (!r) return;
+  if (!checkBranchAuth(r.branch)) return;
+  if (!confirm('確定要刪除這筆保固記錄？')) return;
+  await deleteRecordFromCloud(id);
+  showToast('已刪除');
+}
+
+// ── 匯出 ──
+function exportJSON() {
+  const blob = new Blob([JSON.stringify(records, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `保固備份_${new Date().toISOString().split('T')[0]}.json`;
+  a.click();
+}
+
+function exportCSV() {
+  const header = ['姓名','電話','售出品項','維修日期','保固月數','金額','備註','後續服務'];
+  const rows = records.map(r => {
+    const exp = r.warrantyMonths > 0 ? (() => {
+      const d = new Date(r.repairDate);
+      d.setMonth(d.getMonth() + Number(r.warrantyMonths));
+      return d.toLocaleDateString('zh-TW');
+    })() : '無保固';
+    return [r.name, r.phone, r.type, r.repairDate, r.warrantyMonths, r.price||'', r.note||'', r.followup||''];
+  });
+  const csv = '\uFEFF' + [header, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `保固記錄_${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
+}
+
+function importJSON(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!Array.isArray(data)) throw new Error();
+      const existing = new Set(records.map(r => r.id));
+      const toAdd = data.filter(r => !existing.has(r.id));
+      if (toAdd.length) await batchSave(toAdd);
+      showToast(`✅ 匯入完成，新增 ${toAdd.length} 筆`);
+    } catch { showToast('⚠️ 檔案格式錯誤'); }
+  };
+  reader.readAsText(file);
+  event.target.value = '';
+}
+
+async function confirmClearAll() {
+  const pwd = prompt('清除所有資料需要管理員密碼，請輸入楠梓店密碼：');
+  if (pwd !== BRANCH_PASSWORDS['楠梓店']) { showToast('⚠️ 密碼錯誤'); return; }
+  if (prompt('確定清除所有資料？請輸入「確認刪除」') === '確認刪除') {
+    for (const r of records) {
+      await deleteRecordFromCloud(r.id);
+    }
+    showToast('已清除所有資料');
+  }
+}
+
+// ── 分頁 ──
+function switchTab(tab) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(`page-${tab}`).classList.add('active');
+  event.currentTarget && event.currentTarget.classList.add('active');
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    if (b.getAttribute('onclick').includes(`'${tab}'`)) b.classList.add('active');
+  });
+  if (tab === 'search') { doSearch(); renderStats(); }
+}
+
+// ── Toast ──
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// ── 匯入報表（本機上傳）──
+let pendingRows = [];
+
+function handleDrop(event) {
+  event.preventDefault();
+  document.getElementById('drop-zone').style.borderColor = 'var(--border)';
+  const file = event.dataTransfer.files[0];
+  if (file) processXlsxFile(file);
+}
+
+function handleXlsxFile(event) {
+  const file = event.target.files[0];
+  if (file) processXlsxFile(file);
+  event.target.value = '';
+}
+
+function processXlsxFile(file) {
+  if (!file.name.match(/\.xlsx?$/i)) { showToast('⚠️ 請選擇 xlsx 格式的檔案'); return; }
+  showToast('讀取中…');
+  const reader = new FileReader();
+  reader.onload = e => parseXlsx(e.target.result, file.name);
+  reader.readAsArrayBuffer(file);
+}
+
+function parseXlsx(buf, fileName) {
+  if (!window.XLSX) { showToast('⚠️ 請稍候，函式庫載入中'); return; }
+  const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+  pendingRows = [];
+
+  // 逐一處理所有工作表（匯整1~11），跳過廢頁
+  wb.SheetNames.forEach(sheetName => {
+    if (sheetName.includes('廢')) return;
+    const ws = wb.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true, cellDates: true });
+
+    // 找標題行（含「連絡電話」），去除全形空格後比對
+    let headerIdx = rows.findIndex(r => r.some(c => String(c).replace(/\s/g,'').includes('連絡電話') || String(c).replace(/\s/g,'').includes('聯絡電話')));
+    if (headerIdx < 0) return;
+
+    const headers = rows[headerIdx].map(c => String(c).replace(/\s+/g,'').trim());
+    const idxOf = ks => { for (const k of ks) { const i = headers.findIndex(h => h.includes(k.replace(/\s+/g,''))); if (i >= 0) return i; } return -1; };
+
+    const col = {
+      date:  idxOf(['日期']),
+      type:  idxOf(['售出品項','維修品項','品項']),
+      phone: idxOf(['連絡電話','聯絡電話']),
+      name:  idxOf(['單號','姓名']),
+      note:  idxOf(['備注','備註']),
+      amount: idxOf(['金額']),
+    };
+
+    // 偵測分店：找「單位：復原者OO店」這格
+    let branch = '';
+    for (const r of rows.slice(0, headerIdx + 1)) {
+      for (const c of r) {
+        const s = String(c);
+        if (s.includes('單位') && s.includes('復原者')) {
+          if (s.includes('楠梓')) branch = '楠梓店';
+          else if (s.includes('德賢')) branch = '德賢店';
+          break;
+        }
+      }
+      if (branch) break;
+    }
+
+    let currentDate = '';
+    rows.slice(headerIdx + 1).forEach(r => {
+      // 追蹤日期（合併儲存格），支援 Date 物件和字串
+      const rawDate = col.date >= 0 ? r[col.date] : '';
+      if (rawDate && rawDate !== '') currentDate = fmtDate(rawDate);
+
+      const phone = col.phone >= 0 ? String(r[col.phone]).trim() : '';
+      if (!phone.match(/^09\d{8}$/)) return; // 只取 09 開頭 10 碼
+
+      const name = col.name >= 0 ? String(r[col.name]).trim().replace(/[RS]$/, '') : '';
+      pendingRows.push({
+        date:  currentDate,
+        type:  col.type  >= 0 ? String(r[col.type]).trim()  : '',
+        phone: phone,
+        name:  name,
+        note:   col.note   >= 0 ? String(r[col.note]).trim()   : '',
+        price:  col.amount >= 0 ? String(r[col.amount]).trim() : '',
+        branch: branch,
+      });
+    });
+  });
+
+  showPreview(fileName);
+}
+
+function autoWarranty(type) {
+  const t = String(type).replace(/\s+/g, '');
+  if (/電池/.test(t)) return 6;
+  if (/液晶|螢幕|面板/.test(t)) return 3;
+  if (/尾插|充電/.test(t)) return 3;
+  return 1; // 預設1個月
+}
+
+function fmtDate(v) {
+  if (!v) return '';
+  if (v instanceof Date) return v.toISOString().split('T')[0];
+  const s = String(v);
+  // 支援 114/6/13 民國格式
+  const roc = s.match(/^(\d{2,3})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+  if (roc) {
+    const y = parseInt(roc[1]) + 1911;
+    return `${y}-${roc[2].padStart(2,'0')}-${roc[3].padStart(2,'0')}`;
+  }
+  return s.slice(0, 10);
+}
+
+function showPreview(fileName) {
+  document.getElementById('od-preview').style.display = '';
+  document.getElementById('od-preview-title').textContent = `📊 ${fileName}`;
+  document.getElementById('od-preview-count').textContent = `共找到 ${pendingRows.length} 筆有電話或姓名的記錄`;
+  const preview = pendingRows.slice(0, 5);
+  document.getElementById('od-preview-table').innerHTML = `
+    <table style="width:100%;font-size:12px;border-collapse:collapse;">
+      <tr style="color:var(--muted);">
+        <th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--border);">日期</th>
+        <th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--border);">姓名</th>
+        <th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--border);">電話</th>
+        <th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--border);">維修品項</th>
+      </tr>
+      ${preview.map(r => `
+        <tr>
+          <td style="padding:4px 6px;border-bottom:1px solid var(--border);">${r.date}</td>
+          <td style="padding:4px 6px;border-bottom:1px solid var(--border);">${esc(r.name)}</td>
+          <td style="padding:4px 6px;border-bottom:1px solid var(--border);">${esc(r.phone)}</td>
+          <td style="padding:4px 6px;border-bottom:1px solid var(--border);">${esc(r.type)}</td>
+        </tr>`).join('')}
+    </table>
+    ${pendingRows.length > 5 ? `<div style="font-size:11px;color:var(--muted);margin-top:6px;">…還有 ${pendingRows.length-5} 筆</div>` : ''}
+  `;
+  document.getElementById('od-preview').scrollIntoView({behavior:'smooth'});
+}
+
+function closePreview() {
+  document.getElementById('od-preview').style.display = 'none';
+  pendingRows = [];
+}
+
+async function confirmImport() {
+  const existing = new Set(records.map(r => r.phone + '_' + r.repairDate + '_' + r.type));
+  const toAdd = [];
+  pendingRows.forEach(row => {
+    const key = row.phone + '_' + row.date + '_' + row.type;
+    if (existing.has(key)) return; // 跳過重複
+    toAdd.push({
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2) + toAdd.length,
+      name: row.name || '（未填）',
+      phone: row.phone || '（未填）',
+      model: row.type || '（未填）',
+      type: row.type || '（未填）',
+      repairDate: row.date || new Date().toISOString().split('T')[0],
+      warrantyMonths: autoWarranty(row.type),
+      branch: row.branch || '',
+      price: row.price,
+      note: row.note,
+      createdAt: new Date().toISOString(),
+      source: 'excel'
+    });
+  });
+  if (toAdd.length) await batchSave(toAdd);
+  closePreview();
+  showToast(`✅ 成功匯入 ${toAdd.length} 筆（跳過 ${pendingRows.length - toAdd.length} 筆重複）`);
+}
+
+document.getElementById('editModal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeModal();
+});
+
+// ── 初始化 ──
+// records 由 Firebase onSnapshot 自動載入並觸發 records-updated
+renderStats();
+doSearch();
+</script>
+</body>
+</html>
