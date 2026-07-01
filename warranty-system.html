@@ -499,6 +499,28 @@ onSnapshot(recordsCol, (snapshot) => {
 let records = [];
 let editingId = null;
 
+// ── 分店密碼 ──
+const BRANCH_PASSWORDS = { '楠梓店': '3223', '德賢店': '8688' };
+let unlockedBranch = null; // 目前已解鎖的分店
+
+function checkBranchAuth(branch) {
+  if (!branch) {
+    // 沒有分店標記，不需要密碼
+    return true;
+  }
+  if (unlockedBranch === branch) return true;
+  const pwd = prompt(`此記錄屬於「${branch}」，請輸入該店密碼：`);
+  if (pwd === BRANCH_PASSWORDS[branch]) {
+    unlockedBranch = branch;
+    // 10分鐘後自動鎖定
+    setTimeout(() => { unlockedBranch = null; }, 10 * 60 * 1000);
+    return true;
+  }
+  showToast('⚠️ 密碼錯誤，無法編輯');
+  return false;
+}
+
+
 // 監聽 Firebase 即時更新，自動刷新畫面
 window.addEventListener('records-updated', () => {
   renderStats();
@@ -664,6 +686,7 @@ function resetForm() {
 function openEdit(id) {
   const r = records.find(x => x.id === id);
   if (!r) return;
+  if (!checkBranchAuth(r.branch)) return;
   editingId = id;
   document.getElementById('e-name').value = r.name;
   document.getElementById('e-phone').value = r.phone;
@@ -696,6 +719,9 @@ async function saveEdit() {
 
 // ── 刪除 ──
 async function deleteRecord(id) {
+  const r = records.find(x => x.id === id);
+  if (!r) return;
+  if (!checkBranchAuth(r.branch)) return;
   if (!confirm('確定要刪除這筆保固記錄？')) return;
   await deleteRecordFromCloud(id);
   showToast('已刪除');
@@ -747,6 +773,8 @@ function importJSON(event) {
 }
 
 async function confirmClearAll() {
+  const pwd = prompt('清除所有資料需要管理員密碼，請輸入楠梓店密碼：');
+  if (pwd !== BRANCH_PASSWORDS['楠梓店']) { showToast('⚠️ 密碼錯誤'); return; }
   if (prompt('確定清除所有資料？請輸入「確認刪除」') === '確認刪除') {
     for (const r of records) {
       await deleteRecordFromCloud(r.id);
