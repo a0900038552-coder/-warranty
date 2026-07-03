@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>復原者 內部系統</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<style>
+  :root{
+    --ink:#1c1f26; --ink-soft:#3a3f4b; --paper:#f6f4f0; --card:#ffffff;
+    --line:#e2ddd3; --copper:#c1723d; --copper-dark:#9c5a2e;
+    --good:#3f7a5c; --bad:#b3432b; --warn:#c1953d;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:'Noto Sans TC',sans-serif;-webkit-font-smoothing:antialiased;}
+  .mono{font-family:'IBM Plex Mono',monospace;}
+  .trace{height:8px;background-image:radial-gradient(circle, var(--copper) 1.5px, transparent 1.6px);background-size:14px 8px;background-position:center;opacity:.55;}
+  header.top{background:var(--ink);color:#fff;padding:18px 20px 14px;}
+  header.top h1{margin:0;font-size:19px;font-weight:900;letter-spacing:.02em;}
+  header.top p{margin:4px 0 0;font-size:12px;color:#b9bdc7;font-family:'IBM Plex Mono',monospace;}
+
+  #login-screen{max-width:380px;margin:8vh auto;padding:0 20px;}
+  .auth-tabs{display:flex;gap:8px;margin-bottom:16px;}
+  .auth-tabs button{flex:1;background:#fff;border:1px solid var(--line);color:var(--ink-soft);padding:9px;border-radius:8px;font-weight:700;font-size:13px;}
+  .auth-tabs button.active{background:var(--ink);color:#fff;border-color:var(--ink);}
+  .auth-pane{display:none;} .auth-pane.active{display:block;}
+  .field{margin-bottom:12px;}
+  .field label{display:block;font-size:12px;color:var(--ink-soft);margin-bottom:5px;font-family:'IBM Plex Mono',monospace;}
+  input,select,textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--card);font-size:15px;font-family:inherit;color:var(--ink);}
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--copper);outline-offset:1px;}
+  button{cursor:pointer;border:none;border-radius:8px;padding:11px 16px;font-size:14px;font-weight:700;font-family:'Noto Sans TC',sans-serif;}
+  .btn-primary{background:var(--copper);color:#fff;} .btn-primary:hover{background:var(--copper-dark);}
+  .btn-ghost{background:transparent;color:var(--ink-soft);border:1px solid var(--line);}
+  .btn-good{background:var(--good);color:#fff;} .btn-bad{background:var(--bad);color:#fff;}
+  .btn-block{width:100%;} .btn-sm{padding:6px 10px;font-size:12px;}
+
+  #app{display:none;}
+  nav.tabs{display:flex;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5;overflow-x:auto;}
+  nav.tabs button{flex:1;min-width:90px;background:none;border-radius:0;padding:14px 6px;color:var(--ink-soft);font-weight:700;border-bottom:3px solid transparent;font-size:13px;}
+  nav.tabs button.active{color:var(--copper-dark);border-bottom:3px solid var(--copper);}
+
+  main{padding:16px 16px 60px;max-width:640px;margin:0 auto;}
+  .panel{display:none;} .panel.active{display:block;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px;}
+  .card h3{margin:0 0 12px;font-size:15px;}
+  .rowline{display:flex;gap:10px;} .rowline>*{flex:1;}
+
+  .badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-family:'IBM Plex Mono',monospace;font-weight:600;}
+  .badge.pending{background:#f3e6d2;color:var(--warn);}
+  .badge.approved{background:#dcece3;color:var(--good);}
+  .badge.rejected{background:#f3dbd3;color:var(--bad);}
+  .badge.unread{background:#f3dbd3;color:var(--bad);}
+  .badge.read{background:#e9e6df;color:var(--ink-soft);}
+
+  .item{border-top:1px solid var(--line);padding:12px 0;cursor:pointer;}
+  .item:first-child{border-top:none;padding-top:0;}
+  .item-head{display:flex;justify-content:space-between;align-items:center;gap:8px;}
+  .item-head strong{font-size:14px;}
+  .item-meta{font-size:12px;color:var(--ink-soft);margin-top:3px;font-family:'IBM Plex Mono',monospace;}
+  .item-actions{display:flex;gap:6px;margin-top:8px;}
+  .item-body{font-size:13px;color:var(--ink-soft);margin-top:6px;line-height:1.5;}
+
+  .stock-row{display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--line);padding:12px 0;}
+  .stock-row:first-child{border-top:none;padding-top:0;}
+  .stock-name{font-size:14px;} .stock-meta{font-size:11px;color:var(--ink-soft);font-family:'IBM Plex Mono',monospace;margin-top:2px;}
+  .stepper{display:flex;align-items:center;gap:10px;}
+  .stepper button{width:36px;height:36px;border-radius:50%;background:var(--ink);color:#fff;font-size:18px;font-weight:900;padding:0;line-height:1;}
+  .stepper button.minus{background:var(--bad);}
+  .stepper .qty{min-width:26px;text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:16px;}
+  .stock-low .stock-name{color:var(--bad);}
+
+  .cat-tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;}
+  .cat-tabs button{background:#fff;border:1px solid var(--line);color:var(--ink-soft);padding:6px 12px;font-size:12px;font-weight:600;border-radius:20px;}
+  .cat-tabs button.active{background:var(--ink);color:#fff;border-color:var(--ink);}
+
+  .empty{text-align:center;color:var(--ink-soft);font-size:13px;padding:30px 10px;}
+  .pin-star{background:#fff8ee;}
+
+  .modal-bg{display:none;position:fixed;inset:0;background:rgba(28,31,38,.5);z-index:20;align-items:flex-end;justify-content:center;}
+  .modal-bg.active{display:flex;}
+  .modal{background:#fff;border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:480px;max-height:85vh;overflow-y:auto;}
+  .modal h3{margin-top:0;}
+  .modal-close{float:right;background:none;color:var(--ink-soft);font-size:20px;padding:0;}
+
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:20px;font-size:13px;z-index:30;opacity:0;transition:opacity .25s;pointer-events:none;}
+  .toast.show{opacity:1;}
+  .who-bar{font-size:12px;color:var(--ink-soft);display:flex;justify-content:space-between;align-items:center;padding:10px 16px;font-family:'IBM Plex Mono',monospace;}
+  .who-bar button{background:none;color:var(--copper-dark);font-size:12px;padding:2px;font-weight:700;}
+  .readers{font-size:11px;color:var(--ink-soft);margin-top:8px;font-family:'IBM Plex Mono',monospace;}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <h1>復原者 · 內部系統</h1>
+  <p>STAFF OPS / 楠梓店 · 德賢店</p>
+</header>
+<div class="trace"></div>
+
+<!-- LOGIN / REGISTER -->
+<div id="login-screen">
+  <div class="auth-tabs">
+    <button id="at-login" class="active" onclick="switchAuthTab('login')">登入</button>
+    <button id="at-register" onclick="switchAuthTab('register')">第一次使用（註冊帳號）</button>
+  </div>
+
+  <div id="auth-login" class="auth-pane active">
+    <div class="field"><label>Email</label><input id="login-email" type="email" placeholder="你的帳號 email"></div>
+    <div class="field"><label>密碼</label><input id="login-pass" type="password"></div>
+    <button class="btn-primary btn-block" onclick="doLogin()">登入</button>
+    <p id="login-error" style="color:var(--bad);font-size:12px;margin-top:10px;"></p>
+  </div>
+
+  <div id="auth-register" class="auth-pane">
+    <div class="field"><label>姓名</label><input id="reg-name" placeholder="你的姓名"></div>
+    <div class="field"><label>分店</label>
+      <select id="reg-store"><option value="楠梓店">楠梓店</option><option value="德賢店">德賢店</option></select>
+    </div>
+    <div class="field"><label>身分</label>
+      <select id="reg-role">
+        <option value="staff">一般員工</option>
+        <option value="store_manager">店長</option>
+        <option value="regional_manager">區經理</option>
+      </select>
+    </div>
+    <div class="field"><label>Email</label><input id="reg-email" type="email" placeholder="設定登入用 email"></div>
+    <div class="field"><label>密碼（至少6碼）</label><input id="reg-pass" type="password"></div>
+    <button class="btn-primary btn-block" onclick="doRegister()">建立帳號</button>
+    <p id="reg-error" style="color:var(--bad);font-size:12px;margin-top:10px;"></p>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <div class="who-bar">
+    <span id="who-label"></span>
+    <button onclick="doLogout()">登出</button>
+  </div>
+  <nav class="tabs">
+    <button id="tab-ann" class="active" onclick="switchTab('ann')">公告</button>
+    <button id="tab-leave" onclick="switchTab('leave')">假表/請假</button>
+    <button id="tab-inv" onclick="switchTab('inv')">庫存管理</button>
+    <button id="tab-staff" onclick="switchTab('staff')" style="display:none;">員工管理</button>
+  </nav>
+
+  <main>
+    <!-- ANNOUNCEMENT PANEL -->
+    <section id="panel-ann" class="panel active">
+      <div class="card" id="ann-publish-card" style="display:none;">
+        <h3>發布公告</h3>
+        <div class="field"><label>標題</label><input id="ann-title" placeholder="公告標題"></div>
+        <div class="field"><label>內容</label><textarea id="ann-content" rows="3" placeholder="公告內容"></textarea></div>
+        <div class="field"><label>發送對象</label>
+          <select id="ann-target">
+            <option value="全部">全部分店</option>
+            <option value="楠梓店">僅楠梓店</option>
+            <option value="德賢店">僅德賢店</option>
+          </select>
+        </div>
+        <button class="btn-primary btn-block" onclick="publishAnnouncement()">發布公告</button>
+      </div>
+
+      <div class="card">
+        <h3>公告列表</h3>
+        <div id="ann-list"><div class="empty">載入中…</div></div>
+      </div>
+    </section>
+
+    <!-- LEAVE PANEL -->
+    <section id="panel-leave" class="panel">
+      <div class="card">
+        <h3>提出請假申請</h3>
+        <div class="field"><label>假別</label>
+          <select id="leave-type"><option>事假</option><option>病假</option><option>特休</option><option>排休調整</option><option>其他</option></select>
+        </div>
+        <div class="rowline">
+          <div class="field"><label>起始日期</label><input type="date" id="leave-start"></div>
+          <div class="field"><label>結束日期</label><input type="date" id="leave-end"></div>
+        </div>
+        <div class="field"><label>原因 / 備註</label><textarea id="leave-reason" rows="2"></textarea></div>
+        <button class="btn-primary btn-block" onclick="submitLeave()">送出申請</button>
+      </div>
+      <div class="card"><h3>本店申請紀錄</h3><div id="leave-list"><div class="empty">載入中…</div></div></div>
+    </section>
+
+    <!-- INVENTORY PANEL -->
+    <section id="panel-inv" class="panel">
+      <div class="card">
+        <h3>庫存總覽 · <span id="inv-store-label"></span></h3>
+        <p style="font-size:12px;color:var(--ink-soft);margin-top:-6px;">點 + / − 直接調整數量，不用開視窗打字</p>
+        <div class="cat-tabs" id="cat-tabs"></div>
+        <div id="inv-list"><div class="empty">載入中…</div></div>
+        <button class="btn-ghost btn-block" style="margin-top:12px" onclick="openAddItemModal()">+ 新增料件品項</button>
+      </div>
+      <div class="card"><h3>異動紀錄</h3><div id="inv-log"><div class="empty">尚無紀錄</div></div></div>
+    </section>
+
+    <!-- STAFF MANAGEMENT PANEL -->
+    <section id="panel-staff" class="panel">
+      <div class="card">
+        <h3>員工列表 · <span id="staff-store-label"></span></h3>
+        <div id="staff-list"><div class="empty">載入中…</div></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- MODAL: announcement detail -->
+<div class="modal-bg" id="modal-ann">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modal-ann')">&times;</button>
+    <h3 id="ann-detail-title"></h3>
+    <div class="item-meta" id="ann-detail-meta"></div>
+    <div class="item-body" id="ann-detail-content"></div>
+    <div class="readers" id="ann-detail-readers"></div>
+  </div>
+</div>
+
+<!-- MODAL: add item -->
+<div class="modal-bg" id="modal-additem">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modal-additem')">&times;</button>
+    <h3>新增料件品項</h3>
+    <div class="field"><label>品項名稱</label><input id="new-item-name" placeholder="例如：iPhone 13 螢幕總成（原廠）"></div>
+    <div class="field"><label>分類</label>
+      <select id="new-item-cat"><option>螢幕總成</option><option>電池</option><option>尾插排線</option><option>主機板料件</option><option>其他</option></select>
+    </div>
+    <div class="rowline">
+      <div class="field"><label>初始庫存</label><input type="number" id="new-item-qty" value="0" min="0"></div>
+      <div class="field"><label>安全庫存</label><input type="number" id="new-item-min" value="2" min="0"></div>
+    </div>
+    <button class="btn-primary btn-block" onclick="confirmAddItem()">新增</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* =========================================================
+   Firebase 設定 — 請貼上你自己的 Firebase 專案設定
+   這次改用 Firebase Authentication（每人自己的帳號密碼），
+   記得到 Firebase 主控台開啟 Authentication > Sign-in method > Email/Password
+   ========================================================= */
+const firebaseConfig = {
+  apiKey: "AIzaSyDyg9BqlmlgHQRlxtgk0Bm0_kpmfmNRcWs",
+  authDomain: "warranty-system-4d18d.firebaseapp.com",
+  projectId: "warranty-system-4d18d",
+  storageBucket: "warranty-system-4d18d.firebasestorage.app",
+  messagingSenderId: "357168697896",
+  appId: "1:357168697896:web:79b3f2faa217d7ad449b1d"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+let CURRENT_USER = null; // {uid, name, store, role}
+let currentCat = "全部";
+let invItemsCache = [];
+let viewStore = null; // 目前檢視的分店（區經理可切換）
+
+function isManager(role){ return role === 'store_manager' || role === 'regional_manager'; }
+function roleLabel(role){
+  if(role === 'regional_manager') return '區經理';
+  if(role === 'store_manager') return '店長';
+  return '員工';
+}
+
+/* ---------- Auth tabs ---------- */
+function switchAuthTab(name){
+  document.getElementById('at-login').classList.toggle('active', name==='login');
+  document.getElementById('at-register').classList.toggle('active', name==='register');
+  document.getElementById('auth-login').classList.toggle('active', name==='login');
+  document.getElementById('auth-register').classList.toggle('active', name==='register');
+}
+
+/* ---------- 註冊 ---------- */
+function doRegister(){
+  const name = document.getElementById('reg-name').value.trim();
+  const store = document.getElementById('reg-store').value;
+  const role = document.getElementById('reg-role').value;
+  const email = document.getElementById('reg-email').value.trim();
+  const pass = document.getElementById('reg-pass').value;
+  const err = document.getElementById('reg-error');
+  err.textContent = '';
+  if(!name || !email || pass.length < 6){ err.textContent = "請完整填寫，密碼至少6碼"; return; }
+
+  auth.createUserWithEmailAndPassword(email, pass).then(cred=>{
+    return db.collection('employees').doc(cred.user.uid).set({
+      name, store, role, email, status: '在職', createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  }).catch(e=> err.textContent = "註冊失敗：" + e.message);
+}
+
+/* ---------- 登入 ---------- */
+function doLogin(){
+  const email = document.getElementById('login-email').value.trim();
+  const pass = document.getElementById('login-pass').value;
+  const err = document.getElementById('login-error');
+  err.textContent = '';
+  auth.signInWithEmailAndPassword(email, pass).catch(e=> err.textContent = "登入失敗：" + e.message);
+}
+
+function doLogout(){ auth.signOut(); }
+
+auth.onAuthStateChanged(user=>{
+  if(user){
+    db.collection('employees').doc(user.uid).get().then(doc=>{
+      if(!doc.exists){
+        document.getElementById('login-error').textContent = "找不到員工資料，請聯絡管理者";
+        auth.signOut();
+        return;
+      }
+      const d = doc.data();
+      if(d.status === '離職'){
+        document.getElementById('login-error').textContent = "此帳號已離職，無法登入";
+        auth.signOut();
+        return;
+      }
+      CURRENT_USER = { uid: user.uid, name: d.name, store: d.store, role: d.role };
+      enterApp();
+    });
+  } else {
+    CURRENT_USER = null;
+    document.getElementById('app').style.display = 'none';
+    document.getElementById('login-screen').style.display = 'block';
+  }
+});
+
+function enterApp(){
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  document.getElementById('who-label').textContent = `${CURRENT_USER.name} · ${CURRENT_USER.store} · ${roleLabel(CURRENT_USER.role)}`;
+  document.getElementById('ann-publish-card').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
+  document.getElementById('tab-staff').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
+
+  viewStore = CURRENT_USER.role === 'regional_manager' ? '全部' : CURRENT_USER.store;
+  document.getElementById('inv-store-label').textContent = viewStore;
+  document.getElementById('staff-store-label').textContent = viewStore;
+  renderStoreSelectors();
+
+  buildCatTabs();
+  loadAnnouncements();
+  loadLeaveRequests();
+  loadInventory();
+  if(isManager(CURRENT_USER.role)) loadStaffList();
+}
+
+function renderStoreSelectors(){
+  if(CURRENT_USER.role !== 'regional_manager') return;
+  const opts = ['全部','楠梓店','德賢店'];
+  const makeSelect = (onchange)=>{
+    const sel = document.createElement('select');
+    sel.style.marginBottom = '12px';
+    opts.forEach(o=>{
+      const op = document.createElement('option');
+      op.value = o; op.textContent = '檢視：' + o;
+      if(o === viewStore) op.selected = true;
+      sel.appendChild(op);
+    });
+    sel.onchange = ()=>{ viewStore = sel.value; onchange(); };
+    return sel;
+  };
+  const leaveCard = document.getElementById('leave-list').parentElement;
+  if(!document.getElementById('leave-store-sel')){
+    const sel = makeSelect(()=>{ loadLeaveRequests(); });
+    sel.id = 'leave-store-sel';
+    leaveCard.insertBefore(sel, document.getElementById('leave-list'));
+  }
+  const invCard = document.getElementById('inv-list').parentElement;
+  if(!document.getElementById('inv-store-sel')){
+    const sel = makeSelect(()=>{ document.getElementById('inv-store-label').textContent = viewStore; loadInventory(); });
+    sel.id = 'inv-store-sel';
+    invCard.insertBefore(sel, document.getElementById('cat-tabs'));
+  }
+  const staffCard = document.getElementById('staff-list').parentElement;
+  if(!document.getElementById('staff-store-sel') && staffCard){
+    const sel = makeSelect(()=>{ document.getElementById('staff-store-label').textContent = viewStore; loadStaffList(); });
+    sel.id = 'staff-store-sel';
+    staffCard.insertBefore(sel, document.getElementById('staff-list'));
+  }
+}
+
+/* ---------- Tabs ---------- */
+function switchTab(name){
+  ['ann','leave','inv','staff'].forEach(t=>{
+    document.getElementById('tab-'+t).classList.toggle('active', t===name);
+    document.getElementById('panel-'+t).classList.toggle('active', t===name);
+  });
+}
+
+/* ---------- 公告 ---------- */
+function publishAnnouncement(){
+  const title = document.getElementById('ann-title').value.trim();
+  const content = document.getElementById('ann-content').value.trim();
+  const target = document.getElementById('ann-target').value;
+  if(!title || !content){ showToast("請填寫標題與內容"); return; }
+
+  db.collection('announcements').add({
+    title, content, target,
+    by: CURRENT_USER.name,
+    reads: {},
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).then(()=>{
+    document.getElementById('ann-title').value = '';
+    document.getElementById('ann-content').value = '';
+    showToast("公告已發布");
+  }).catch(e=>showToast("發布失敗："+e.message));
+}
+
+let annCache = [];
+function loadAnnouncements(){
+  db.collection('announcements').orderBy('createdAt','desc').limit(30)
+    .onSnapshot(snap=>{
+      annCache = [];
+      snap.forEach(doc=>{
+        const d = doc.data();
+        if(d.target === '全部' || d.target === CURRENT_USER.store || CURRENT_USER.role === 'regional_manager'){
+          annCache.push({ id: doc.id, ...d });
+        }
+      });
+      renderAnnouncements();
+    }, err=>{
+      document.getElementById('ann-list').innerHTML = '<div class="empty">讀取失敗，請檢查 Firebase 設定</div>';
+    });
+}
+
+function renderAnnouncements(){
+  const list = document.getElementById('ann-list');
+  if(annCache.length === 0){ list.innerHTML = '<div class="empty">目前沒有公告</div>'; return; }
+  list.innerHTML = '';
+  annCache.forEach(d=>{
+    const isRead = !!(d.reads && d.reads[CURRENT_USER.uid]);
+    const date = d.createdAt ? d.createdAt.toDate().toLocaleDateString('zh-TW') : '';
+    const div = document.createElement('div');
+    div.className = 'item';
+    div.onclick = ()=> openAnnouncement(d.id);
+    div.innerHTML = `
+      <div class="item-head">
+        <strong>${escapeHtml(d.title)}</strong>
+        <span class="badge ${isRead ? 'read' : 'unread'}">${isRead ? '已讀' : '未讀'}</span>
+      </div>
+      <div class="item-meta">${date} · ${d.by} · ${d.target}</div>
+    `;
+    list.appendChild(div);
+  });
+}
+
+function openAnnouncement(id){
+  const d = annCache.find(a=>a.id===id);
+  if(!d) return;
+  document.getElementById('ann-detail-title').textContent = d.title;
+  document.getElementById('ann-detail-meta').textContent =
+    (d.createdAt ? d.createdAt.toDate().toLocaleString('zh-TW') : '') + ' · ' + d.by + ' · ' + d.target;
+  document.getElementById('ann-detail-content').textContent = d.content;
+
+  const readersEl = document.getElementById('ann-detail-readers');
+  if(isManager(CURRENT_USER.role)){
+    const names = d.reads ? Object.values(d.reads).map(r=>r.name) : [];
+    readersEl.textContent = names.length ? `已讀（${names.length}）：${names.join('、')}` : '尚無人已讀';
+  } else {
+    readersEl.textContent = '';
+  }
+
+  document.getElementById('modal-ann').classList.add('active');
+
+  // mark as read
+  if(!(d.reads && d.reads[CURRENT_USER.uid])){
+    db.collection('announcements').doc(id).update({
+      [`reads.${CURRENT_USER.uid}`]: { name: CURRENT_USER.name, at: firebase.firestore.FieldValue.serverTimestamp() }
+    });
+  }
+}
+
+/* ---------- 假表 / 請假 ---------- */
+function submitLeave(){
+  const type = document.getElementById('leave-type').value;
+  const start = document.getElementById('leave-start').value;
+  const end = document.getElementById('leave-end').value;
+  const reason = document.getElementById('leave-reason').value.trim();
+  if(!start || !end){ showToast("請選擇起訖日期"); return; }
+
+  db.collection('leave_requests').add({
+    name: CURRENT_USER.name, uid: CURRENT_USER.uid, store: CURRENT_USER.store,
+    type, start, end, reason, status: 'pending',
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).then(()=>{ showToast("已送出申請"); document.getElementById('leave-reason').value=''; })
+    .catch(e=>showToast("送出失敗："+e.message));
+}
+
+function loadLeaveRequests(){
+  let q = db.collection('leave_requests').orderBy('createdAt','desc').limit(50);
+  if(viewStore !== '全部') q = q.where('store','==',viewStore);
+  q.onSnapshot(snap=>{
+      const list = document.getElementById('leave-list');
+      if(snap.empty){ list.innerHTML = '<div class="empty">尚無申請紀錄</div>'; return; }
+      list.innerHTML = '';
+      snap.forEach(doc=>{
+        const d = doc.data();
+        const statusLabel = d.status==='approved'?'已核准':d.status==='rejected'?'已拒絕':'待審核';
+        const statusClass = d.status==='approved'?'approved':d.status==='rejected'?'rejected':'pending';
+        const div = document.createElement('div');
+        div.className = 'item';
+        div.innerHTML = `
+          <div class="item-head"><strong>${d.name} · ${d.store} · ${d.type}</strong><span class="badge ${statusClass}">${statusLabel}</span></div>
+          <div class="item-meta">${d.start} ~ ${d.end}${d.reason ? ' · '+escapeHtml(d.reason) : ''}</div>
+          ${isManager(CURRENT_USER.role) && d.status==='pending' ? `
+            <div class="item-actions">
+              <button class="btn-good btn-sm" onclick="event.stopPropagation();setLeaveStatus('${doc.id}','approved')">核准</button>
+              <button class="btn-bad btn-sm" onclick="event.stopPropagation();setLeaveStatus('${doc.id}','rejected')">拒絕</button>
+            </div>` : ''}
+        `;
+        list.appendChild(div);
+      });
+    }, ()=>{ document.getElementById('leave-list').innerHTML = '<div class="empty">讀取失敗，請檢查 Firebase 設定</div>'; });
+}
+function setLeaveStatus(id, status){ db.collection('leave_requests').doc(id).update({status}).then(()=>showToast("已更新狀態")); }
+
+/* ---------- 庫存管理（點擊式 +/-） ---------- */
+const CATS = ["全部","螢幕總成","電池","尾插排線","主機板料件","其他"];
+function buildCatTabs(){
+  const wrap = document.getElementById('cat-tabs'); wrap.innerHTML = '';
+  CATS.forEach(c=>{
+    const b = document.createElement('button');
+    b.textContent = c; b.className = c===currentCat ? 'active' : '';
+    b.onclick = ()=>{ currentCat = c; buildCatTabs(); renderInventory(); };
+    wrap.appendChild(b);
+  });
+}
+
+function loadInventory(){
+  let itemsQ = db.collection('inventory_items');
+  if(viewStore !== '全部') itemsQ = itemsQ.where('store','==',viewStore);
+  itemsQ.onSnapshot(snap=>{
+      invItemsCache = [];
+      snap.forEach(doc=> invItemsCache.push({id:doc.id, ...doc.data()}));
+      renderInventory();
+    }, ()=>{ document.getElementById('inv-list').innerHTML = '<div class="empty">讀取失敗，請檢查 Firebase 設定</div>'; });
+
+  let logQ = db.collection('inventory_transactions').orderBy('createdAt','desc').limit(20);
+  if(viewStore !== '全部') logQ = logQ.where('store','==',viewStore);
+  logQ.onSnapshot(snap=>{
+      const log = document.getElementById('inv-log');
+      if(snap.empty){ log.innerHTML = '<div class="empty">尚無紀錄</div>'; return; }
+      log.innerHTML = '';
+      snap.forEach(doc=>{
+        const d = doc.data();
+        const div = document.createElement('div');
+        div.className = 'item';
+        div.innerHTML = `
+          <div class="item-head"><strong>${d.type==='in'?'進貨':'領用/出貨'} · ${escapeHtml(d.itemName||'')}</strong><span class="mono">${d.type==='in'?'+':'-'}${d.qty}</span></div>
+          <div class="item-meta">${d.by||''}</div>`;
+        log.appendChild(div);
+      });
+    });
+}
+
+function renderInventory(){
+  const list = document.getElementById('inv-list');
+  const filtered = currentCat==='全部' ? invItemsCache : invItemsCache.filter(i=>i.category===currentCat);
+  if(filtered.length===0){ list.innerHTML = '<div class="empty">此分類尚無品項</div>'; return; }
+  list.innerHTML = '';
+  filtered.sort((a,b)=>(a.qty-a.minQty)-(b.qty-b.minQty));
+  filtered.forEach(item=>{
+    const low = item.qty <= (item.minQty ?? 0);
+    const row = document.createElement('div');
+    row.className = 'stock-row' + (low ? ' stock-low' : '');
+    row.innerHTML = `
+      <div>
+        <div class="stock-name">${escapeHtml(item.name)}</div>
+        <div class="stock-meta">${item.category} · 安全庫存 ${item.minQty ?? 0}${low ? ' · ⚠ 偏低' : ''}</div>
+      </div>
+      <div class="stepper">
+        <button class="minus" onclick="quickAdjust('${item.id}','${escapeAttr(item.name)}','${item.store}',-1)">−</button>
+        <span class="qty">${item.qty}</span>
+        <button onclick="quickAdjust('${item.id}','${escapeAttr(item.name)}','${item.store}',1)">+</button>
+      </div>
+    `;
+    list.appendChild(row);
+  });
+}
+
+function quickAdjust(id, name, store, delta){
+  const itemRef = db.collection('inventory_items').doc(id);
+  db.runTransaction(async (tx)=>{
+    const doc = await tx.get(itemRef);
+    if(!doc.exists) throw "品項不存在";
+    const cur = doc.data().qty || 0;
+    const next = Math.max(0, cur + delta);
+    tx.update(itemRef, { qty: next });
+  }).then(()=>{
+    db.collection('inventory_transactions').add({
+      itemId: id, itemName: name, store,
+      type: delta > 0 ? 'in' : 'out', qty: Math.abs(delta),
+      by: CURRENT_USER.name, createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  }).catch(e=>showToast("更新失敗："+e));
+}
+
+function openAddItemModal(){
+  document.getElementById('new-item-name').value='';
+  document.getElementById('new-item-qty').value=0;
+  document.getElementById('new-item-min').value=2;
+  document.getElementById('modal-additem').classList.add('active');
+}
+function confirmAddItem(){
+  const name = document.getElementById('new-item-name').value.trim();
+  const category = document.getElementById('new-item-cat').value;
+  const qty = parseInt(document.getElementById('new-item-qty').value,10) || 0;
+  const minQty = parseInt(document.getElementById('new-item-min').value,10) || 0;
+  if(!name){ showToast("請輸入品項名稱"); return; }
+  const targetStore = viewStore !== '全部' ? viewStore : CURRENT_USER.store;
+  db.collection('inventory_items').add({
+    name, category, qty, minQty, store: targetStore,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).then(()=>{ closeModal('modal-additem'); showToast(`已新增品項（${targetStore}）`); })
+    .catch(e=>showToast("新增失敗："+e.message));
+}
+
+/* ---------- 員工管理 ---------- */
+const ROLE_OPTIONS = [
+  { v:'staff', l:'一般員工' },
+  { v:'store_manager', l:'店長' },
+  { v:'regional_manager', l:'區經理' }
+];
+
+function loadStaffList(){
+  let q = db.collection('employees');
+  if(viewStore !== '全部') q = q.where('store','==',viewStore);
+  q.onSnapshot(snap=>{
+      const list = document.getElementById('staff-list');
+      if(snap.empty){ list.innerHTML = '<div class="empty">尚無員工資料</div>'; return; }
+      list.innerHTML = '';
+      snap.forEach(doc=>{
+        const d = doc.data();
+        const status = d.status || '在職';
+        const roleSelHtml = ROLE_OPTIONS.map(r=>`<option value="${r.v}" ${r.v===d.role?'selected':''}>${r.l}</option>`).join('');
+        const div = document.createElement('div');
+        div.className = 'item';
+        div.innerHTML = `
+          <div class="item-head">
+            <strong>${escapeHtml(d.name)}</strong>
+            <span class="badge ${status==='在職' ? 'approved' : 'rejected'}">${status}</span>
+          </div>
+          <div class="item-meta">${d.store} · ${escapeHtml(d.email||'')}</div>
+          <div class="item-actions" style="align-items:center;">
+            <select style="flex:1;" onchange="updateStaffRole('${doc.id}', this.value)">${roleSelHtml}</select>
+            ${status==='在職'
+              ? `<button class="btn-bad btn-sm" onclick="updateStaffStatus('${doc.id}','離職')">設為離職</button>`
+              : `<button class="btn-good btn-sm" onclick="updateStaffStatus('${doc.id}','在職')">恢復在職</button>`}
+          </div>
+        `;
+        list.appendChild(div);
+      });
+    }, ()=>{ document.getElementById('staff-list').innerHTML = '<div class="empty">讀取失敗，請檢查 Firebase 設定</div>'; });
+}
+
+function updateStaffRole(uid, role){
+  db.collection('employees').doc(uid).update({ role }).then(()=>showToast("已更新身分"));
+}
+function updateStaffStatus(uid, status){
+  db.collection('employees').doc(uid).update({ status }).then(()=>showToast(status==='離職' ? "已設為離職，該帳號下次登入會被擋下" : "已恢復在職"));
+}
+
+/* ---------- 共用工具 ---------- */
+function closeModal(id){ document.getElementById(id).classList.remove('active'); }
+function showToast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2200); }
+function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"\\'"); }
+</script>
+</body>
+</html>
