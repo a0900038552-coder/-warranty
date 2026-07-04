@@ -186,6 +186,7 @@
       <button id="tab-leave" onclick="switchTab('leave')">🗓 假表/請假</button>
       <button id="tab-inv" onclick="switchTab('inv')">📦 庫存管理</button>
       <button id="tab-staff" onclick="switchTab('staff')" style="display:none;">👤 員工管理</button>
+      <button id="tab-payroll" onclick="switchTab('payroll')" style="display:none;">💰 薪資管理</button>
     </aside>
 
     <main>
@@ -219,7 +220,7 @@
           <select id="leave-type"><option>事假</option><option>病假</option><option>特休</option><option>排休調整</option><option>其他</option></select>
         </div>
         <div class="rowline">
-          <div class="field"><label>起始日期</label><input type="date" id="leave-start"></div>
+          <div class="field"><label>起始日期</label><input type="date" id="leave-start" onchange="document.getElementById('leave-end').min=this.value"></div>
           <div class="field"><label>結束日期</label><input type="date" id="leave-end"></div>
         </div>
         <div class="field"><label>原因 / 備註</label><textarea id="leave-reason" rows="2"></textarea></div>
@@ -265,6 +266,52 @@
       <div class="card">
         <h3>員工列表 · <span id="staff-store-label"></span></h3>
         <div id="staff-list"><div class="empty">載入中…</div></div>
+      </div>
+    </section>
+
+    <!-- PAYROLL PANEL -->
+    <section id="panel-payroll" class="panel">
+      <div class="card">
+        <h3>颱風假管理</h3>
+        <p style="font-size:12px;color:var(--ink-soft);margin-top:-6px;">新增日期後，當月薪資試算會自動扣除該日底薪（若員工當天有核准的特休則不扣）</p>
+        <div class="rowline">
+          <div class="field"><label>日期</label><input type="date" id="typhoon-date"></div>
+          <div class="field"><label>備註</label><input id="typhoon-note" placeholder="例：凱米颱風"></div>
+        </div>
+        <button class="btn-ghost btn-block" onclick="addTyphoonDay()">+ 新增颱風假日</button>
+        <div id="typhoon-list" style="margin-top:10px;"><div class="empty">尚無颱風假日</div></div>
+      </div>
+
+      <div class="card">
+        <h3>月薪試算</h3>
+        <div class="field"><label>選擇員工</label><select id="pr-employee"></select></div>
+        <div class="field"><label>結算月份</label><input type="month" id="pr-month"></div>
+        <button class="btn-ghost btn-block" onclick="calcPayroll()">試算</button>
+
+        <div id="pr-result" style="display:none;margin-top:14px;">
+          <div class="item"><div class="item-head"><strong>底薪</strong><span class="mono" id="pr-base"></span></div></div>
+          <div class="item"><div class="item-head"><strong>颱風扣款</strong><span class="mono" id="pr-typhoon"></span></div><div class="item-meta" id="pr-typhoon-days"></div></div>
+
+          <div class="item">
+            <div class="item-head"><strong>績效評分</strong></div>
+            <div id="pr-score-fields"></div>
+            <div class="item-meta" style="margin-top:6px;">加權總分：<span id="pr-total-score" class="mono">0</span> 分</div>
+          </div>
+
+          <div class="field"><label>本月獎金基準（元）</label><input type="number" id="pr-bonus-base" value="0" onchange="calcPayroll()"></div>
+          <div class="item"><div class="item-head"><strong>績效獎金（依總分比例發放）</strong><span class="mono" id="pr-bonus"></span></div><div class="item-meta" id="pr-bonus-tier"></div></div>
+
+          <div class="field"><label>營收貢獻／其他加項（元，選填）</label><input type="number" id="pr-extra" value="0" onchange="calcPayroll()"></div>
+          <div class="field"><label>其他調整（元，可為負數，選填）</label><input type="number" id="pr-adjust" value="0" onchange="calcPayroll()"></div>
+
+          <div class="item" style="background:#fdf6ef;margin:0 -16px;padding:12px 16px;">
+            <div class="item-head"><strong>建議薪資試算</strong><span class="mono" id="pr-suggested" style="font-size:18px;"></span></div>
+          </div>
+
+          <button class="btn-primary btn-block" style="margin-top:10px;" onclick="savePayrollRecord()">儲存此次試算</button>
+          <button class="btn-ghost btn-block" style="margin-top:8px;" onclick="printPayslip()">列印／另存 PDF 薪資單</button>
+          <button class="btn-good btn-block" style="margin-top:8px;" onclick="emailPayslip()">寄送給員工（開啟郵件）</button>
+        </div>
       </div>
     </section>
     </main>
@@ -420,6 +467,7 @@ function enterApp(){
   document.getElementById('who-label').textContent = `${CURRENT_USER.name} · ${CURRENT_USER.store} · ${roleLabel(CURRENT_USER.role)}`;
   document.getElementById('ann-publish-card').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
   document.getElementById('tab-staff').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
+  document.getElementById('tab-payroll').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
   document.getElementById('resign-card').style.display = isManager(CURRENT_USER.role) ? 'none' : 'block';
   document.getElementById('resign-requests-card').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
 
@@ -432,7 +480,7 @@ function enterApp(){
   loadAnnouncements();
   loadLeaveRequests();
   loadInventory();
-  if(isManager(CURRENT_USER.role)){ loadStaffList(); loadResignationRequests(); loadPendingAccounts(); }
+  if(isManager(CURRENT_USER.role)){ loadStaffList(); loadResignationRequests(); loadPendingAccounts(); loadPayrollEmployeeOptions(); loadTyphoonDays(); }
 }
 
 function renderStoreSelectors(){
@@ -472,7 +520,7 @@ function renderStoreSelectors(){
 
 /* ---------- Tabs ---------- */
 function switchTab(name){
-  ['ann','leave','inv','staff'].forEach(t=>{
+  ['ann','leave','inv','staff','payroll'].forEach(t=>{
     document.getElementById('tab-'+t).classList.toggle('active', t===name);
     document.getElementById('panel-'+t).classList.toggle('active', t===name);
   });
@@ -597,6 +645,7 @@ async function submitLeave(){
   const reason = document.getElementById('leave-reason').value.trim();
   const photoFile = document.getElementById('leave-photo').files[0];
   if(!start || !end){ showToast("請選擇起訖日期"); return; }
+  if(end < start){ showToast("結束日期不能早於起始日期"); return; }
 
   let photoData = null;
   if(photoFile){
@@ -854,6 +903,209 @@ function rejectAccount(uid){
   db.collection('employees').doc(uid).update({ status: '拒絕' }).then(()=>showToast("已拒絕此帳號申請"));
 }
 
+/* ---------- 薪資管理 ---------- */
+let employeesCache = [];
+const KPI_ITEMS = [
+  { key:'lossControl', label:'損料控制', weight:0.20 },
+  { key:'complaintHandling', label:'客訴處理/預防', weight:0.20 },
+  { key:'generalReview', label:'綜合評比/考核', weight:0.10 },
+  { key:'targetAchievement', label:'業務目標達成率', weight:0.30 },
+  { key:'attendance', label:'出勤紀錄', weight:0.05 },
+  { key:'efficiency', label:'工作效率', weight:0.05 },
+  { key:'teamwork', label:'團隊合作', weight:0.05 },
+  { key:'policyCompliance', label:'行政配合/政策執行', weight:0.05 }
+];
+
+function loadPayrollEmployeeOptions(){
+  let q = db.collection('employees');
+  if(viewStore !== '全部') q = q.where('store','==',viewStore);
+  q.onSnapshot(snap=>{
+    employeesCache = [];
+    snap.forEach(doc=> employeesCache.push({ id: doc.id, ...doc.data() }));
+    const sel = document.getElementById('pr-employee');
+    sel.innerHTML = employeesCache.map(e=>`<option value="${e.id}">${escapeHtml(e.name)}（${e.store}）</option>`).join('');
+  });
+  const monthInput = document.getElementById('pr-month');
+  if(!monthInput.value){
+    const now = new Date();
+    monthInput.value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  }
+}
+
+/* 颱風假日管理 */
+let typhoonCache = [];
+function addTyphoonDay(){
+  const date = document.getElementById('typhoon-date').value;
+  const note = document.getElementById('typhoon-note').value.trim();
+  if(!date){ showToast("請選擇日期"); return; }
+  db.collection('typhoon_days').add({
+    date, note, store: viewStore !== '全部' ? viewStore : CURRENT_USER.store,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).then(()=>{ showToast("已新增颱風假日"); document.getElementById('typhoon-note').value=''; });
+}
+function loadTyphoonDays(){
+  let q = db.collection('typhoon_days').orderBy('date','desc');
+  if(viewStore !== '全部') q = q.where('store','==',viewStore);
+  q.onSnapshot(snap=>{
+    typhoonCache = [];
+    const list = document.getElementById('typhoon-list');
+    if(snap.empty){ list.innerHTML = '<div class="empty">尚無颱風假日</div>'; return; }
+    list.innerHTML = '';
+    snap.forEach(doc=>{
+      const d = doc.data();
+      typhoonCache.push({ id: doc.id, ...d });
+      const div = document.createElement('div');
+      div.className = 'item';
+      div.innerHTML = `<div class="item-head"><strong>${d.date} · ${d.store}</strong>
+        <button class="btn-ghost btn-sm" onclick="deleteTyphoonDay('${doc.id}')">刪除</button></div>
+        <div class="item-meta">${escapeHtml(d.note||'')}</div>`;
+      list.appendChild(div);
+    });
+  }, ()=>{ document.getElementById('typhoon-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>'; });
+}
+function deleteTyphoonDay(id){ db.collection('typhoon_days').doc(id).delete().then(()=>showToast("已刪除")); }
+
+/* 月薪試算 */
+let prBaseSalary = 0, prTyphoonDeduction = 0, prCurrentEmployee = null, prCurrentMonth = '';
+
+async function calcPayroll(){
+  const uid = document.getElementById('pr-employee').value;
+  const month = document.getElementById('pr-month').value; // YYYY-MM
+  if(!uid || !month){ showToast("請選擇員工與月份"); return; }
+  const emp = employeesCache.find(e=>e.id===uid);
+  if(!emp){ showToast("找不到員工資料"); return; }
+  prCurrentEmployee = emp; prCurrentMonth = month;
+  prBaseSalary = emp.baseSalary || 0;
+
+  const [y,m] = month.split('-').map(Number);
+  const monthStart = `${month}-01`;
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const monthEnd = `${month}-${String(daysInMonth).padStart(2,'0')}`;
+
+  // 抓該分店在此月份的颱風假日
+  const typhoonInMonth = typhoonCache.filter(t => t.store === emp.store && t.date >= monthStart && t.date <= monthEnd);
+
+  // 抓該員工已核准的請假，用來排除颱風日扣款
+  const leaveSnap = await db.collection('leave_requests').where('uid','==',uid).where('status','==','approved').get();
+  const approvedLeaves = leaveSnap.docs.map(d=>d.data());
+
+  const deductedDays = typhoonInMonth.filter(t => !approvedLeaves.some(l => l.start <= t.date && t.date <= l.end));
+  const dayRate = prBaseSalary / 30;
+  prTyphoonDeduction = Math.round(deductedDays.length * dayRate);
+
+  document.getElementById('pr-base').textContent = prBaseSalary.toLocaleString();
+  document.getElementById('pr-typhoon').textContent = '-' + prTyphoonDeduction.toLocaleString();
+  document.getElementById('pr-typhoon-days').textContent = deductedDays.length
+    ? `扣款日期：${deductedDays.map(d=>d.date).join('、')}（每日 ${Math.round(dayRate)} 元）`
+    : '本月無颱風扣款日';
+
+  // 績效評分欄位
+  const scoreFields = document.getElementById('pr-score-fields');
+  scoreFields.innerHTML = KPI_ITEMS.map(k=>`
+    <div class="rowline" style="align-items:center;margin-top:6px;">
+      <div style="flex:2;font-size:12px;">${k.label}（${Math.round(k.weight*100)}%）</div>
+      <input type="number" min="0" max="100" value="0" style="flex:1;" id="score-${k.key}" oninput="updatePayrollTotals()">
+    </div>
+  `).join('');
+
+  document.getElementById('pr-result').style.display = 'block';
+  updatePayrollTotals();
+}
+
+function updatePayrollTotals(){
+  let totalScore = 0;
+  KPI_ITEMS.forEach(k=>{
+    const val = Number(document.getElementById('score-'+k.key).value) || 0;
+    totalScore += val * k.weight;
+  });
+  totalScore = Math.round(totalScore * 10) / 10;
+  document.getElementById('pr-total-score').textContent = totalScore;
+
+  const bonusBase = Number(document.getElementById('pr-bonus-base').value) || 0;
+  let tierPercent = 0, tierLabel = '';
+  if(totalScore >= 80){ tierPercent = 1; tierLabel = '達 80 分以上，獎金 100% 發放'; }
+  else if(totalScore >= 60){ tierPercent = 0.5; tierLabel = '60~79 分，獎金 50% 發放'; }
+  else { tierPercent = 0; tierLabel = '未滿 60 分，不發放分紅'; }
+  const bonusAmount = Math.round(bonusBase * tierPercent);
+  document.getElementById('pr-bonus').textContent = '+' + bonusAmount.toLocaleString();
+  document.getElementById('pr-bonus-tier').textContent = tierLabel;
+
+  const extra = Number(document.getElementById('pr-extra').value) || 0;
+  const adjust = Number(document.getElementById('pr-adjust').value) || 0;
+  const suggested = prBaseSalary - prTyphoonDeduction + bonusAmount + extra + adjust;
+  document.getElementById('pr-suggested').textContent = suggested.toLocaleString() + ' 元';
+}
+
+function collectPayrollData(){
+  const scores = {};
+  KPI_ITEMS.forEach(k=> scores[k.key] = Number(document.getElementById('score-'+k.key).value) || 0);
+  return {
+    uid: prCurrentEmployee.id, name: prCurrentEmployee.name, store: prCurrentEmployee.store,
+    month: prCurrentMonth, baseSalary: prBaseSalary, typhoonDeduction: prTyphoonDeduction,
+    scores, totalScore: Number(document.getElementById('pr-total-score').textContent),
+    bonusBase: Number(document.getElementById('pr-bonus-base').value) || 0,
+    bonusAmount: Number(document.getElementById('pr-bonus').textContent.replace(/[^0-9-]/g,'')) || 0,
+    extra: Number(document.getElementById('pr-extra').value) || 0,
+    adjust: Number(document.getElementById('pr-adjust').value) || 0,
+    suggestedTotal: Number(document.getElementById('pr-suggested').textContent.replace(/[^0-9-]/g,'')) || 0
+  };
+}
+
+function savePayrollRecord(){
+  const data = collectPayrollData();
+  db.collection('salary_records').add({ ...data, by: CURRENT_USER.name, createdAt: firebase.firestore.FieldValue.serverTimestamp() })
+    .then(()=>showToast("已儲存這筆薪資試算紀錄"));
+}
+
+function printPayslip(){
+  const data = collectPayrollData();
+  const w = window.open('', '_blank');
+  w.document.write(`
+    <html><head><title>薪資單 - ${data.name} - ${data.month}</title>
+    <style>
+      body{font-family:'Noto Sans TC',sans-serif;padding:30px;color:#1c1f26;}
+      h1{font-size:20px;} table{width:100%;border-collapse:collapse;margin-top:16px;}
+      td,th{border:1px solid #ccc;padding:8px 10px;font-size:13px;text-align:left;}
+      .total{font-weight:bold;background:#fdf6ef;}
+    </style></head><body>
+    <h1>復原者 · 薪資單</h1>
+    <p>姓名：${data.name}　分店：${data.store}　月份：${data.month}</p>
+    <table>
+      <tr><th>項目</th><th>金額</th></tr>
+      <tr><td>底薪</td><td>${data.baseSalary.toLocaleString()}</td></tr>
+      <tr><td>颱風扣款</td><td>-${data.typhoonDeduction.toLocaleString()}</td></tr>
+      <tr><td>績效總分</td><td>${data.totalScore} 分</td></tr>
+      <tr><td>績效獎金</td><td>+${data.bonusAmount.toLocaleString()}</td></tr>
+      <tr><td>其他加項</td><td>+${data.extra.toLocaleString()}</td></tr>
+      <tr><td>其他調整</td><td>${data.adjust.toLocaleString()}</td></tr>
+      <tr class="total"><td>建議薪資合計</td><td>${data.suggestedTotal.toLocaleString()}</td></tr>
+    </table>
+    <p style="margin-top:24px;font-size:12px;color:#888;">此單為系統試算建議金額，實際發放請以公司規定為準。</p>
+    </body></html>
+  `);
+  w.document.close();
+  w.print();
+}
+
+function emailPayslip(){
+  const data = collectPayrollData();
+  const emp = employeesCache.find(e=>e.id===data.uid);
+  const subject = encodeURIComponent(`薪資單 - ${data.name} - ${data.month}`);
+  const body = encodeURIComponent(
+`${data.name} 您好，附上 ${data.month} 薪資明細（PDF 請另外附加此信）：
+
+底薪：${data.baseSalary.toLocaleString()}
+颱風扣款：-${data.typhoonDeduction.toLocaleString()}
+績效總分：${data.totalScore} 分
+績效獎金：+${data.bonusAmount.toLocaleString()}
+其他加項：+${data.extra.toLocaleString()}
+其他調整：${data.adjust.toLocaleString()}
+建議薪資合計：${data.suggestedTotal.toLocaleString()} 元
+
+※ 請記得手動附加剛才另存的 PDF 薪資單再送出`);
+  window.location.href = `mailto:${emp?.email||''}?subject=${subject}&body=${body}`;
+}
+
 /* ---------- 員工管理 ---------- */
 const ROLE_OPTIONS = [
   { v:'staff', l:'一般員工' },
@@ -872,6 +1124,8 @@ function loadStaffList(){
         const d = doc.data();
         const status = d.status || '在職';
         const roleSelHtml = ROLE_OPTIONS.map(r=>`<option value="${r.v}" ${r.v===d.role?'selected':''}>${r.l}</option>`).join('');
+        const leaveMode = d.leaveMode || 'auto';
+        const autoLeave = d.hireDate ? calcAnnualLeaveDays(d.hireDate) : 0;
         const div = document.createElement('div');
         div.className = 'item';
         div.innerHTML = `
@@ -886,10 +1140,41 @@ function loadStaffList(){
               ? `<button class="btn-bad btn-sm" onclick="updateStaffStatus('${doc.id}','離職')">設為離職</button>`
               : `<button class="btn-good btn-sm" onclick="updateStaffStatus('${doc.id}','在職')">恢復在職</button>`}
           </div>
+          <div class="rowline" style="margin-top:8px;">
+            <div class="field" style="margin-bottom:6px;"><label>到職日</label><input type="date" value="${d.hireDate||''}" onchange="updateStaffField('${doc.id}','hireDate',this.value)"></div>
+            <div class="field" style="margin-bottom:6px;"><label>底薪（元）</label><input type="number" value="${d.baseSalary||0}" onchange="updateStaffField('${doc.id}','baseSalary',Number(this.value))"></div>
+          </div>
+          <div class="rowline">
+            <div class="field" style="margin-bottom:0;"><label>特休方式</label>
+              <select onchange="updateStaffField('${doc.id}','leaveMode',this.value)">
+                <option value="auto" ${leaveMode==='auto'?'selected':''}>依年資自動（${autoLeave}天）</option>
+                <option value="custom" ${leaveMode==='custom'?'selected':''}>約定天數</option>
+              </select>
+            </div>
+            <div class="field" style="margin-bottom:0;"><label>約定天數</label><input type="number" value="${d.customAnnualLeaveDays||0}" onchange="updateStaffField('${doc.id}','customAnnualLeaveDays',Number(this.value))"></div>
+          </div>
         `;
         list.appendChild(div);
       });
     }, ()=>{ document.getElementById('staff-list').innerHTML = '<div class="empty">讀取失敗，請檢查 Firebase 設定</div>'; });
+}
+
+function updateStaffField(uid, field, value){
+  db.collection('employees').doc(uid).update({ [field]: value }).then(()=>showToast("已更新"));
+}
+
+/* 依台灣勞基法年資級距計算特休天數 */
+function calcAnnualLeaveDays(hireDateStr){
+  const hire = new Date(hireDateStr);
+  const now = new Date();
+  const years = (now - hire) / (1000*60*60*24*365.25);
+  if(years < 0.5) return 0;
+  if(years < 1) return 3;
+  if(years < 2) return 7;
+  if(years < 3) return 10;
+  if(years < 5) return 14;
+  if(years < 10) return 15;
+  return Math.min(30, 15 + Math.floor(years - 10) + 1);
 }
 
 function updateStaffRole(uid, role){
@@ -907,4 +1192,3 @@ function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"\\'"); }
 </script>
 </body>
 </html>
-123
