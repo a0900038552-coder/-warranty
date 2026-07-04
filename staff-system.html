@@ -1,3 +1,18 @@
+未選取任何項目
+
+移至內容
+透過螢幕閱讀器使用 Gmail
+第 1 個，共 3,051 個
+staff-system
+收件匣
+
+Xaing Wang
+附件
+下午4:44 (0 分鐘前)
+寄給 我
+
+ 1 個附件
+  •  已通過 Gmail 掃描檢查
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
@@ -91,6 +106,37 @@
   .who-bar{font-size:12px;color:var(--ink-soft);display:flex;justify-content:space-between;align-items:center;padding:10px 16px;font-family:'IBM Plex Mono',monospace;}
   .who-bar button{background:none;color:var(--copper-dark);font-size:12px;padding:2px;font-weight:700;}
   .readers{font-size:11px;color:var(--ink-soft);margin-top:8px;font-family:'IBM Plex Mono',monospace;}
+  .tab-dot{position:relative;}
+  .tab-dot::after{content:'';position:absolute;top:8px;right:16px;width:8px;height:8px;border-radius:50%;background:var(--bad);}
+  .leave-photo-thumb{width:56px;height:56px;object-fit:cover;border-radius:8px;margin-top:8px;cursor:pointer;border:1px solid var(--line);}
+  .item.unseen{background:#fff8ee;margin:0 -16px;padding:12px 16px;border-radius:8px;}
+
+  /* ---- layout: sidebar nav ---- */
+  .layout{display:flex;max-width:1000px;margin:0 auto;}
+  aside.sidebar{
+    width:190px;flex-shrink:0;background:#fff;border-right:1px solid var(--line);
+    min-height:calc(100vh - 76px);position:sticky;top:0;
+  }
+  aside.sidebar button{
+    display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;
+    border-radius:0;padding:14px 18px;color:var(--ink-soft);font-weight:700;font-size:14px;
+    border-left:3px solid transparent;position:relative;
+  }
+  aside.sidebar button.active{color:var(--copper-dark);border-left:3px solid var(--copper);background:#fdf6ef;}
+  aside.sidebar .tab-dot::after{top:14px;right:14px;}
+  .menu-toggle{display:none;background:none;color:#fff;font-size:20px;padding:2px 6px;}
+  main{flex:1;min-width:0;}
+  @media (max-width:760px){
+    .layout{position:relative;}
+    aside.sidebar{
+      position:fixed;top:0;left:0;height:100vh;z-index:15;
+      transform:translateX(-100%);transition:transform .2s;box-shadow:2px 0 12px rgba(0,0,0,.15);
+    }
+    aside.sidebar.open{transform:translateX(0);}
+    .menu-toggle{display:inline-block;}
+    .sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:14;}
+    .sidebar-overlay.open{display:block;}
+  }
 </style>
 </head>
 <body>
@@ -137,17 +183,20 @@
 <!-- APP -->
 <div id="app">
   <div class="who-bar">
-    <span id="who-label"></span>
+    <span><button class="menu-toggle" onclick="toggleSidebar()">☰</button> <span id="who-label"></span></span>
     <button onclick="doLogout()">登出</button>
   </div>
-  <nav class="tabs">
-    <button id="tab-ann" class="active" onclick="switchTab('ann')">公告</button>
-    <button id="tab-leave" onclick="switchTab('leave')">假表/請假</button>
-    <button id="tab-inv" onclick="switchTab('inv')">庫存管理</button>
-    <button id="tab-staff" onclick="switchTab('staff')" style="display:none;">員工管理</button>
-  </nav>
 
-  <main>
+  <div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleSidebar()"></div>
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <button id="tab-ann" class="active" onclick="switchTab('ann')">📢 公告</button>
+      <button id="tab-leave" onclick="switchTab('leave')">🗓 假表/請假</button>
+      <button id="tab-inv" onclick="switchTab('inv')">📦 庫存管理</button>
+      <button id="tab-staff" onclick="switchTab('staff')" style="display:none;">👤 員工管理</button>
+    </aside>
+
+    <main>
     <!-- ANNOUNCEMENT PANEL -->
     <section id="panel-ann" class="panel active">
       <div class="card" id="ann-publish-card" style="display:none;">
@@ -182,7 +231,15 @@
           <div class="field"><label>結束日期</label><input type="date" id="leave-end"></div>
         </div>
         <div class="field"><label>原因 / 備註</label><textarea id="leave-reason" rows="2"></textarea></div>
+        <div class="field">
+          <label>上傳照片（例如病假證明，選填）</label>
+          <input type="file" id="leave-photo" accept="image/*" capture="environment">
+        </div>
         <button class="btn-primary btn-block" onclick="submitLeave()">送出申請</button>
+      </div>
+      <div class="card" id="resign-card"><h3>離職申請</h3>
+        <p style="font-size:12px;color:var(--ink-soft);margin-top:-6px;">送出後由店長/區經理審核，核准後帳號才會真正改成離職狀態</p>
+        <button class="btn-bad btn-block" onclick="requestResignation()">提出離職申請</button>
       </div>
       <div class="card"><h3>本店申請紀錄</h3><div id="leave-list"><div class="empty">載入中…</div></div></div>
     </section>
@@ -201,12 +258,17 @@
 
     <!-- STAFF MANAGEMENT PANEL -->
     <section id="panel-staff" class="panel">
+      <div class="card" id="resign-requests-card" style="display:none;">
+        <h3>待審核離職申請</h3>
+        <div id="resign-list"><div class="empty">尚無申請</div></div>
+      </div>
       <div class="card">
         <h3>員工列表 · <span id="staff-store-label"></span></h3>
         <div id="staff-list"><div class="empty">載入中…</div></div>
       </div>
     </section>
-  </main>
+    </main>
+  </div>
 </div>
 
 <!-- MODAL: announcement detail -->
@@ -217,6 +279,14 @@
     <div class="item-meta" id="ann-detail-meta"></div>
     <div class="item-body" id="ann-detail-content"></div>
     <div class="readers" id="ann-detail-readers"></div>
+  </div>
+</div>
+
+<!-- MODAL: leave photo -->
+<div class="modal-bg" id="modal-photo">
+  <div class="modal" style="padding:10px;">
+    <button class="modal-close" onclick="closeModal('modal-photo')" style="margin:6px 10px;">&times;</button>
+    <img id="photo-full" style="width:100%;border-radius:8px;">
   </div>
 </div>
 
@@ -336,6 +406,8 @@ function enterApp(){
   document.getElementById('who-label').textContent = `${CURRENT_USER.name} · ${CURRENT_USER.store} · ${roleLabel(CURRENT_USER.role)}`;
   document.getElementById('ann-publish-card').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
   document.getElementById('tab-staff').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
+  document.getElementById('resign-card').style.display = isManager(CURRENT_USER.role) ? 'none' : 'block';
+  document.getElementById('resign-requests-card').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
 
   viewStore = CURRENT_USER.role === 'regional_manager' ? '全部' : CURRENT_USER.store;
   document.getElementById('inv-store-label').textContent = viewStore;
@@ -346,7 +418,7 @@ function enterApp(){
   loadAnnouncements();
   loadLeaveRequests();
   loadInventory();
-  if(isManager(CURRENT_USER.role)) loadStaffList();
+  if(isManager(CURRENT_USER.role)){ loadStaffList(); loadResignationRequests(); }
 }
 
 function renderStoreSelectors(){
@@ -390,6 +462,12 @@ function switchTab(name){
     document.getElementById('tab-'+t).classList.toggle('active', t===name);
     document.getElementById('panel-'+t).classList.toggle('active', t===name);
   });
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').classList.remove('open');
+}
+function toggleSidebar(){
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sidebar-overlay').classList.toggle('open');
 }
 
 /* ---------- 公告 ---------- */
@@ -476,19 +554,52 @@ function openAnnouncement(id){
 }
 
 /* ---------- 假表 / 請假 ---------- */
-function submitLeave(){
+function resizeImageToBase64(file, maxW){
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onload = e=>{
+      const img = new Image();
+      img.onload = ()=>{
+        const scale = Math.min(1, maxW / img.width);
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.6));
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function submitLeave(){
   const type = document.getElementById('leave-type').value;
   const start = document.getElementById('leave-start').value;
   const end = document.getElementById('leave-end').value;
   const reason = document.getElementById('leave-reason').value.trim();
+  const photoFile = document.getElementById('leave-photo').files[0];
   if(!start || !end){ showToast("請選擇起訖日期"); return; }
+
+  let photoData = null;
+  if(photoFile){
+    try{ photoData = await resizeImageToBase64(photoFile, 800); }
+    catch(e){ showToast("照片處理失敗，將略過附件"); }
+  }
 
   db.collection('leave_requests').add({
     name: CURRENT_USER.name, uid: CURRENT_USER.uid, store: CURRENT_USER.store,
-    type, start, end, reason, status: 'pending',
+    type, start, end, reason, status: 'pending', seenByRequester: true,
+    photoData: photoData || null,
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
-  }).then(()=>{ showToast("已送出申請"); document.getElementById('leave-reason').value=''; })
-    .catch(e=>showToast("送出失敗："+e.message));
+  }).then(()=>{
+    showToast("已送出申請");
+    document.getElementById('leave-reason').value='';
+    document.getElementById('leave-photo').value='';
+  }).catch(e=>showToast("送出失敗："+e.message));
 }
 
 function loadLeaveRequests(){
@@ -498,26 +609,33 @@ function loadLeaveRequests(){
       const list = document.getElementById('leave-list');
       if(snap.empty){ list.innerHTML = '<div class="empty">尚無申請紀錄</div>'; return; }
       list.innerHTML = '';
+      let hasUnseen = false;
       snap.forEach(doc=>{
         const d = doc.data();
         const statusLabel = d.status==='approved'?'已核准':d.status==='rejected'?'已拒絕':'待審核';
         const statusClass = d.status==='approved'?'approved':d.status==='rejected'?'rejected':'pending';
+        const isMine = d.uid === CURRENT_USER.uid;
+        const unseen = isMine && d.status !== 'pending' && d.seenByRequester === false;
+        if(unseen) hasUnseen = true;
         const div = document.createElement('div');
-        div.className = 'item';
+        div.className = 'item' + (unseen ? ' unseen' : '');
         div.innerHTML = `
           <div class="item-head"><strong>${d.name} · ${d.store} · ${d.type}</strong><span class="badge ${statusClass}">${statusLabel}</span></div>
           <div class="item-meta">${d.start} ~ ${d.end}${d.reason ? ' · '+escapeHtml(d.reason) : ''}</div>
+          ${d.photoData ? `<img src="${d.photoData}" class="leave-photo-thumb" onclick="event.stopPropagation();openPhoto('${d.photoData}')">` : ''}
           ${isManager(CURRENT_USER.role) && d.status==='pending' ? `
             <div class="item-actions">
               <button class="btn-good btn-sm" onclick="event.stopPropagation();setLeaveStatus('${doc.id}','approved')">核准</button>
               <button class="btn-bad btn-sm" onclick="event.stopPropagation();setLeaveStatus('${doc.id}','rejected')">拒絕</button>
             </div>` : ''}
         `;
+        if(unseen) div.onclick = ()=> db.collection('leave_requests').doc(doc.id).update({seenByRequester:true});
         list.appendChild(div);
       });
+      document.getElementById('tab-leave').classList.toggle('tab-dot', hasUnseen);
     }, ()=>{ document.getElementById('leave-list').innerHTML = '<div class="empty">讀取失敗，請檢查 Firebase 設定</div>'; });
 }
-function setLeaveStatus(id, status){ db.collection('leave_requests').doc(id).update({status}).then(()=>showToast("已更新狀態")); }
+function setLeaveStatus(id, status){ db.collection('leave_requests').doc(id).update({status, seenByRequester:false}).then(()=>showToast("已更新狀態")); }
 
 /* ---------- 庫存管理（點擊式 +/-） ---------- */
 const CATS = ["全部","螢幕總成","電池","尾插排線","主機板料件","其他"];
@@ -620,6 +738,51 @@ function confirmAddItem(){
     .catch(e=>showToast("新增失敗："+e.message));
 }
 
+function openPhoto(dataUrl){
+  document.getElementById('photo-full').src = dataUrl;
+  document.getElementById('modal-photo').classList.add('active');
+}
+
+function requestResignation(){
+  if(!confirm('確定要提出離職申請嗎？送出後將由店長/區經理審核。')) return;
+  db.collection('resignation_requests').add({
+    uid: CURRENT_USER.uid, name: CURRENT_USER.name, store: CURRENT_USER.store,
+    status: 'pending', createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).then(()=>showToast("離職申請已送出")).catch(e=>showToast("送出失敗："+e.message));
+}
+
+function loadResignationRequests(){
+  let q = db.collection('resignation_requests').where('status','==','pending');
+  if(viewStore !== '全部') q = q.where('store','==',viewStore);
+  q.onSnapshot(snap=>{
+      const list = document.getElementById('resign-list');
+      if(snap.empty){ list.innerHTML = '<div class="empty">尚無申請</div>'; return; }
+      list.innerHTML = '';
+      snap.forEach(doc=>{
+        const d = doc.data();
+        const div = document.createElement('div');
+        div.className = 'item';
+        div.innerHTML = `
+          <div class="item-head"><strong>${escapeHtml(d.name)} · ${d.store}</strong></div>
+          <div class="item-actions">
+            <button class="btn-bad btn-sm" onclick="approveResignation('${doc.id}','${d.uid}')">核准離職</button>
+            <button class="btn-ghost btn-sm" onclick="rejectResignation('${doc.id}')">駁回</button>
+          </div>
+        `;
+        list.appendChild(div);
+      });
+    }, ()=>{ document.getElementById('resign-list').innerHTML = '<div class="empty">讀取失敗，請檢查 Firebase 設定</div>'; });
+}
+
+function approveResignation(reqId, uid){
+  db.collection('employees').doc(uid).update({ status: '離職' })
+    .then(()=> db.collection('resignation_requests').doc(reqId).update({ status: 'approved' }))
+    .then(()=> showToast("已核准離職，該帳號下次登入會被擋下"));
+}
+function rejectResignation(reqId){
+  db.collection('resignation_requests').doc(reqId).update({ status: 'rejected' }).then(()=>showToast("已駁回申請"));
+}
+
 /* ---------- 員工管理 ---------- */
 const ROLE_OPTIONS = [
   { v:'staff', l:'一般員工' },
@@ -673,3 +836,5 @@ function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"\\'"); }
 </script>
 </body>
 </html>
+staff-system.html
+目前顯示的是「staff-system.html」。 
