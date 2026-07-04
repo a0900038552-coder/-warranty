@@ -2,13 +2,13 @@
 
 移至內容
 透過螢幕閱讀器使用 Gmail
-第 1 個，共 3,051 個
+第 1 個，共 3,053 個
 staff-system
 收件匣
 
 Xaing Wang
 附件
-下午4:44 (0 分鐘前)
+下午4:53 (0 分鐘前)
 寄給 我
 
  1 個附件
@@ -110,6 +110,13 @@ Xaing Wang
   .tab-dot::after{content:'';position:absolute;top:8px;right:16px;width:8px;height:8px;border-radius:50%;background:var(--bad);}
   .leave-photo-thumb{width:56px;height:56px;object-fit:cover;border-radius:8px;margin-top:8px;cursor:pointer;border:1px solid var(--line);}
   .item.unseen{background:#fff8ee;margin:0 -16px;padding:12px 16px;border-radius:8px;}
+
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
+  .cal-dow{font-size:11px;color:var(--ink-soft);text-align:center;font-family:'IBM Plex Mono',monospace;padding-bottom:4px;}
+  .cal-day{min-height:56px;border:1px solid var(--line);border-radius:6px;padding:4px;font-size:11px;}
+  .cal-day.empty-cell{border:none;}
+  .cal-day .d-num{font-family:'IBM Plex Mono',monospace;color:var(--ink-soft);font-size:10px;}
+  .cal-day .d-tag{background:#f3e6d2;color:var(--copper-dark);border-radius:4px;padding:1px 3px;font-size:10px;margin-top:2px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 
   /* ---- layout: sidebar nav ---- */
   .layout{display:flex;max-width:1000px;margin:0 auto;}
@@ -237,6 +244,10 @@ Xaing Wang
         </div>
         <button class="btn-primary btn-block" onclick="submitLeave()">送出申請</button>
       </div>
+      <div class="card">
+        <h3>本月休假總覽 · <span id="cal-month-label"></span></h3>
+        <div id="leave-calendar"><div class="empty">載入中…</div></div>
+      </div>
       <div class="card" id="resign-card"><h3>離職申請</h3>
         <p style="font-size:12px;color:var(--ink-soft);margin-top:-6px;">送出後由店長/區經理審核，核准後帳號才會真正改成離職狀態</p>
         <button class="btn-bad btn-block" onclick="requestResignation()">提出離職申請</button>
@@ -258,6 +269,10 @@ Xaing Wang
 
     <!-- STAFF MANAGEMENT PANEL -->
     <section id="panel-staff" class="panel">
+      <div class="card" id="pending-accounts-card">
+        <h3>待審核新帳號</h3>
+        <div id="pending-list"><div class="empty">尚無待審核帳號</div></div>
+      </div>
       <div class="card" id="resign-requests-card" style="display:none;">
         <h3>待審核離職申請</h3>
         <div id="resign-list"><div class="empty">尚無申請</div></div>
@@ -360,8 +375,12 @@ function doRegister(){
 
   auth.createUserWithEmailAndPassword(email, pass).then(cred=>{
     return db.collection('employees').doc(cred.user.uid).set({
-      name, store, role, email, status: '在職', createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      name, store, role, email, status: '待審核', createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
+  }).then(()=>{
+    err.style.color = 'var(--good)';
+    err.textContent = "註冊成功，請等候區經理審核通過後才能登入使用";
+    auth.signOut();
   }).catch(e=> err.textContent = "註冊失敗：" + e.message);
 }
 
@@ -387,6 +406,16 @@ auth.onAuthStateChanged(user=>{
       const d = doc.data();
       if(d.status === '離職'){
         document.getElementById('login-error').textContent = "此帳號已離職，無法登入";
+        auth.signOut();
+        return;
+      }
+      if(d.status === '待審核'){
+        document.getElementById('login-error').textContent = "帳號審核中，請等候區經理審核通過後再登入";
+        auth.signOut();
+        return;
+      }
+      if(d.status === '拒絕'){
+        document.getElementById('login-error').textContent = "此帳號的註冊申請已被拒絕，請聯絡管理者";
         auth.signOut();
         return;
       }
@@ -418,7 +447,7 @@ function enterApp(){
   loadAnnouncements();
   loadLeaveRequests();
   loadInventory();
-  if(isManager(CURRENT_USER.role)){ loadStaffList(); loadResignationRequests(); }
+  if(isManager(CURRENT_USER.role)){ loadStaffList(); loadResignationRequests(); loadPendingAccounts(); }
 }
 
 function renderStoreSelectors(){
@@ -607,11 +636,13 @@ function loadLeaveRequests(){
   if(viewStore !== '全部') q = q.where('store','==',viewStore);
   q.onSnapshot(snap=>{
       const list = document.getElementById('leave-list');
-      if(snap.empty){ list.innerHTML = '<div class="empty">尚無申請紀錄</div>'; return; }
+      const approvedForCal = [];
+      if(snap.empty){ list.innerHTML = '<div class="empty">尚無申請紀錄</div>'; renderLeaveCalendar(approvedForCal); return; }
       list.innerHTML = '';
       let hasUnseen = false;
       snap.forEach(doc=>{
         const d = doc.data();
+        if(d.status === 'approved') approvedForCal.push(d);
         const statusLabel = d.status==='approved'?'已核准':d.status==='rejected'?'已拒絕':'待審核';
         const statusClass = d.status==='approved'?'approved':d.status==='rejected'?'rejected':'pending';
         const isMine = d.uid === CURRENT_USER.uid;
@@ -633,7 +664,32 @@ function loadLeaveRequests(){
         list.appendChild(div);
       });
       document.getElementById('tab-leave').classList.toggle('tab-dot', hasUnseen);
+      renderLeaveCalendar(approvedForCal);
     }, ()=>{ document.getElementById('leave-list').innerHTML = '<div class="empty">讀取失敗，請檢查 Firebase 設定</div>'; });
+}
+
+function renderLeaveCalendar(approvedLeaves){
+  const now = new Date();
+  const year = now.getFullYear(), month = now.getMonth(); // 0-indexed
+  document.getElementById('cal-month-label').textContent = `${year}年${month+1}月`;
+  const firstDow = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+
+  const dowNames = ['日','一','二','三','四','五','六'];
+  let html = '<div class="cal-grid">';
+  dowNames.forEach(d=> html += `<div class="cal-dow">${d}</div>`);
+  for(let i=0;i<firstDow;i++) html += '<div class="cal-day empty-cell"></div>';
+
+  for(let day=1; day<=daysInMonth; day++){
+    const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    const onLeave = approvedLeaves.filter(l=> l.start <= dateStr && dateStr <= l.end);
+    html += `<div class="cal-day"><div class="d-num">${day}</div>`;
+    onLeave.slice(0,3).forEach(l=> html += `<span class="d-tag">${escapeHtml(l.name)}</span>`);
+    if(onLeave.length > 3) html += `<span class="d-tag">+${onLeave.length-3}</span>`;
+    html += `</div>`;
+  }
+  html += '</div>';
+  document.getElementById('leave-calendar').innerHTML = html;
 }
 function setLeaveStatus(id, status){ db.collection('leave_requests').doc(id).update({status, seenByRequester:false}).then(()=>showToast("已更新狀態")); }
 
@@ -783,6 +839,36 @@ function rejectResignation(reqId){
   db.collection('resignation_requests').doc(reqId).update({ status: 'rejected' }).then(()=>showToast("已駁回申請"));
 }
 
+function loadPendingAccounts(){
+  let q = db.collection('employees').where('status','==','待審核');
+  if(viewStore !== '全部') q = q.where('store','==',viewStore);
+  q.onSnapshot(snap=>{
+      const list = document.getElementById('pending-list');
+      if(snap.empty){ list.innerHTML = '<div class="empty">尚無待審核帳號</div>'; return; }
+      list.innerHTML = '';
+      snap.forEach(doc=>{
+        const d = doc.data();
+        const div = document.createElement('div');
+        div.className = 'item';
+        div.innerHTML = `
+          <div class="item-head"><strong>${escapeHtml(d.name)} · ${d.store} · ${roleLabel(d.role)}</strong></div>
+          <div class="item-meta">${escapeHtml(d.email||'')}</div>
+          <div class="item-actions">
+            <button class="btn-good btn-sm" onclick="approveAccount('${doc.id}')">核准開通</button>
+            <button class="btn-bad btn-sm" onclick="rejectAccount('${doc.id}')">拒絕</button>
+          </div>
+        `;
+        list.appendChild(div);
+      });
+    }, ()=>{ document.getElementById('pending-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立 Firestore 索引，請查看瀏覽器 Console</div>'; });
+}
+function approveAccount(uid){
+  db.collection('employees').doc(uid).update({ status: '在職' }).then(()=>showToast("已核准，該員工可以登入了"));
+}
+function rejectAccount(uid){
+  db.collection('employees').doc(uid).update({ status: '拒絕' }).then(()=>showToast("已拒絕此帳號申請"));
+}
+
 /* ---------- 員工管理 ---------- */
 const ROLE_OPTIONS = [
   { v:'staff', l:'一般員工' },
@@ -837,4 +923,4 @@ function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"\\'"); }
 </body>
 </html>
 staff-system.html
-目前顯示的是「staff-system.html」。 
+目前顯示的是「staff-system.html」。
