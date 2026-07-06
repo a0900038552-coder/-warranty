@@ -295,6 +295,16 @@
           <div class="item"><div class="item-head"><strong>健保自付額</strong><span class="mono" id="pr-health-ins"></span></div><div class="item-meta">勞健保為依底薪估算之概算金額，正式投保級距請以勞保局／健保署公告為準</div></div>
 
           <div class="item">
+            <div class="item-head"><strong>加班費</strong><span class="mono" id="pr-overtime"></span></div>
+            <div class="item-meta">時薪基準：<span id="pr-hourly-rate"></span> 元／小時（底薪÷30÷8）</div>
+            <div class="rowline" style="margin-top:8px;">
+              <div class="field" style="margin-bottom:4px;"><label>平日前2小時（1.34倍）時數</label><input type="number" min="0" value="0" id="ot-h1" oninput="updatePayrollTotals()"></div>
+              <div class="field" style="margin-bottom:4px;"><label>平日超過2小時（1.67倍）時數</label><input type="number" min="0" value="0" id="ot-h2" oninput="updatePayrollTotals()"></div>
+            </div>
+            <div class="field" style="margin-bottom:0;"><label>休息日／例假日加班（2倍）時數</label><input type="number" min="0" value="0" id="ot-h3" oninput="updatePayrollTotals()"></div>
+          </div>
+
+          <div class="item">
             <div class="item-head"><strong>績效評分</strong></div>
             <div id="pr-score-fields"></div>
             <div class="item-meta" style="margin-top:6px;">加權總分：<span id="pr-total-score" class="mono">0</span> 分</div>
@@ -342,6 +352,33 @@
   </div>
 </div>
 
+<!-- MODAL: day editor (from calendar) -->
+<div class="modal-bg" id="modal-day-editor">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modal-day-editor')">&times;</button>
+    <h3 id="day-editor-title"></h3>
+    <div id="day-editor-list"></div>
+  </div>
+</div>
+
+<!-- MODAL: edit leave request -->
+<div class="modal-bg" id="modal-edit-leave">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modal-edit-leave')">&times;</button>
+    <h3>編輯假單內容</h3>
+    <input type="hidden" id="edit-leave-id">
+    <div class="field"><label>假別</label>
+      <select id="edit-leave-type"><option>事假</option><option>病假</option><option>特休</option><option>排休調整</option><option>其他</option></select>
+    </div>
+    <div class="rowline">
+      <div class="field"><label>起始日期</label><input type="date" id="edit-leave-start" onchange="document.getElementById('edit-leave-end').min=this.value"></div>
+      <div class="field"><label>結束日期</label><input type="date" id="edit-leave-end"></div>
+    </div>
+    <div class="field"><label>原因/備註</label><textarea id="edit-leave-reason" rows="2"></textarea></div>
+    <button class="btn-primary btn-block" onclick="saveEditLeave()">儲存修改</button>
+  </div>
+</div>
+
 <!-- MODAL: add item -->
 <div class="modal-bg" id="modal-additem">
   <div class="modal">
@@ -380,6 +417,7 @@ const auth = firebase.auth();
 const db = firebase.firestore();
 
 let CURRENT_USER = null; // {uid, name, store, role}
+let leaveDocsCache = {};
 let currentCat = "全部";
 let invItemsCache = [];
 let viewStore = null; // 目前檢視的分店（區經理可切換）
@@ -412,7 +450,7 @@ function doRegister(){
 
   auth.createUserWithEmailAndPassword(email, pass).then(cred=>{
     return db.collection('employees').doc(cred.user.uid).set({
-      name, store, role, email, status: '待審核', createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      name, store, role, email, status: '待審核', baseSalary: 29500, createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
   }).then(()=>{
     err.style.color = 'var(--good)';
@@ -683,6 +721,7 @@ function loadLeaveRequests(){
       let hasUnseen = false;
       snap.forEach(doc=>{
         const d = doc.data();
+        leaveDocsCache[doc.id] = d;
         if(d.status === 'approved') approvedForCal.push(d);
         const statusLabel = d.status==='approved'?'已核准':d.status==='rejected'?'已拒絕':'待審核';
         const statusClass = d.status==='approved'?'approved':d.status==='rejected'?'rejected':'pending';
@@ -699,6 +738,10 @@ function loadLeaveRequests(){
             <div class="item-actions">
               <button class="btn-good btn-sm" onclick="event.stopPropagation();setLeaveStatus('${doc.id}','approved')">核准</button>
               <button class="btn-bad btn-sm" onclick="event.stopPropagation();setLeaveStatus('${doc.id}','rejected')">拒絕</button>
+            </div>` : ''}
+          ${isManager(CURRENT_USER.role) ? `
+            <div class="item-actions">
+              <button class="btn-ghost btn-sm" onclick="event.stopPropagation();openEditLeave('${doc.id}')">✏️ 編輯內容</button>
             </div>` : ''}
         `;
         if(unseen) div.onclick = ()=> db.collection('leave_requests').doc(doc.id).update({seenByRequester:true});
@@ -725,14 +768,65 @@ function renderLeaveCalendar(approvedLeaves){
     const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
     const onLeave = approvedLeaves.filter(l=> l.start <= dateStr && dateStr <= l.end);
     const isTyphoon = typhoonCache.some(t => t.date === dateStr && (viewStore==='全部' || t.store===viewStore));
-    html += `<div class="cal-day">${isTyphoon ? '<span class="d-tag" style="background:#f3dbd3;color:var(--bad);">🌀 店休</span>' : ''}<div class="d-num">${day}</div>`;
+    const clickAttr = isManager(CURRENT_USER.role) ? ` onclick="openDayEditor('${dateStr}')" style="cursor:pointer;"` : '';
+    html += `<div class="cal-day"${clickAttr}>${isTyphoon ? '<span class="d-tag" style="background:#f3dbd3;color:var(--bad);">🌀 店休</span>' : ''}<div class="d-num">${day}</div>`;
     onLeave.slice(0,3).forEach(l=> html += `<span class="d-tag">${escapeHtml(l.name)}</span>`);
     if(onLeave.length > 3) html += `<span class="d-tag">+${onLeave.length-3}</span>`;
     html += `</div>`;
   }
   html += '</div>';
+  if(isManager(CURRENT_USER.role)) html += '<p style="font-size:11px;color:var(--ink-soft);margin-top:8px;">點任一天可編輯／刪除當天的假單</p>';
   document.getElementById('leave-calendar').innerHTML = html;
 }
+
+function openDayEditor(dateStr){
+  const entries = Object.entries(leaveDocsCache)
+    .filter(([id,l]) => l.start <= dateStr && dateStr <= l.end)
+    .filter(([id,l]) => viewStore === '全部' || l.store === viewStore);
+  const modal = document.getElementById('modal-day-editor');
+  document.getElementById('day-editor-title').textContent = dateStr + ' 假單';
+  const list = document.getElementById('day-editor-list');
+  if(entries.length === 0){ list.innerHTML = '<div class="empty">當天沒有假單</div>'; }
+  else {
+    list.innerHTML = entries.map(([id,l])=>`
+      <div class="item">
+        <div class="item-head"><strong>${l.name} · ${l.type}</strong><span class="badge ${l.status==='approved'?'approved':l.status==='rejected'?'rejected':'pending'}">${l.status==='approved'?'已核准':l.status==='rejected'?'已拒絕':'待審核'}</span></div>
+        <div class="item-meta">${l.start} ~ ${l.end}${l.reason ? ' · '+escapeHtml(l.reason) : ''}</div>
+        <div class="item-actions">
+          <button class="btn-ghost btn-sm" onclick="closeModal('modal-day-editor');openEditLeave('${id}')">編輯</button>
+          <button class="btn-bad btn-sm" onclick="deleteLeaveRequest('${id}')">刪除</button>
+        </div>
+      </div>
+    `).join('');
+  }
+  modal.classList.add('active');
+}
+function deleteLeaveRequest(id){
+  if(!confirm('確定要刪除這筆假單嗎？此動作無法復原。')) return;
+  db.collection('leave_requests').doc(id).delete().then(()=>{ showToast("已刪除"); openDayEditor(document.getElementById('day-editor-title').textContent.replace(' 假單','')); });
+}
+function openEditLeave(id){
+  const d = leaveDocsCache[id];
+  if(!d) return;
+  document.getElementById('edit-leave-id').value = id;
+  document.getElementById('edit-leave-type').value = d.type;
+  document.getElementById('edit-leave-start').value = d.start;
+  document.getElementById('edit-leave-end').value = d.end;
+  document.getElementById('edit-leave-reason').value = d.reason || '';
+  document.getElementById('modal-edit-leave').classList.add('active');
+}
+function saveEditLeave(){
+  const id = document.getElementById('edit-leave-id').value;
+  const type = document.getElementById('edit-leave-type').value;
+  const start = document.getElementById('edit-leave-start').value;
+  const end = document.getElementById('edit-leave-end').value;
+  const reason = document.getElementById('edit-leave-reason').value.trim();
+  if(!start || !end){ showToast("請選擇起訖日期"); return; }
+  if(end < start){ showToast("結束日期不能早於起始日期"); return; }
+  db.collection('leave_requests').doc(id).update({ type, start, end, reason, seenByRequester:false })
+    .then(()=>{ closeModal('modal-edit-leave'); showToast("已修改假單內容"); });
+}
+
 function setLeaveStatus(id, status){ db.collection('leave_requests').doc(id).update({status, seenByRequester:false}).then(()=>showToast("已更新狀態")); }
 
 /* ---------- 庫存管理（點擊式 +/-） ---------- */
@@ -1002,7 +1096,7 @@ async function calcPayroll(){
   const emp = employeesCache.find(e=>e.id===uid);
   if(!emp){ showToast("找不到員工資料"); return; }
   prCurrentEmployee = emp; prCurrentMonth = month;
-  prBaseSalary = emp.baseSalary || 0;
+  prBaseSalary = emp.baseSalary || 29500;
 
   const [y,m] = month.split('-').map(Number);
   const monthStart = `${month}-01`;
@@ -1048,6 +1142,8 @@ async function calcPayroll(){
   prHealthIns = calcHealthInsurance(prBaseSalary);
   document.getElementById('pr-labor-ins').textContent = '-' + prLaborIns.toLocaleString();
   document.getElementById('pr-health-ins').textContent = '-' + prHealthIns.toLocaleString();
+  document.getElementById('pr-hourly-rate').textContent = Math.round(prBaseSalary/30/8);
+  document.getElementById('ot-h1').value = 0; document.getElementById('ot-h2').value = 0; document.getElementById('ot-h3').value = 0;
 
   // 績效評分欄位
   const scoreFields = document.getElementById('pr-score-fields');
@@ -1087,9 +1183,16 @@ function updatePayrollTotals(){
     ? `毛利達門檻，超過部分 ${(grossProfit-110000).toLocaleString()} 元，每滿5000加發1000`
     : '毛利未達11萬門檻，不發放此項分紅';
 
+  const hourly = prBaseSalary/30/8;
+  const h1 = Number(document.getElementById('ot-h1').value) || 0;
+  const h2 = Number(document.getElementById('ot-h2').value) || 0;
+  const h3 = Number(document.getElementById('ot-h3').value) || 0;
+  const overtimePay = Math.round(hourly*1.34*h1 + hourly*1.67*h2 + hourly*2*h3);
+  document.getElementById('pr-overtime').textContent = '+' + overtimePay.toLocaleString();
+
   const extra = Number(document.getElementById('pr-extra').value) || 0;
   const adjust = Number(document.getElementById('pr-adjust').value) || 0;
-  const suggested = prBaseSalary - prTyphoonDeduction - prLeaveDeduction - prLaborIns - prHealthIns + bonusAmount + profitBonus + extra + adjust;
+  const suggested = prBaseSalary - prTyphoonDeduction - prLeaveDeduction - prLaborIns - prHealthIns + bonusAmount + profitBonus + overtimePay + extra + adjust;
   document.getElementById('pr-suggested').textContent = suggested.toLocaleString() + ' 元';
 }
 
@@ -1106,6 +1209,8 @@ function collectPayrollData(){
     bonusAmount: Number(document.getElementById('pr-bonus').textContent.replace(/[^0-9-]/g,'')) || 0,
     grossProfit: Number(document.getElementById('pr-gross-profit').value) || 0,
     profitBonus: Number(document.getElementById('pr-profit-bonus').textContent.replace(/[^0-9-]/g,'')) || 0,
+    overtimeHours: { h1: Number(document.getElementById('ot-h1').value)||0, h2: Number(document.getElementById('ot-h2').value)||0, h3: Number(document.getElementById('ot-h3').value)||0 },
+    overtimePay: Number(document.getElementById('pr-overtime').textContent.replace(/[^0-9-]/g,'')) || 0,
     extra: Number(document.getElementById('pr-extra').value) || 0,
     adjust: Number(document.getElementById('pr-adjust').value) || 0,
     suggestedTotal: Number(document.getElementById('pr-suggested').textContent.replace(/[^0-9-]/g,'')) || 0
@@ -1141,6 +1246,7 @@ function printPayslip(){
       <tr><td>績效總分</td><td>${data.totalScore} 分</td></tr>
       <tr><td>績效獎金</td><td>+${data.bonusAmount.toLocaleString()}</td></tr>
       <tr><td>業績分紅（毛利 ${data.grossProfit.toLocaleString()}）</td><td>+${data.profitBonus.toLocaleString()}</td></tr>
+      <tr><td>加班費（1.34倍${data.overtimeHours.h1}h／1.67倍${data.overtimeHours.h2}h／2倍${data.overtimeHours.h3}h）</td><td>+${data.overtimePay.toLocaleString()}</td></tr>
       <tr><td>其他加項</td><td>+${data.extra.toLocaleString()}</td></tr>
       <tr><td>其他調整</td><td>${data.adjust.toLocaleString()}</td></tr>
       <tr class="total"><td>建議薪資合計</td><td>${data.suggestedTotal.toLocaleString()}</td></tr>
@@ -1167,6 +1273,7 @@ function emailPayslip(){
 績效總分：${data.totalScore} 分
 績效獎金：+${data.bonusAmount.toLocaleString()}
 業績分紅（毛利 ${data.grossProfit.toLocaleString()}）：+${data.profitBonus.toLocaleString()}
+加班費（1.34倍${data.overtimeHours.h1}h／1.67倍${data.overtimeHours.h2}h／2倍${data.overtimeHours.h3}h）：+${data.overtimePay.toLocaleString()}
 其他加項：+${data.extra.toLocaleString()}
 其他調整：${data.adjust.toLocaleString()}
 建議薪資合計：${data.suggestedTotal.toLocaleString()} 元
@@ -1175,57 +1282,134 @@ function emailPayslip(){
   window.location.href = `mailto:${emp?.email||''}?subject=${subject}&body=${body}`;
 }
 
-/* ---------- 員工管理 ---------- */
+/* ---------- 員工管理 / 基本資料 ---------- */
 const ROLE_OPTIONS = [
   { v:'staff', l:'一般員工' },
   { v:'store_manager', l:'店長' },
   { v:'regional_manager', l:'區經理' }
 ];
+const LEVEL_OPTIONS = [
+  '練氣初期','練氣中期','練氣後期','練氣大圓滿',
+  '築基初期','築基中期','築基後期','築基大圓滿',
+  '金丹初期','金丹中期','金丹後期','金丹大圓滿',
+  '元嬰初期','元嬰中期','元嬰後期','元嬰大圓滿',
+  '化神期'
+];
+
+function formatTenure(hireDateStr){
+  const hire = new Date(hireDateStr);
+  const now = new Date();
+  let months = (now.getFullYear()-hire.getFullYear())*12 + (now.getMonth()-hire.getMonth());
+  if(now.getDate() < hire.getDate()) months--;
+  if(months < 0) months = 0;
+  return `${Math.floor(months/12)}年${months%12}個月`;
+}
 
 function loadStaffList(){
   let q = db.collection('employees');
   if(viewStore !== '全部') q = q.where('store','==',viewStore);
-  q.onSnapshot(snap=>{
+  q.onSnapshot(async snap=>{
       const list = document.getElementById('staff-list');
       if(snap.empty){ list.innerHTML = '<div class="empty">尚無員工資料</div>'; return; }
+      const cards = await Promise.all(snap.docs.map(doc=>buildEmployeeCard(doc)));
       list.innerHTML = '';
-      snap.forEach(doc=>{
-        const d = doc.data();
-        const status = d.status || '在職';
-        const roleSelHtml = ROLE_OPTIONS.map(r=>`<option value="${r.v}" ${r.v===d.role?'selected':''}>${r.l}</option>`).join('');
-        const leaveMode = d.leaveMode || 'auto';
-        const autoLeave = d.hireDate ? calcAnnualLeaveDays(d.hireDate) : 0;
-        const div = document.createElement('div');
-        div.className = 'item';
-        div.innerHTML = `
-          <div class="item-head">
-            <strong>${escapeHtml(d.name)}</strong>
-            <span class="badge ${status==='在職' ? 'approved' : 'rejected'}">${status}</span>
-          </div>
-          <div class="item-meta">${d.store} · ${escapeHtml(d.email||'')}</div>
-          <div class="item-actions" style="align-items:center;">
-            <select style="flex:1;" onchange="updateStaffRole('${doc.id}', this.value)">${roleSelHtml}</select>
-            ${status==='在職'
-              ? `<button class="btn-bad btn-sm" onclick="updateStaffStatus('${doc.id}','離職')">設為離職</button>`
-              : `<button class="btn-good btn-sm" onclick="updateStaffStatus('${doc.id}','在職')">恢復在職</button>`}
-          </div>
-          <div class="rowline" style="margin-top:8px;">
-            <div class="field" style="margin-bottom:6px;"><label>到職日</label><input type="date" value="${d.hireDate||''}" onchange="updateStaffField('${doc.id}','hireDate',this.value)"></div>
-            <div class="field" style="margin-bottom:6px;"><label>底薪（元）</label><input type="number" value="${d.baseSalary||0}" onchange="updateStaffField('${doc.id}','baseSalary',Number(this.value))"></div>
-          </div>
-          <div class="rowline">
-            <div class="field" style="margin-bottom:0;"><label>特休方式</label>
-              <select onchange="updateStaffField('${doc.id}','leaveMode',this.value)">
-                <option value="auto" ${leaveMode==='auto'?'selected':''}>依年資自動（${autoLeave}天）</option>
-                <option value="custom" ${leaveMode==='custom'?'selected':''}>約定天數</option>
-              </select>
-            </div>
-            <div class="field" style="margin-bottom:0;"><label>約定天數</label><input type="number" value="${d.customAnnualLeaveDays||0}" onchange="updateStaffField('${doc.id}','customAnnualLeaveDays',Number(this.value))"></div>
-          </div>
-        `;
-        list.appendChild(div);
-      });
+      cards.forEach(c=> list.appendChild(c));
     }, ()=>{ document.getElementById('staff-list').innerHTML = '<div class="empty">讀取失敗，請檢查 Firebase 設定</div>'; });
+}
+
+async function buildEmployeeCard(doc){
+  const uid = doc.id;
+  const d = doc.data();
+  const status = d.status || '在職';
+  const roleSelHtml = ROLE_OPTIONS.map(r=>`<option value="${r.v}" ${r.v===d.role?'selected':''}>${r.l}</option>`).join('');
+  const levelSelHtml = LEVEL_OPTIONS.map(l=>`<option ${l===d.level?'selected':''}>${l}</option>`).join('');
+  const leaveMode = d.leaveMode || 'auto';
+  const baseSalary = d.baseSalary || 29500;
+  const autoLeave = d.hireDate ? calcAnnualLeaveDays(d.hireDate) : 0;
+  const entitledLeave = leaveMode === 'custom' ? (d.customAnnualLeaveDays||0) : autoLeave;
+  const carryover = d.carryoverDays || 0;
+  const tenureStr = d.hireDate ? formatTenure(d.hireDate) : '尚未填寫到職日';
+
+  const laborSelf = calcLaborInsurance(baseSalary);
+  const healthSelf = calcHealthInsurance(baseSalary);
+  const laborCompany = Math.round(Math.min(Math.max(baseSalary,11100),45800) * 0.125 * 0.70);
+  const healthCompany = Math.round(Math.min(Math.max(baseSalary,29500),313000) * 0.0517 * 0.60);
+
+  const year = new Date().getFullYear();
+  const yearStart = `${year}-01-01`, yearEnd = `${year}-12-31`;
+  let usedAnnual=0, sickDays=0, sickEvents=0, personalDays=0, personalEvents=0;
+  try{
+    const leaveSnap = await db.collection('leave_requests').where('uid','==',uid).where('status','==','approved').get();
+    leaveSnap.docs.forEach(ld=>{
+      const l = ld.data();
+      const os = l.start > yearStart ? l.start : yearStart;
+      const oe = l.end < yearEnd ? l.end : yearEnd;
+      if(os > oe) return;
+      const days = dateDiffInclusive(os, oe);
+      if(l.type==='特休') usedAnnual += days;
+      else if(l.type==='病假'){ sickDays += days; sickEvents++; }
+      else if(l.type==='事假'){ personalDays += days; personalEvents++; }
+    });
+  }catch(e){}
+  const remainingAnnual = entitledLeave + carryover - usedAnnual;
+
+  const div = document.createElement('div');
+  div.className = 'item';
+  div.innerHTML = `
+    <div class="item-head">
+      <strong>${escapeHtml(d.name)}</strong>
+      <span class="badge ${status==='在職' ? 'approved' : 'rejected'}">${status}</span>
+    </div>
+    <div class="item-meta">${d.store} · ${escapeHtml(d.email||'')}</div>
+
+    <div class="item-meta" style="margin-top:10px;font-weight:700;color:var(--ink);">帳號權限</div>
+    <div class="item-actions" style="align-items:center;">
+      <select style="flex:1;" onchange="updateStaffRole('${uid}', this.value)">${roleSelHtml}</select>
+      ${status==='在職'
+        ? `<button class="btn-bad btn-sm" onclick="updateStaffStatus('${uid}','離職')">設為離職</button>`
+        : `<button class="btn-good btn-sm" onclick="updateStaffStatus('${uid}','在職')">恢復在職</button>`}
+    </div>
+
+    <div class="item-meta" style="margin-top:12px;font-weight:700;color:var(--ink);">基本資料</div>
+    <div class="rowline" style="margin-top:6px;">
+      <div class="field" style="margin-bottom:6px;"><label>聯絡電話</label><input value="${escapeHtml(d.phone||'')}" onchange="updateStaffField('${uid}','phone',this.value)"></div>
+      <div class="field" style="margin-bottom:6px;"><label>學歷</label><input value="${escapeHtml(d.education||'')}" onchange="updateStaffField('${uid}','education',this.value)"></div>
+    </div>
+    <div class="field" style="margin-bottom:6px;"><label>地址</label><input value="${escapeHtml(d.address||'')}" onchange="updateStaffField('${uid}','address',this.value)"></div>
+    <div class="rowline">
+      <div class="field" style="margin-bottom:6px;"><label>到職日</label><input type="date" value="${d.hireDate||''}" onchange="updateStaffField('${uid}','hireDate',this.value)"></div>
+      <div class="field" style="margin-bottom:6px;"><label>等級</label><select onchange="updateStaffField('${uid}','level',this.value)">${levelSelHtml}</select></div>
+    </div>
+    <div class="item-meta">年資：${tenureStr}</div>
+
+    <div class="field" style="margin-top:8px;margin-bottom:6px;"><label>基本工資（元，未填預設 29,500）</label><input type="number" value="${baseSalary}" onchange="updateStaffField('${uid}','baseSalary',Number(this.value))"></div>
+
+    <div class="rowline">
+      <div class="item" style="background:#f3f3f0;"><div class="item-meta">勞保自付額（不可修改）<br><span class="mono">${laborSelf.toLocaleString()}</span></div></div>
+      <div class="item" style="background:#f3f3f0;"><div class="item-meta">勞保公司負擔（不可修改）<br><span class="mono">${laborCompany.toLocaleString()}</span></div></div>
+    </div>
+    <div class="rowline">
+      <div class="item" style="background:#f3f3f0;"><div class="item-meta">健保自付額（不可修改）<br><span class="mono">${healthSelf.toLocaleString()}</span></div></div>
+      <div class="item" style="background:#f3f3f0;"><div class="item-meta">健保公司負擔（不可修改）<br><span class="mono">${healthCompany.toLocaleString()}</span></div></div>
+    </div>
+
+    <div class="item-meta" style="margin-top:12px;font-weight:700;color:var(--ink);">特休統計（${year}年）</div>
+    <div class="rowline">
+      <div class="field" style="margin-bottom:6px;"><label>特休方式</label>
+        <select onchange="updateStaffField('${uid}','leaveMode',this.value)">
+          <option value="auto" ${leaveMode==='auto'?'selected':''}>依年資自動（${autoLeave}天）</option>
+          <option value="custom" ${leaveMode==='custom'?'selected':''}>約定天數</option>
+        </select>
+      </div>
+      <div class="field" style="margin-bottom:6px;"><label>約定天數</label><input type="number" value="${d.customAnnualLeaveDays||0}" onchange="updateStaffField('${uid}','customAnnualLeaveDays',Number(this.value))"></div>
+    </div>
+    <div class="field" style="margin-bottom:6px;"><label>去年未休完天數（結轉）</label><input type="number" value="${carryover}" onchange="updateStaffField('${uid}','carryoverDays',Number(this.value))"></div>
+    <div class="item-meta">可休 ${entitledLeave} 天 + 結轉 ${carryover} 天　已休 ${usedAnnual} 天　剩餘 <strong>${remainingAnnual}</strong> 天</div>
+
+    <div class="item-meta" style="margin-top:12px;font-weight:700;color:var(--ink);">病假／事假統計（${year}年）</div>
+    <div class="item-meta">病假：${sickDays} 天／${sickEvents} 次　　事假：${personalDays} 天／${personalEvents} 次</div>
+  `;
+  return div;
 }
 
 function updateStaffField(uid, field, value){
@@ -1261,4 +1445,4 @@ function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"\\'"); }
 </script>
 </body>
 </html>
-01-01
+01-02
