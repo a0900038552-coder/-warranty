@@ -230,6 +230,16 @@
         </div>
         <button class="btn-primary btn-block" onclick="submitLeave()">送出申請</button>
       </div>
+      <div class="card" id="typhoon-card" style="display:none;">
+        <h3>颱風假／店休管理</h3>
+        <p style="font-size:12px;color:var(--ink-soft);margin-top:-6px;">新增日期後，當月薪資試算會自動扣除該日底薪（若員工當天有核准的特休則不扣），月曆也會標示</p>
+        <div class="rowline">
+          <div class="field"><label>日期</label><input type="date" id="typhoon-date"></div>
+          <div class="field"><label>備註</label><input id="typhoon-note" placeholder="例：凱米颱風"></div>
+        </div>
+        <button class="btn-ghost btn-block" onclick="addTyphoonDay()">+ 新增颱風假／店休日</button>
+        <div id="typhoon-list" style="margin-top:10px;"><div class="empty">尚無颱風假日</div></div>
+      </div>
       <div class="card">
         <h3>本月休假總覽 · <span id="cal-month-label"></span></h3>
         <div id="leave-calendar"><div class="empty">載入中…</div></div>
@@ -272,17 +282,6 @@
     <!-- PAYROLL PANEL -->
     <section id="panel-payroll" class="panel">
       <div class="card">
-        <h3>颱風假管理</h3>
-        <p style="font-size:12px;color:var(--ink-soft);margin-top:-6px;">新增日期後，當月薪資試算會自動扣除該日底薪（若員工當天有核准的特休則不扣）</p>
-        <div class="rowline">
-          <div class="field"><label>日期</label><input type="date" id="typhoon-date"></div>
-          <div class="field"><label>備註</label><input id="typhoon-note" placeholder="例：凱米颱風"></div>
-        </div>
-        <button class="btn-ghost btn-block" onclick="addTyphoonDay()">+ 新增颱風假日</button>
-        <div id="typhoon-list" style="margin-top:10px;"><div class="empty">尚無颱風假日</div></div>
-      </div>
-
-      <div class="card">
         <h3>月薪試算</h3>
         <div class="field"><label>選擇員工</label><select id="pr-employee"></select></div>
         <div class="field"><label>結算月份</label><input type="month" id="pr-month"></div>
@@ -290,7 +289,10 @@
 
         <div id="pr-result" style="display:none;margin-top:14px;">
           <div class="item"><div class="item-head"><strong>底薪</strong><span class="mono" id="pr-base"></span></div></div>
-          <div class="item"><div class="item-head"><strong>颱風扣款</strong><span class="mono" id="pr-typhoon"></span></div><div class="item-meta" id="pr-typhoon-days"></div></div>
+          <div class="item"><div class="item-head"><strong>颱風/店休扣款</strong><span class="mono" id="pr-typhoon"></span></div><div class="item-meta" id="pr-typhoon-days"></div></div>
+          <div class="item"><div class="item-head"><strong>事假/病假扣款</strong><span class="mono" id="pr-leave-deduct"></span></div><div class="item-meta" id="pr-leave-detail"></div></div>
+          <div class="item"><div class="item-head"><strong>勞保自付額</strong><span class="mono" id="pr-labor-ins"></span></div></div>
+          <div class="item"><div class="item-head"><strong>健保自付額</strong><span class="mono" id="pr-health-ins"></span></div><div class="item-meta">勞健保為依底薪估算之概算金額，正式投保級距請以勞保局／健保署公告為準</div></div>
 
           <div class="item">
             <div class="item-head"><strong>績效評分</strong></div>
@@ -301,7 +303,10 @@
           <div class="field"><label>本月獎金基準（元）</label><input type="number" id="pr-bonus-base" value="0" onchange="calcPayroll()"></div>
           <div class="item"><div class="item-head"><strong>績效獎金（依總分比例發放）</strong><span class="mono" id="pr-bonus"></span></div><div class="item-meta" id="pr-bonus-tier"></div></div>
 
-          <div class="field"><label>營收貢獻／其他加項（元，選填）</label><input type="number" id="pr-extra" value="0" onchange="calcPayroll()"></div>
+          <div class="field"><label>本月毛利（元）</label><input type="number" id="pr-gross-profit" value="0" onchange="calcPayroll()" oninput="updatePayrollTotals()"></div>
+          <div class="item"><div class="item-head"><strong>業績分紅（毛利達11萬門檻）</strong><span class="mono" id="pr-profit-bonus"></span></div><div class="item-meta" id="pr-profit-bonus-note"></div></div>
+
+          <div class="field"><label>其他加項（元，選填）</label><input type="number" id="pr-extra" value="0" onchange="calcPayroll()"></div>
           <div class="field"><label>其他調整（元，可為負數，選填）</label><input type="number" id="pr-adjust" value="0" onchange="calcPayroll()"></div>
 
           <div class="item" style="background:#fdf6ef;margin:0 -16px;padding:12px 16px;">
@@ -470,6 +475,7 @@ function enterApp(){
   document.getElementById('tab-payroll').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
   document.getElementById('resign-card').style.display = isManager(CURRENT_USER.role) ? 'none' : 'block';
   document.getElementById('resign-requests-card').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
+  document.getElementById('typhoon-card').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
 
   viewStore = CURRENT_USER.role === 'regional_manager' ? '全部' : CURRENT_USER.store;
   document.getElementById('inv-store-label').textContent = viewStore;
@@ -478,9 +484,10 @@ function enterApp(){
 
   buildCatTabs();
   loadAnnouncements();
+  loadTyphoonDays();
   loadLeaveRequests();
   loadInventory();
-  if(isManager(CURRENT_USER.role)){ loadStaffList(); loadResignationRequests(); loadPendingAccounts(); loadPayrollEmployeeOptions(); loadTyphoonDays(); }
+  if(isManager(CURRENT_USER.role)){ loadStaffList(); loadResignationRequests(); loadPendingAccounts(); loadPayrollEmployeeOptions(); }
 }
 
 function renderStoreSelectors(){
@@ -717,7 +724,8 @@ function renderLeaveCalendar(approvedLeaves){
   for(let day=1; day<=daysInMonth; day++){
     const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
     const onLeave = approvedLeaves.filter(l=> l.start <= dateStr && dateStr <= l.end);
-    html += `<div class="cal-day"><div class="d-num">${day}</div>`;
+    const isTyphoon = typhoonCache.some(t => t.date === dateStr && (viewStore==='全部' || t.store===viewStore));
+    html += `<div class="cal-day">${isTyphoon ? '<span class="d-tag" style="background:#f3dbd3;color:var(--bad);">🌀 店休</span>' : ''}<div class="d-num">${day}</div>`;
     onLeave.slice(0,3).forEach(l=> html += `<span class="d-tag">${escapeHtml(l.name)}</span>`);
     if(onLeave.length > 3) html += `<span class="d-tag">+${onLeave.length-3}</span>`;
     html += `</div>`;
@@ -966,7 +974,26 @@ function loadTyphoonDays(){
 function deleteTyphoonDay(id){ db.collection('typhoon_days').doc(id).delete().then(()=>showToast("已刪除")); }
 
 /* 月薪試算 */
-let prBaseSalary = 0, prTyphoonDeduction = 0, prCurrentEmployee = null, prCurrentMonth = '';
+let prBaseSalary = 0, prTyphoonDeduction = 0, prLeaveDeduction = 0, prLaborIns = 0, prHealthIns = 0;
+let prCurrentEmployee = null, prCurrentMonth = '';
+const LEAVE_DEDUCT_RATIO = { '事假':1, '病假':0.5, '特休':0, '排休調整':0, '其他':0 };
+
+function dateDiffInclusive(a,b){ return Math.round((new Date(b)-new Date(a))/86400000) + 1; }
+
+function calcLaborInsurance(salary){
+  const capped = Math.min(Math.max(salary,11100), 45800);
+  return Math.round(capped * 0.125 * 0.20);
+}
+function calcHealthInsurance(salary){
+  const capped = Math.min(Math.max(salary,29500), 313000);
+  return Math.round(capped * 0.0517 * 0.30);
+}
+/* 分紅：毛利達11萬門檻先發2000，超過部分每滿5000再加發1000 */
+function calcProfitBonus(grossProfit){
+  if(grossProfit < 110000) return 0;
+  const over = grossProfit - 110000;
+  return 2000 + Math.floor(over/5000)*1000;
+}
 
 async function calcPayroll(){
   const uid = document.getElementById('pr-employee').value;
@@ -981,23 +1008,46 @@ async function calcPayroll(){
   const monthStart = `${month}-01`;
   const daysInMonth = new Date(y, m, 0).getDate();
   const monthEnd = `${month}-${String(daysInMonth).padStart(2,'0')}`;
+  const dayRate = prBaseSalary / 30;
 
   // 抓該分店在此月份的颱風假日
   const typhoonInMonth = typhoonCache.filter(t => t.store === emp.store && t.date >= monthStart && t.date <= monthEnd);
 
-  // 抓該員工已核准的請假，用來排除颱風日扣款
+  // 抓該員工已核准的請假
   const leaveSnap = await db.collection('leave_requests').where('uid','==',uid).where('status','==','approved').get();
   const approvedLeaves = leaveSnap.docs.map(d=>d.data());
 
-  const deductedDays = typhoonInMonth.filter(t => !approvedLeaves.some(l => l.start <= t.date && t.date <= l.end));
-  const dayRate = prBaseSalary / 30;
-  prTyphoonDeduction = Math.round(deductedDays.length * dayRate);
+  const deductedTyphoonDays = typhoonInMonth.filter(t => !approvedLeaves.some(l => l.start <= t.date && t.date <= l.end));
+  prTyphoonDeduction = Math.round(deductedTyphoonDays.length * dayRate);
 
   document.getElementById('pr-base').textContent = prBaseSalary.toLocaleString();
   document.getElementById('pr-typhoon').textContent = '-' + prTyphoonDeduction.toLocaleString();
-  document.getElementById('pr-typhoon-days').textContent = deductedDays.length
-    ? `扣款日期：${deductedDays.map(d=>d.date).join('、')}（每日 ${Math.round(dayRate)} 元）`
-    : '本月無颱風扣款日';
+  document.getElementById('pr-typhoon-days').textContent = deductedTyphoonDays.length
+    ? `扣款日期：${deductedTyphoonDays.map(d=>d.date).join('、')}（每日 ${Math.round(dayRate)} 元）`
+    : '本月無颱風／店休扣款日';
+
+  // 事假/病假扣款：計算與本月重疊的天數，依假別比例扣款
+  let leaveDeductDays = 0;
+  const leaveBreakdown = [];
+  approvedLeaves.forEach(l=>{
+    const ratio = LEAVE_DEDUCT_RATIO[l.type];
+    if(!ratio) return;
+    const overlapStart = l.start > monthStart ? l.start : monthStart;
+    const overlapEnd = l.end < monthEnd ? l.end : monthEnd;
+    if(overlapStart > overlapEnd) return;
+    const days = dateDiffInclusive(overlapStart, overlapEnd);
+    leaveDeductDays += days * ratio;
+    leaveBreakdown.push(`${l.type} ${days}天(${ratio===1?'全扣':'半薪'})`);
+  });
+  prLeaveDeduction = Math.round(leaveDeductDays * dayRate);
+  document.getElementById('pr-leave-deduct').textContent = '-' + prLeaveDeduction.toLocaleString();
+  document.getElementById('pr-leave-detail').textContent = leaveBreakdown.length ? leaveBreakdown.join('、') : '本月無事假／病假扣款';
+
+  // 勞健保自付額（依底薪概算）
+  prLaborIns = calcLaborInsurance(prBaseSalary);
+  prHealthIns = calcHealthInsurance(prBaseSalary);
+  document.getElementById('pr-labor-ins').textContent = '-' + prLaborIns.toLocaleString();
+  document.getElementById('pr-health-ins').textContent = '-' + prHealthIns.toLocaleString();
 
   // 績效評分欄位
   const scoreFields = document.getElementById('pr-score-fields');
@@ -1030,9 +1080,16 @@ function updatePayrollTotals(){
   document.getElementById('pr-bonus').textContent = '+' + bonusAmount.toLocaleString();
   document.getElementById('pr-bonus-tier').textContent = tierLabel;
 
+  const grossProfit = Number(document.getElementById('pr-gross-profit').value) || 0;
+  const profitBonus = calcProfitBonus(grossProfit);
+  document.getElementById('pr-profit-bonus').textContent = '+' + profitBonus.toLocaleString();
+  document.getElementById('pr-profit-bonus-note').textContent = grossProfit >= 110000
+    ? `毛利達門檻，超過部分 ${(grossProfit-110000).toLocaleString()} 元，每滿5000加發1000`
+    : '毛利未達11萬門檻，不發放此項分紅';
+
   const extra = Number(document.getElementById('pr-extra').value) || 0;
   const adjust = Number(document.getElementById('pr-adjust').value) || 0;
-  const suggested = prBaseSalary - prTyphoonDeduction + bonusAmount + extra + adjust;
+  const suggested = prBaseSalary - prTyphoonDeduction - prLeaveDeduction - prLaborIns - prHealthIns + bonusAmount + profitBonus + extra + adjust;
   document.getElementById('pr-suggested').textContent = suggested.toLocaleString() + ' 元';
 }
 
@@ -1041,10 +1098,14 @@ function collectPayrollData(){
   KPI_ITEMS.forEach(k=> scores[k.key] = Number(document.getElementById('score-'+k.key).value) || 0);
   return {
     uid: prCurrentEmployee.id, name: prCurrentEmployee.name, store: prCurrentEmployee.store,
-    month: prCurrentMonth, baseSalary: prBaseSalary, typhoonDeduction: prTyphoonDeduction,
+    month: prCurrentMonth, baseSalary: prBaseSalary,
+    typhoonDeduction: prTyphoonDeduction, leaveDeduction: prLeaveDeduction,
+    laborInsurance: prLaborIns, healthInsurance: prHealthIns,
     scores, totalScore: Number(document.getElementById('pr-total-score').textContent),
     bonusBase: Number(document.getElementById('pr-bonus-base').value) || 0,
     bonusAmount: Number(document.getElementById('pr-bonus').textContent.replace(/[^0-9-]/g,'')) || 0,
+    grossProfit: Number(document.getElementById('pr-gross-profit').value) || 0,
+    profitBonus: Number(document.getElementById('pr-profit-bonus').textContent.replace(/[^0-9-]/g,'')) || 0,
     extra: Number(document.getElementById('pr-extra').value) || 0,
     adjust: Number(document.getElementById('pr-adjust').value) || 0,
     suggestedTotal: Number(document.getElementById('pr-suggested').textContent.replace(/[^0-9-]/g,'')) || 0
@@ -1073,14 +1134,18 @@ function printPayslip(){
     <table>
       <tr><th>項目</th><th>金額</th></tr>
       <tr><td>底薪</td><td>${data.baseSalary.toLocaleString()}</td></tr>
-      <tr><td>颱風扣款</td><td>-${data.typhoonDeduction.toLocaleString()}</td></tr>
+      <tr><td>颱風／店休扣款</td><td>-${data.typhoonDeduction.toLocaleString()}</td></tr>
+      <tr><td>事假／病假扣款</td><td>-${data.leaveDeduction.toLocaleString()}</td></tr>
+      <tr><td>勞保自付額</td><td>-${data.laborInsurance.toLocaleString()}</td></tr>
+      <tr><td>健保自付額</td><td>-${data.healthInsurance.toLocaleString()}</td></tr>
       <tr><td>績效總分</td><td>${data.totalScore} 分</td></tr>
       <tr><td>績效獎金</td><td>+${data.bonusAmount.toLocaleString()}</td></tr>
+      <tr><td>業績分紅（毛利 ${data.grossProfit.toLocaleString()}）</td><td>+${data.profitBonus.toLocaleString()}</td></tr>
       <tr><td>其他加項</td><td>+${data.extra.toLocaleString()}</td></tr>
       <tr><td>其他調整</td><td>${data.adjust.toLocaleString()}</td></tr>
       <tr class="total"><td>建議薪資合計</td><td>${data.suggestedTotal.toLocaleString()}</td></tr>
     </table>
-    <p style="margin-top:24px;font-size:12px;color:#888;">此單為系統試算建議金額，實際發放請以公司規定為準。</p>
+    <p style="margin-top:24px;font-size:12px;color:#888;">勞健保為依底薪估算之概算金額，正式投保級距請以勞保局／健保署公告為準；此單為系統試算建議金額，實際發放請以公司規定為準。</p>
     </body></html>
   `);
   w.document.close();
@@ -1095,9 +1160,13 @@ function emailPayslip(){
 `${data.name} 您好，附上 ${data.month} 薪資明細（PDF 請另外附加此信）：
 
 底薪：${data.baseSalary.toLocaleString()}
-颱風扣款：-${data.typhoonDeduction.toLocaleString()}
+颱風／店休扣款：-${data.typhoonDeduction.toLocaleString()}
+事假／病假扣款：-${data.leaveDeduction.toLocaleString()}
+勞保自付額：-${data.laborInsurance.toLocaleString()}
+健保自付額：-${data.healthInsurance.toLocaleString()}
 績效總分：${data.totalScore} 分
 績效獎金：+${data.bonusAmount.toLocaleString()}
+業績分紅（毛利 ${data.grossProfit.toLocaleString()}）：+${data.profitBonus.toLocaleString()}
 其他加項：+${data.extra.toLocaleString()}
 其他調整：${data.adjust.toLocaleString()}
 建議薪資合計：${data.suggestedTotal.toLocaleString()} 元
@@ -1192,4 +1261,4 @@ function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"\\'"); }
 </script>
 </body>
 </html>
-456
+123
