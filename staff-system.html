@@ -176,7 +176,17 @@
 <div id="app">
   <div class="who-bar">
     <span><button class="menu-toggle" onclick="toggleSidebar()">☰</button> <span id="who-label"></span></span>
-    <button onclick="doLogout()">登出</button>
+    <span>
+      <button id="notif-bell" onclick="toggleNotifPanel()" style="display:none;position:relative;">🔔<span id="notif-dot" class="tab-dot" style="display:none;"></span></button>
+      <button onclick="doLogout()">登出</button>
+    </span>
+  </div>
+  <div class="modal-bg" id="notif-panel-bg" onclick="toggleNotifPanel()">
+    <div class="modal" onclick="event.stopPropagation()">
+      <button class="modal-close" onclick="toggleNotifPanel()">&times;</button>
+      <h3>待處理假單申請</h3>
+      <div id="notif-panel-list"><div class="empty">目前沒有待處理的申請</div></div>
+    </div>
   </div>
 
   <div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleSidebar()"></div>
@@ -241,7 +251,7 @@
         <div id="typhoon-list" style="margin-top:10px;"><div class="empty">尚無颱風假日</div></div>
       </div>
       <div class="card">
-        <h3>本月休假總覽 · <span id="cal-month-label"></span></h3>
+        <h3><button class="btn-ghost btn-sm" onclick="changeCalMonth(-1)">‹ 上月</button> <span id="cal-month-label"></span> <button class="btn-ghost btn-sm" onclick="changeCalMonth(1)">下月 ›</button></h3>
         <div id="leave-calendar"><div class="empty">載入中…</div></div>
       </div>
       <div class="card" id="resign-card"><h3>離職申請</h3>
@@ -514,6 +524,7 @@ function enterApp(){
   document.getElementById('resign-card').style.display = isManager(CURRENT_USER.role) ? 'none' : 'block';
   document.getElementById('resign-requests-card').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
   document.getElementById('typhoon-card').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
+  document.getElementById('notif-bell').style.display = isManager(CURRENT_USER.role) ? 'inline-block' : 'none';
 
   viewStore = CURRENT_USER.role === 'regional_manager' ? '全部' : CURRENT_USER.store;
   document.getElementById('inv-store-label').textContent = viewStore;
@@ -710,19 +721,46 @@ async function submitLeave(){
   }).catch(e=>showToast("送出失敗："+e.message));
 }
 
+function renderNotifBell(pendingItems){
+  if(!isManager(CURRENT_USER.role)) return;
+  document.getElementById('notif-dot').style.display = pendingItems.length ? 'block' : 'none';
+  const panel = document.getElementById('notif-panel-list');
+  if(pendingItems.length === 0){ panel.innerHTML = '<div class="empty">目前沒有待處理的申請</div>'; return; }
+  const groups = {};
+  pendingItems.forEach(p=>{ (groups[p.type] = groups[p.type] || []).push(p); });
+  panel.innerHTML = Object.entries(groups).map(([type,items])=>`
+    <div class="item-meta" style="font-weight:700;color:var(--ink);margin-top:8px;">${type}（${items.length}）</div>
+    ${items.map(p=>`
+      <div class="item">
+        <div class="item-head"><strong>${p.name} · ${p.store}</strong></div>
+        <div class="item-meta">${p.start} ~ ${p.end}${p.reason ? ' · '+escapeHtml(p.reason) : ''}</div>
+        <div class="item-actions">
+          <button class="btn-good btn-sm" onclick="setLeaveStatus('${p.id}','approved');toggleNotifPanel();">核准</button>
+          <button class="btn-bad btn-sm" onclick="setLeaveStatus('${p.id}','rejected');toggleNotifPanel();">拒絕</button>
+        </div>
+      </div>
+    `).join('')}
+  `).join('');
+}
+function toggleNotifPanel(){
+  document.getElementById('notif-panel-bg').classList.toggle('active');
+}
+
 function loadLeaveRequests(){
   let q = db.collection('leave_requests').orderBy('createdAt','desc').limit(50);
   if(viewStore !== '全部') q = q.where('store','==',viewStore);
   q.onSnapshot(snap=>{
       const list = document.getElementById('leave-list');
       const approvedForCal = [];
-      if(snap.empty){ list.innerHTML = '<div class="empty">尚無申請紀錄</div>'; renderLeaveCalendar(approvedForCal); return; }
+      if(snap.empty){ list.innerHTML = '<div class="empty">尚無申請紀錄</div>'; calApprovedLeavesCache = approvedForCal; renderLeaveCalendar(approvedForCal); return; }
       list.innerHTML = '';
       let hasUnseen = false;
+      const pendingItems = [];
       snap.forEach(doc=>{
         const d = doc.data();
         leaveDocsCache[doc.id] = d;
         if(d.status === 'approved') approvedForCal.push(d);
+        if(d.status === 'pending') pendingItems.push({ id: doc.id, ...d });
         const statusLabel = d.status==='approved'?'已核准':d.status==='rejected'?'已拒絕':'待審核';
         const statusClass = d.status==='approved'?'approved':d.status==='rejected'?'rejected':'pending';
         const isMine = d.uid === CURRENT_USER.uid;
@@ -748,13 +786,22 @@ function loadLeaveRequests(){
         list.appendChild(div);
       });
       document.getElementById('tab-leave').classList.toggle('tab-dot', hasUnseen);
+      calApprovedLeavesCache = approvedForCal;
+      renderNotifBell(pendingItems);
       renderLeaveCalendar(approvedForCal);
     }, ()=>{ document.getElementById('leave-list').innerHTML = '<div class="empty">讀取失敗，請檢查 Firebase 設定</div>'; });
 }
 
+let calApprovedLeavesCache = [];
+let calViewDate = new Date();
+
+function changeCalMonth(delta){
+  calViewDate = new Date(calViewDate.getFullYear(), calViewDate.getMonth()+delta, 1);
+  renderLeaveCalendar(calApprovedLeavesCache);
+}
+
 function renderLeaveCalendar(approvedLeaves){
-  const now = new Date();
-  const year = now.getFullYear(), month = now.getMonth(); // 0-indexed
+  const year = calViewDate.getFullYear(), month = calViewDate.getMonth(); // 0-indexed
   document.getElementById('cal-month-label').textContent = `${year}年${month+1}月`;
   const firstDow = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month+1, 0).getDate();
@@ -1370,19 +1417,19 @@ async function buildEmployeeCard(doc){
         : `<button class="btn-good btn-sm" onclick="updateStaffStatus('${uid}','在職')">恢復在職</button>`}
     </div>
 
-    <div class="item-meta" style="margin-top:12px;font-weight:700;color:var(--ink);">基本資料</div>
+    <div class="item-meta" style="margin-top:12px;font-weight:700;color:var(--ink);">基本資料（填完後按下方「儲存」）</div>
     <div class="rowline" style="margin-top:6px;">
-      <div class="field" style="margin-bottom:6px;"><label>聯絡電話</label><input value="${escapeHtml(d.phone||'')}" onchange="updateStaffField('${uid}','phone',this.value)"></div>
-      <div class="field" style="margin-bottom:6px;"><label>學歷</label><input value="${escapeHtml(d.education||'')}" onchange="updateStaffField('${uid}','education',this.value)"></div>
+      <div class="field" style="margin-bottom:6px;"><label>聯絡電話</label><input id="phone-${uid}" value="${escapeHtml(d.phone||'')}"></div>
+      <div class="field" style="margin-bottom:6px;"><label>學歷</label><input id="edu-${uid}" value="${escapeHtml(d.education||'')}"></div>
     </div>
-    <div class="field" style="margin-bottom:6px;"><label>地址</label><input value="${escapeHtml(d.address||'')}" onchange="updateStaffField('${uid}','address',this.value)"></div>
-    <div class="rowline">
-      <div class="field" style="margin-bottom:6px;"><label>到職日</label><input type="date" value="${d.hireDate||''}" onchange="updateStaffField('${uid}','hireDate',this.value)"></div>
-      <div class="field" style="margin-bottom:6px;"><label>等級</label><select onchange="updateStaffField('${uid}','level',this.value)">${levelSelHtml}</select></div>
+    <div class="field" style="margin-bottom:6px;"><label>地址</label><input id="addr-${uid}" value="${escapeHtml(d.address||'')}"></div>
+    <div class="field" style="margin-bottom:6px;"><label>到職日</label>
+      <div class="rowline">${yearMonthDaySelects(uid, d.hireDate)}</div>
     </div>
+    <div class="field" style="margin-bottom:6px;"><label>等級</label><select id="level-${uid}">${levelSelHtml}</select></div>
     <div class="item-meta">年資：${tenureStr}</div>
 
-    <div class="field" style="margin-top:8px;margin-bottom:6px;"><label>基本工資（元，未填預設 29,500）</label><input type="number" value="${baseSalary}" onchange="updateStaffField('${uid}','baseSalary',Number(this.value))"></div>
+    <div class="field" style="margin-top:8px;margin-bottom:6px;"><label>基本工資（元，未填預設 29,500）</label><input type="number" id="basesalary-${uid}" value="${baseSalary}"></div>
 
     <div class="rowline">
       <div class="item" style="background:#f3f3f0;"><div class="item-meta">勞保自付額（不可修改）<br><span class="mono">${laborSelf.toLocaleString()}</span></div></div>
@@ -1396,20 +1443,58 @@ async function buildEmployeeCard(doc){
     <div class="item-meta" style="margin-top:12px;font-weight:700;color:var(--ink);">特休統計（${year}年）</div>
     <div class="rowline">
       <div class="field" style="margin-bottom:6px;"><label>特休方式</label>
-        <select onchange="updateStaffField('${uid}','leaveMode',this.value)">
+        <select id="leavemode-${uid}">
           <option value="auto" ${leaveMode==='auto'?'selected':''}>依年資自動（${autoLeave}天）</option>
           <option value="custom" ${leaveMode==='custom'?'selected':''}>約定天數</option>
         </select>
       </div>
-      <div class="field" style="margin-bottom:6px;"><label>約定天數</label><input type="number" value="${d.customAnnualLeaveDays||0}" onchange="updateStaffField('${uid}','customAnnualLeaveDays',Number(this.value))"></div>
+      <div class="field" style="margin-bottom:6px;"><label>約定天數</label><input type="number" id="customdays-${uid}" value="${d.customAnnualLeaveDays||0}"></div>
     </div>
-    <div class="field" style="margin-bottom:6px;"><label>去年未休完天數（結轉）</label><input type="number" value="${carryover}" onchange="updateStaffField('${uid}','carryoverDays',Number(this.value))"></div>
+    <div class="field" style="margin-bottom:6px;"><label>去年未休完天數（結轉）</label><input type="number" id="carryover-${uid}" value="${carryover}"></div>
     <div class="item-meta">可休 ${entitledLeave} 天 + 結轉 ${carryover} 天　已休 ${usedAnnual} 天　剩餘 <strong>${remainingAnnual}</strong> 天</div>
 
     <div class="item-meta" style="margin-top:12px;font-weight:700;color:var(--ink);">病假／事假統計（${year}年）</div>
     <div class="item-meta">病假：${sickDays} 天／${sickEvents} 次　　事假：${personalDays} 天／${personalEvents} 次</div>
+
+    <button class="btn-primary btn-block" style="margin-top:12px;" onclick="saveEmployeeProfile('${uid}')">儲存基本資料</button>
   `;
   return div;
+}
+
+function yearMonthDaySelects(uid, existingDateStr){
+  const parts = (existingDateStr||'').split('-').map(Number);
+  const [ey,em,ed] = parts.length===3 ? parts : [null,null,null];
+  const thisYear = new Date().getFullYear();
+  let yearOpts = '<option value="">年</option>';
+  for(let y=thisYear; y>=thisYear-60; y--) yearOpts += `<option value="${y}" ${y===ey?'selected':''}>${y}</option>`;
+  let monthOpts = '<option value="">月</option>';
+  for(let m=1;m<=12;m++) monthOpts += `<option value="${m}" ${m===em?'selected':''}>${m}</option>`;
+  let dayOpts = '<option value="">日</option>';
+  for(let dd=1;dd<=31;dd++) dayOpts += `<option value="${dd}" ${dd===ed?'selected':''}>${dd}</option>`;
+  return `
+    <select id="hire-y-${uid}" style="flex:1;">${yearOpts}</select>
+    <select id="hire-m-${uid}" style="flex:1;">${monthOpts}</select>
+    <select id="hire-d-${uid}" style="flex:1;">${dayOpts}</select>
+  `;
+}
+
+function saveEmployeeProfile(uid){
+  const y = document.getElementById(`hire-y-${uid}`).value;
+  const m = document.getElementById(`hire-m-${uid}`).value;
+  const dd = document.getElementById(`hire-d-${uid}`).value;
+  const hireDate = (y && m && dd) ? `${y}-${String(m).padStart(2,'0')}-${String(dd).padStart(2,'0')}` : '';
+  const data = {
+    phone: document.getElementById(`phone-${uid}`).value.trim(),
+    education: document.getElementById(`edu-${uid}`).value.trim(),
+    address: document.getElementById(`addr-${uid}`).value.trim(),
+    hireDate,
+    level: document.getElementById(`level-${uid}`).value,
+    baseSalary: Number(document.getElementById(`basesalary-${uid}`).value) || 29500,
+    leaveMode: document.getElementById(`leavemode-${uid}`).value,
+    customAnnualLeaveDays: Number(document.getElementById(`customdays-${uid}`).value) || 0,
+    carryoverDays: Number(document.getElementById(`carryover-${uid}`).value) || 0
+  };
+  db.collection('employees').doc(uid).update(data).then(()=>showToast("已儲存基本資料"));
 }
 
 function updateStaffField(uid, field, value){
