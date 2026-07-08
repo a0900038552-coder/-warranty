@@ -849,9 +849,9 @@ function parseXlsx(buf, fileName) {
       date:  idxOf(['日期']),
       type:  idxOf(['售出品項','維修品項','品項']),
       phone: idxOf(['連絡電話','聯絡電話']),
-      name:  idxOf(['單號','姓名']),
+      name:  idxOf(['名字','單號','姓名']),
       note:  idxOf(['備注','備註']),
-      amount: idxOf(['金額']),
+      amount: idxOf(['金額','金    額']),
     };
 
     // 偵測分店：找「單位：復原者OO店」這格
@@ -876,7 +876,9 @@ function parseXlsx(buf, fileName) {
       if (rawDate && rawDate !== '') currentDate = fmtDate(rawDate);
 
       const phone = col.phone >= 0 ? String(r[col.phone]).trim() : '';
-      if (!phone.match(/^09\d{8}$/)) return; // 只取 09 開頭 10 碼
+      // 支援 09xxxxxxxx（10碼）和 9xxxxxxxx（9碼，自動補0）
+      if (phone.match(/^9\d{8}$/)) phone = '0' + phone;
+      if (!phone.match(/^09\d{8}$/)) return;
 
       const name = col.name >= 0 ? String(r[col.name]).trim().replace(/[RS]$/, '') : '';
       pendingRows.push({
@@ -983,3 +985,4 @@ doSearch();
 </script>
 </body>
 </html>
+1.1
