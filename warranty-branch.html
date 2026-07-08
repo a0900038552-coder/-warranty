@@ -832,9 +832,10 @@ function parseXlsx(buf, fileName) {
   const wb = XLSX.read(buf, { type: 'array', cellDates: true });
   pendingRows = [];
 
-  // 逐一處理所有工作表（匯整1~11），跳過廢頁
+  // 逐一處理所有工作表，跳過不需要的
+  const SKIP_SHEETS = ['廢', '交接', '報價', '退貨', 'LINE PAY', 'LINEPAY'];
   wb.SheetNames.forEach(sheetName => {
-    if (sheetName.includes('廢')) return;
+    if (SKIP_SHEETS.some(s => sheetName.includes(s))) return;
     const ws = wb.Sheets[sheetName];
     const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true, cellDates: true });
 
@@ -985,4 +986,3 @@ doSearch();
 </script>
 </body>
 </html>
-1.1
