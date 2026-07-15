@@ -194,6 +194,7 @@
     <aside class="sidebar" id="sidebar">
       <button id="tab-ann" class="active" onclick="switchTab('ann')">📢 公告</button>
       <button id="tab-leave" onclick="switchTab('leave')">🗓 假表/請假</button>
+      <button id="tab-checkin" onclick="switchTab('checkin')">🕐 打卡</button>
       <button id="tab-inv" onclick="switchTab('inv')">📦 庫存管理</button>
       <button id="tab-staff" onclick="switchTab('staff')" style="display:none;">👤 員工管理</button>
       <button id="tab-payroll" onclick="switchTab('payroll')" style="display:none;">💰 薪資管理</button>
@@ -259,6 +260,46 @@
         <button class="btn-bad btn-block" onclick="requestResignation()">提出離職申請</button>
       </div>
       <div class="card"><h3>本店申請紀錄</h3><div id="leave-list"><div class="empty">載入中…</div></div></div>
+    </section>
+
+    <!-- CHECK-IN PANEL -->
+    <section id="panel-checkin" class="panel">
+      <div class="card" id="store-location-card" style="display:none;">
+        <h3>分店座標設定</h3>
+        <p style="font-size:12px;color:var(--ink-soft);margin-top:-6px;">請站在店內，點下方按鈕擷取目前位置作為分店座標基準</p>
+        <div class="field"><label>設定分店</label>
+          <select id="loc-store"><option value="楠梓店">楠梓店</option><option value="德賢店">德賢店</option></select>
+        </div>
+        <button class="btn-ghost btn-block" onclick="captureStoreLocation()">📍 擷取目前位置</button>
+        <button class="btn-ghost btn-block" style="margin-top:8px;" onclick="registerStoreWifi()">📶 登記目前 WiFi 為授權連線</button>
+        <div id="store-location-info" style="margin-top:10px;"><div class="empty">尚未設定任何分店座標</div></div>
+      </div>
+
+      <div class="card">
+        <h3>打卡</h3>
+        <div id="wifi-gate-status" class="item-meta" style="margin-bottom:8px;">檢查連線中…</div>
+        <div id="checkin-status" class="item-meta" style="margin-bottom:10px;">載入中…</div>
+        <div class="rowline">
+          <button class="btn-good" id="clock-in-btn" onclick="doClockAction('in')" disabled>上班打卡</button>
+          <button class="btn-bad" id="clock-out-btn" onclick="doClockAction('out')" disabled>下班打卡</button>
+        </div>
+        <button class="btn-ghost btn-block" style="margin-top:8px;" onclick="checkWifiGate()">🔄 重新檢查連線</button>
+        <a href="checkin.html" style="display:block;text-align:center;font-size:12px;color:var(--copper-dark);margin-top:10px;">📱 開啟獨立打卡機頁面（適合放平板/店裡電腦當專用打卡機）</a>
+      </div>
+
+      <div class="card">
+        <h3>本人打卡紀錄</h3>
+        <div id="my-attendance-list"><div class="empty">載入中…</div></div>
+      </div>
+
+      <div class="card" id="team-attendance-card" style="display:none;">
+        <h3>今日全店打卡總覽</h3>
+        <div id="team-attendance-list"><div class="empty">載入中…</div></div>
+        <div class="rowline" style="margin-top:10px;">
+          <input type="month" id="export-month">
+          <button class="btn-ghost" onclick="exportAttendanceCSV()">匯出該月打卡紀錄（CSV）</button>
+        </div>
+      </div>
     </section>
 
     <!-- INVENTORY PANEL -->
@@ -525,6 +566,8 @@ function enterApp(){
   document.getElementById('resign-requests-card').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
   document.getElementById('typhoon-card').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
   document.getElementById('notif-bell').style.display = isManager(CURRENT_USER.role) ? 'inline-block' : 'none';
+  document.getElementById('store-location-card').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
+  document.getElementById('team-attendance-card').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
 
   viewStore = CURRENT_USER.role === 'regional_manager' ? '全部' : CURRENT_USER.store;
   document.getElementById('inv-store-label').textContent = viewStore;
@@ -536,7 +579,15 @@ function enterApp(){
   loadTyphoonDays();
   loadLeaveRequests();
   loadInventory();
-  if(isManager(CURRENT_USER.role)){ loadStaffList(); loadResignationRequests(); loadPendingAccounts(); loadPayrollEmployeeOptions(); }
+  loadStoreLocations();
+  loadMyAttendance();
+  checkWifiGate();
+  const exportMonthEl = document.getElementById('export-month');
+  if(exportMonthEl && !exportMonthEl.value){
+    const now = new Date();
+    exportMonthEl.value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  }
+  if(isManager(CURRENT_USER.role)){ loadStaffList(); loadResignationRequests(); loadPendingAccounts(); loadPayrollEmployeeOptions(); loadTeamAttendance(); }
 }
 
 function renderStoreSelectors(){
@@ -576,7 +627,7 @@ function renderStoreSelectors(){
 
 /* ---------- Tabs ---------- */
 function switchTab(name){
-  ['ann','leave','inv','staff','payroll'].forEach(t=>{
+  ['ann','leave','checkin','inv','staff','payroll'].forEach(t=>{
     document.getElementById('tab-'+t).classList.toggle('active', t===name);
     document.getElementById('panel-'+t).classList.toggle('active', t===name);
   });
@@ -1329,6 +1380,187 @@ function emailPayslip(){
   window.location.href = `mailto:${emp?.email||''}?subject=${subject}&body=${body}`;
 }
 
+/* ---------- WiFi IP 授權打卡 ---------- */
+async function getPublicIP(){
+  const res = await fetch('https://api.ipify.org?format=json');
+  const data = await res.json();
+  return data.ip;
+}
+
+async function registerStoreWifi(){
+  const store = document.getElementById('loc-store').value;
+  try{
+    const ip = await getPublicIP();
+    await db.collection('store_settings').doc(store).set({ authorizedIP: ip }, { merge:true });
+    showToast(`已登記 ${store} 授權 WiFi（目前 IP：${ip}）`);
+  }catch(e){ showToast('取得 IP 失敗：'+e.message); }
+}
+
+async function checkWifiGate(){
+  const statusEl = document.getElementById('wifi-gate-status');
+  const inBtn = document.getElementById('clock-in-btn'), outBtn = document.getElementById('clock-out-btn');
+  statusEl.textContent = '檢查連線中…';
+  inBtn.disabled = true; outBtn.disabled = true;
+  const loc = storeLocations[CURRENT_USER.store];
+  if(!loc || !loc.authorizedIP){
+    statusEl.textContent = '本店尚未設定 WiFi 限制，可直接打卡';
+    inBtn.disabled = false; outBtn.disabled = false;
+    return;
+  }
+  try{
+    const ip = await getPublicIP();
+    if(ip === loc.authorizedIP){
+      statusEl.textContent = '✅ 已連接店內 WiFi，可以打卡';
+      inBtn.disabled = false; outBtn.disabled = false;
+    } else {
+      statusEl.textContent = '⚠ 尚未連接店內 WiFi，請連接後按「重新檢查連線」';
+    }
+  }catch(e){
+    statusEl.textContent = '網路連線檢查失敗，請確認網路後重試';
+  }
+}
+
+function exportAttendanceCSV(){
+  const month = document.getElementById('export-month').value;
+  if(!month){ showToast('請選擇月份'); return; }
+  const monthStart = `${month}-01`;
+  const [y,m] = month.split('-').map(Number);
+  const monthEndDate = new Date(y, m, 0);
+
+  let q = db.collection('attendance').orderBy('createdAt','desc').limit(1000);
+  if(viewStore !== '全部') q = q.where('store','==',viewStore);
+  q.get().then(snap=>{
+    const rows = [['姓名','分店','類型','時間','定位備註']];
+    snap.forEach(doc=>{
+      const d = doc.data();
+      const t = d.createdAt ? d.createdAt.toDate() : null;
+      if(!t) return;
+      if(t < new Date(y,m-1,1) || t > new Date(y,m-1,monthEndDate.getDate(),23,59,59)) return;
+      rows.push([d.name, d.store, d.type==='in'?'上班':'下班', t.toLocaleString('zh-TW'), d.distanceNote||'']);
+    });
+    if(rows.length===1){ showToast('該月無打卡紀錄'); return; }
+    const csv = '\uFEFF' + rows.map(r=> r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `打卡紀錄_${viewStore==='全部'?'全部分店':viewStore}_${month}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+}
+
+/* ---------- 打卡 ---------- */
+let storeLocations = {}; // { 楠梓店: {lat,lng}, 德賢店: {lat,lng} }
+
+function haversineDistance(lat1,lng1,lat2,lng2){
+  const R = 6371000;
+  const toRad = x => x*Math.PI/180;
+  const dLat = toRad(lat2-lat1), dLng = toRad(lng2-lng1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function getGeolocation(){
+  return new Promise((resolve,reject)=>{
+    if(!navigator.geolocation){ reject('此裝置不支援定位'); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      err => reject('無法取得定位，請確認已開啟定位權限'),
+      { enableHighAccuracy:true, timeout:10000 }
+    );
+  });
+}
+
+function captureStoreLocation(){
+  const store = document.getElementById('loc-store').value;
+  getGeolocation().then(pos=>{
+    db.collection('store_settings').doc(store).set({ lat: pos.lat, lng: pos.lng, radius: 300 }, { merge:true })
+      .then(()=> showToast(`已設定 ${store} 座標`));
+  }).catch(e=> showToast(e));
+}
+
+function loadStoreLocations(){
+  db.collection('store_settings').onSnapshot(snap=>{
+    storeLocations = {};
+    snap.forEach(doc=> storeLocations[doc.id] = doc.data());
+    const info = document.getElementById('store-location-info');
+    const entries = Object.entries(storeLocations);
+    info.innerHTML = entries.length ? entries.map(([store,loc])=>
+      `<div class="item-meta">${store}：${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)}（範圍 ${loc.radius||300} 公尺）${loc.authorizedIP?'　WiFi IP：'+loc.authorizedIP:''}</div>`
+    ).join('') : '<div class="empty">尚未設定任何分店座標</div>';
+    if(CURRENT_USER) checkWifiGate();
+  });
+}
+
+async function doClockAction(type){
+  let pos = null, distanceNote = '定位擷取失敗，僅記錄時間';
+  try{
+    pos = await getGeolocation();
+    const loc = storeLocations[CURRENT_USER.store];
+    if(loc){
+      const dist = Math.round(haversineDistance(pos.lat,pos.lng,loc.lat,loc.lng));
+      distanceNote = dist <= (loc.radius||300) ? `距離店裡約 ${dist} 公尺內` : `⚠ 距離店裡約 ${dist} 公尺，超出範圍`;
+    } else {
+      distanceNote = '該分店尚未設定座標，僅記錄位置';
+    }
+  }catch(e){ /* 定位失敗仍允許打卡，只是不記錄距離 */ }
+
+  db.collection('attendance').add({
+    uid: CURRENT_USER.uid, name: CURRENT_USER.name, store: CURRENT_USER.store,
+    type, lat: pos?.lat||null, lng: pos?.lng||null, distanceNote,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).then(()=> showToast((type==='in'?'上班':'下班') + '打卡成功'))
+    .catch(e=> showToast('打卡失敗：'+e.message));
+}
+
+function loadMyAttendance(){
+  db.collection('attendance').where('uid','==',CURRENT_USER.uid).orderBy('createdAt','desc').limit(20)
+    .onSnapshot(snap=>{
+      const todayStr = new Date().toDateString();
+      let todayIn = null, todayOut = null;
+      const list = document.getElementById('my-attendance-list');
+      if(snap.empty){ list.innerHTML = '<div class="empty">尚無打卡紀錄</div>'; }
+      else {
+        list.innerHTML = '';
+        snap.forEach(doc=>{
+          const d = doc.data();
+          const t = d.createdAt ? d.createdAt.toDate() : null;
+          if(t && t.toDateString()===todayStr){ if(d.type==='in' && !todayIn) todayIn=t; if(d.type==='out' && !todayOut) todayOut=t; }
+          const div = document.createElement('div');
+          div.className = 'item';
+          div.innerHTML = `<div class="item-head"><strong>${d.type==='in'?'上班':'下班'}打卡</strong><span class="mono">${t?t.toLocaleString('zh-TW'):''}</span></div>
+            <div class="item-meta">${d.distanceNote||''}</div>`;
+          list.appendChild(div);
+        });
+      }
+      document.getElementById('checkin-status').textContent =
+        `今天：${todayIn ? '已上班打卡 '+todayIn.toLocaleTimeString('zh-TW') : '尚未上班打卡'}　${todayOut ? '已下班打卡 '+todayOut.toLocaleTimeString('zh-TW') : '尚未下班打卡'}`;
+    }, ()=>{ document.getElementById('my-attendance-list').innerHTML = '<div class="empty">讀取失敗，請檢查 Firebase 設定</div>'; });
+}
+
+function loadTeamAttendance(){
+  let q = db.collection('attendance').orderBy('createdAt','desc').limit(100);
+  if(viewStore !== '全部') q = q.where('store','==',viewStore);
+  q.onSnapshot(snap=>{
+    const todayStr = new Date().toDateString();
+    const byPerson = {};
+    snap.forEach(doc=>{
+      const d = doc.data();
+      const t = d.createdAt ? d.createdAt.toDate() : null;
+      if(!t || t.toDateString() !== todayStr) return;
+      byPerson[d.name] = byPerson[d.name] || {};
+      if(d.type==='in' && !byPerson[d.name].in) byPerson[d.name].in = t;
+      if(d.type==='out' && !byPerson[d.name].out) byPerson[d.name].out = t;
+    });
+    const list = document.getElementById('team-attendance-list');
+    const names = Object.keys(byPerson);
+    list.innerHTML = names.length ? names.map(n=>`
+      <div class="item"><div class="item-head"><strong>${escapeHtml(n)}</strong></div>
+      <div class="item-meta">上班：${byPerson[n].in?byPerson[n].in.toLocaleTimeString('zh-TW'):'尚未打卡'}　下班：${byPerson[n].out?byPerson[n].out.toLocaleTimeString('zh-TW'):'尚未打卡'}</div></div>
+    `).join('') : '<div class="empty">今天還沒有人打卡</div>';
+  }, ()=>{ document.getElementById('team-attendance-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>'; });
+}
+
 /* ---------- 員工管理 / 基本資料 ---------- */
 const ROLE_OPTIONS = [
   { v:'staff', l:'一般員工' },
@@ -1530,4 +1762,4 @@ function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"\\'"); }
 </script>
 </body>
 </html>
-01.02.1測試版
+1.23 測試版
