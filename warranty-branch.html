@@ -877,9 +877,16 @@ function parseXlsx(buf, fileName) {
       if (rawDate && rawDate !== '') currentDate = fmtDate(rawDate);
 
       const phone = col.phone >= 0 ? String(r[col.phone]).trim() : '';
-      // 支援 09xxxxxxxx（10碼）和 9xxxxxxxx（9碼，自動補0）
-      if (phone.match(/^9\d{8}$/)) phone = '0' + phone;
-      if (!phone.match(/^09\d{8}$/)) return;
+      // 支援數字或字串格式，9碼自動補0
+      phone = phone.replace(/[^0-9]/g, ''); // 移除非數字字元
+      if (phone.length === 9 && phone.startsWith('9')) phone = '0' + phone;
+      if (phone.length === 10 && phone.startsWith('09')) {
+        // 合法手機號碼
+      } else if (phone.length >= 8) {
+        // 市話或其他，保留但不強制格式
+      } else {
+        return; // 太短，跳過
+      }
 
       const name = col.name >= 0 ? String(r[col.name]).trim().replace(/[RS]$/, '') : '';
       pendingRows.push({
@@ -907,7 +914,13 @@ function autoWarranty(type) {
 
 function fmtDate(v) {
   if (!v) return '';
-  if (v instanceof Date) return v.toISOString().split('T')[0];
+  if (v instanceof Date) {
+    // 修正時區問題：用本地時間而非 UTC
+    const y = v.getFullYear();
+    const m = String(v.getMonth() + 1).padStart(2, '0');
+    const d = String(v.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
   const s = String(v);
   // 支援 114/6/13 民國格式
   const roc = s.match(/^(\d{2,3})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
