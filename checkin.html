@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>復原者 · 打卡機</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<style>
+  :root{
+    --ink:#1c1f26; --ink-soft:#3a3f4b; --paper:#f6f4f0; --card:#ffffff;
+    --line:#e2ddd3; --copper:#c1723d; --copper-dark:#9c5a2e;
+    --good:#3f7a5c; --bad:#b3432b; --warn:#c1953d;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:'Noto Sans TC',sans-serif;-webkit-font-smoothing:antialiased;}
+  .mono{font-family:'IBM Plex Mono',monospace;}
+  .trace{height:8px;background-image:radial-gradient(circle, var(--copper) 1.5px, transparent 1.6px);background-size:14px 8px;background-position:center;opacity:.55;}
+  header.top{background:var(--ink);color:#fff;padding:18px 20px 14px;}
+  header.top h1{margin:0;font-size:19px;font-weight:900;letter-spacing:.02em;}
+  header.top p{margin:4px 0 0;font-size:12px;color:#b9bdc7;font-family:'IBM Plex Mono',monospace;}
+
+  main{padding:16px 16px 60px;max-width:480px;margin:0 auto;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:14px;text-align:center;}
+  .card h3{margin:0 0 12px;font-size:16px;}
+  .field{margin-bottom:12px;text-align:left;}
+  .field label{display:block;font-size:12px;color:var(--ink-soft);margin-bottom:5px;font-family:'IBM Plex Mono',monospace;}
+  input{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--card);font-size:15px;font-family:inherit;color:var(--ink);}
+  button{cursor:pointer;border:none;border-radius:8px;padding:16px;font-size:16px;font-weight:700;font-family:'Noto Sans TC',sans-serif;}
+  .btn-primary{background:var(--copper);color:#fff;} .btn-primary:hover{background:var(--copper-dark);}
+  .btn-ghost{background:transparent;color:var(--ink-soft);border:1px solid var(--line);padding:10px;font-size:13px;}
+  .btn-good{background:var(--good);color:#fff;} .btn-bad{background:var(--bad);color:#fff;}
+  .btn-block{width:100%;}
+  button:disabled{opacity:.4;cursor:not-allowed;}
+  .rowline{display:flex;gap:10px;}
+  .rowline>*{flex:1;}
+  .who{font-size:14px;font-weight:700;margin-bottom:4px;}
+  .item{border-top:1px solid var(--line);padding:10px 0;text-align:left;font-size:13px;}
+  .item:first-child{border-top:none;}
+  .item-meta{font-size:12px;color:var(--ink-soft);font-family:'IBM Plex Mono',monospace;}
+  .empty{text-align:center;color:var(--ink-soft);font-size:13px;padding:20px 10px;}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:20px;font-size:13px;z-index:30;opacity:0;transition:opacity .25s;pointer-events:none;}
+  .toast.show{opacity:1;}
+  .backlink{display:block;text-align:center;font-size:12px;color:var(--copper-dark);margin-top:10px;text-decoration:none;}
+  #login-screen{display:none;}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <h1>復原者 · 打卡機</h1>
+  <p>STAFF CHECK-IN</p>
+</header>
+<div class="trace"></div>
+
+<main>
+  <!-- 未登入時的簡易登入畫面（正常情況下會自動帶入主系統的登入狀態，不會顯示這個） -->
+  <div id="login-screen" class="card">
+    <h3>登入</h3>
+    <div class="field"><label>Email</label><input id="login-email" type="email"></div>
+    <div class="field"><label>密碼</label><input id="login-pass" type="password"></div>
+    <button class="btn-primary btn-block" onclick="doLogin()">登入</button>
+    <p id="login-error" style="color:var(--bad);font-size:12px;margin-top:10px;"></p>
+    <a class="backlink" href="staff-system.html">還沒有帳號？前往完整系統註冊</a>
+  </div>
+
+  <div id="app" style="display:none;">
+    <div class="card">
+      <div class="who" id="who-label"></div>
+      <div id="wifi-gate-status" class="item-meta" style="margin-bottom:8px;">檢查連線中…</div>
+      <div id="checkin-status" class="item-meta" style="margin-bottom:14px;">載入中…</div>
+      <div class="rowline">
+        <button class="btn-good" id="clock-in-btn" onclick="doClockAction('in')" disabled>上班打卡</button>
+        <button class="btn-bad" id="clock-out-btn" onclick="doClockAction('out')" disabled>下班打卡</button>
+      </div>
+      <button class="btn-ghost btn-block" style="margin-top:10px;" onclick="checkWifiGate()">🔄 重新檢查連線</button>
+    </div>
+
+    <div class="card" style="text-align:left;">
+      <h3 style="text-align:center;">本人最近打卡紀錄</h3>
+      <div id="my-attendance-list"><div class="empty">載入中…</div></div>
+    </div>
+
+    <a class="backlink" href="staff-system.html">↩ 前往完整員工系統</a>
+    <button class="btn-ghost btn-block" style="margin-top:10px;" onclick="doLogout()">登出</button>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* 與 staff-system.html 使用完全相同的 Firebase 設定，才能共用登入狀態 */
+const firebaseConfig = {
+  apiKey: "AIzaSyDyg9BqlmlgHQRlxtgk0Bm0_kpmfmNRcWs",
+  authDomain: "warranty-system-4d18d.firebaseapp.com",
+  projectId: "warranty-system-4d18d",
+  storageBucket: "warranty-system-4d18d.firebasestorage.app",
+  messagingSenderId: "357168697896",
+  appId: "1:357168697896:web:79b3f2faa217d7ad449b1d"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+let CURRENT_USER = null;
+let storeLocations = {};
+
+function doLogin(){
+  const email = document.getElementById('login-email').value.trim();
+  const pass = document.getElementById('login-pass').value;
+  const err = document.getElementById('login-error');
+  err.textContent = '';
+  auth.signInWithEmailAndPassword(email, pass).catch(e=> err.textContent = "登入失敗：" + e.message);
+}
+function doLogout(){ auth.signOut(); }
+
+auth.onAuthStateChanged(user=>{
+  if(user){
+    db.collection('employees').doc(user.uid).get().then(doc=>{
+      if(!doc.exists){ document.getElementById('login-error').textContent = "找不到員工資料"; auth.signOut(); return; }
+      const d = doc.data();
+      if(d.status === '離職'){ document.getElementById('login-error').textContent = "此帳號已離職，無法登入"; auth.signOut(); return; }
+      if(d.status === '待審核'){ document.getElementById('login-error').textContent = "帳號審核中"; auth.signOut(); return; }
+      if(d.status === '拒絕'){ document.getElementById('login-error').textContent = "此帳號註冊已被拒絕"; auth.signOut(); return; }
+      CURRENT_USER = { uid: user.uid, name: d.name, store: d.store, role: d.role };
+      document.getElementById('login-screen').style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+      document.getElementById('who-label').textContent = `${CURRENT_USER.name} · ${CURRENT_USER.store}`;
+      loadStoreLocations();
+      loadMyAttendance();
+    });
+  } else {
+    CURRENT_USER = null;
+    document.getElementById('app').style.display = 'none';
+    document.getElementById('login-screen').style.display = 'block';
+  }
+});
+
+/* ---------- WiFi IP 授權打卡 ---------- */
+async function getPublicIP(){
+  const res = await fetch('https://api.ipify.org?format=json');
+  const data = await res.json();
+  return data.ip;
+}
+function loadStoreLocations(){
+  db.collection('store_settings').onSnapshot(snap=>{
+    storeLocations = {};
+    snap.forEach(doc=> storeLocations[doc.id] = doc.data());
+    checkWifiGate();
+  });
+}
+async function checkWifiGate(){
+  const statusEl = document.getElementById('wifi-gate-status');
+  const inBtn = document.getElementById('clock-in-btn'), outBtn = document.getElementById('clock-out-btn');
+  statusEl.textContent = '檢查連線中…';
+  inBtn.disabled = true; outBtn.disabled = true;
+  const loc = storeLocations[CURRENT_USER.store];
+  if(!loc || !loc.authorizedIP){
+    statusEl.textContent = '本店尚未設定 WiFi 限制，可直接打卡';
+    inBtn.disabled = false; outBtn.disabled = false;
+    return;
+  }
+  try{
+    const ip = await getPublicIP();
+    if(ip === loc.authorizedIP){
+      statusEl.textContent = '✅ 已連接店內 WiFi，可以打卡';
+      inBtn.disabled = false; outBtn.disabled = false;
+    } else {
+      statusEl.textContent = '⚠ 尚未連接店內 WiFi，請連接後按「重新檢查連線」';
+    }
+  }catch(e){ statusEl.textContent = '網路連線檢查失敗，請確認網路後重試'; }
+}
+
+function getGeolocation(){
+  return new Promise((resolve,reject)=>{
+    if(!navigator.geolocation){ reject('此裝置不支援定位'); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      err => reject('無法取得定位'),
+      { enableHighAccuracy:true, timeout:10000 }
+    );
+  });
+}
+function haversineDistance(lat1,lng1,lat2,lng2){
+  const R = 6371000;
+  const toRad = x => x*Math.PI/180;
+  const dLat = toRad(lat2-lat1), dLng = toRad(lng2-lng1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+async function doClockAction(type){
+  let pos = null, distanceNote = '定位擷取失敗，僅記錄時間';
+  try{
+    pos = await getGeolocation();
+    const loc = storeLocations[CURRENT_USER.store];
+    if(loc && loc.lat){
+      const dist = Math.round(haversineDistance(pos.lat,pos.lng,loc.lat,loc.lng));
+      distanceNote = dist <= (loc.radius||300) ? `距離店裡約 ${dist} 公尺內` : `⚠ 距離店裡約 ${dist} 公尺，超出範圍`;
+    } else { distanceNote = '該分店尚未設定座標，僅記錄位置'; }
+  }catch(e){}
+
+  db.collection('attendance').add({
+    uid: CURRENT_USER.uid, name: CURRENT_USER.name, store: CURRENT_USER.store,
+    type, lat: pos?.lat||null, lng: pos?.lng||null, distanceNote,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).then(()=> showToast((type==='in'?'上班':'下班') + '打卡成功'))
+    .catch(e=> showToast('打卡失敗：'+e.message));
+}
+
+function loadMyAttendance(){
+  db.collection('attendance').where('uid','==',CURRENT_USER.uid).orderBy('createdAt','desc').limit(10)
+    .onSnapshot(snap=>{
+      const todayStr = new Date().toDateString();
+      let todayIn = null, todayOut = null;
+      const list = document.getElementById('my-attendance-list');
+      if(snap.empty){ list.innerHTML = '<div class="empty">尚無打卡紀錄</div>'; }
+      else {
+        list.innerHTML = '';
+        snap.forEach(doc=>{
+          const d = doc.data();
+          const t = d.createdAt ? d.createdAt.toDate() : null;
+          if(t && t.toDateString()===todayStr){ if(d.type==='in' && !todayIn) todayIn=t; if(d.type==='out' && !todayOut) todayOut=t; }
+          const div = document.createElement('div');
+          div.className = 'item';
+          div.innerHTML = `<strong>${d.type==='in'?'上班':'下班'}打卡</strong> <span class="mono">${t?t.toLocaleString('zh-TW'):''}</span><div class="item-meta">${d.distanceNote||''}</div>`;
+          list.appendChild(div);
+        });
+      }
+      document.getElementById('checkin-status').textContent =
+        `今天：${todayIn ? '已上班 '+todayIn.toLocaleTimeString('zh-TW') : '尚未上班打卡'}　${todayOut ? '已下班 '+todayOut.toLocaleTimeString('zh-TW') : '尚未下班打卡'}`;
+    });
+}
+
+function showToast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2200); }
+</script>
+</body>
+</html>
