@@ -460,6 +460,23 @@
   </div>
 </div>
 
+<!-- MODAL: approve 補打卡 request -->
+<div class="modal-bg" id="modal-approve-checkin">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modal-approve-checkin')">&times;</button>
+    <h3>核准補打卡</h3>
+    <input type="hidden" id="approve-checkin-req-id">
+    <div class="field"><label>類型</label>
+      <select id="approve-checkin-type"><option value="in">上班</option><option value="out">下班</option></select>
+    </div>
+    <div class="rowline">
+      <div class="field"><label>日期</label><input type="date" id="approve-checkin-date"></div>
+      <div class="field"><label>時間</label><input type="time" id="approve-checkin-time"></div>
+    </div>
+    <button class="btn-primary btn-block" onclick="confirmApproveCheckin()">核准並補上紀錄</button>
+  </div>
+</div>
+
 <!-- MODAL: day editor (from calendar) -->
 <div class="modal-bg" id="modal-day-editor">
   <div class="modal">
@@ -602,7 +619,7 @@ auth.onAuthStateChanged(user=>{
         auth.signOut();
         return;
       }
-      CURRENT_USER = { uid: user.uid, name: d.name, store: d.store, role: d.role };
+      CURRENT_USER = { uid: user.uid, name: d.name, store: d.store, role: d.role, level: d.level || '' };
       enterApp();
     });
   } else {
@@ -615,7 +632,7 @@ auth.onAuthStateChanged(user=>{
 function enterApp(){
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').style.display = 'block';
-  document.getElementById('who-label').textContent = `${CURRENT_USER.name} · ${CURRENT_USER.store} · ${roleLabel(CURRENT_USER.role)}`;
+  document.getElementById('who-label').textContent = `${CURRENT_USER.name} · ${CURRENT_USER.store} · ${roleLabel(CURRENT_USER.role)}${CURRENT_USER.level ? ' · '+CURRENT_USER.level : ''}`;
   document.getElementById('ann-publish-card').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
   document.getElementById('tab-staff').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
   document.getElementById('tab-payroll').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
@@ -1693,7 +1710,7 @@ function loadMyAttendance(){
         const d = doc.data();
         const t = d.createdAt ? d.createdAt.toDate() : null;
         if(!t) return;
-        myAttendCache.push({ type:d.type, time:t, note:d.distanceNote||'' });
+        myAttendCache.push({ type:d.type, time:t, note:d.distanceNote||'', manual: d.manual||false });
         if(t.toDateString()===todayStr){ if(d.type==='in' && !todayIn) todayIn=t; if(d.type==='out' && !todayOut) todayOut=t; }
       });
       document.getElementById('checkin-status').textContent =
@@ -1726,9 +1743,15 @@ function renderAttendanceCalendar(){
     html += `<div class="cal-day"><div class="d-num">${day}</div>`;
     if(inRec){
       const late = isLateClockIn(inRec.time);
-      html += `<span class="d-tag" style="background:${late?'#f3dbd3':'#dcece3'};color:${late?'var(--bad)':'var(--good)'};font-weight:${late?'700':'400'};">上 ${inRec.time.toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'})}</span>`;
+      const bg = inRec.manual ? '#f3e6d2' : (late?'#f3dbd3':'#dcece3');
+      const color = inRec.manual ? 'var(--warn)' : (late?'var(--bad)':'var(--good)');
+      html += `<span class="d-tag" style="background:${bg};color:${color};font-weight:${late?'700':'400'};">上 ${inRec.time.toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'})}${inRec.manual?'（申請）':''}</span>`;
     }
-    if(outRec) html += `<span class="d-tag" style="background:#f3dbd3;color:var(--bad);">下 ${outRec.time.toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'})}</span>`;
+    if(outRec){
+      const bg = outRec.manual ? '#f3e6d2' : '#f3dbd3';
+      const color = outRec.manual ? 'var(--warn)' : 'var(--bad)';
+      html += `<span class="d-tag" style="background:${bg};color:${color};">下 ${outRec.time.toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'})}${outRec.manual?'（申請）':''}</span>`;
+    }
     html += `</div>`;
   }
   html += '</div>';
@@ -1760,7 +1783,7 @@ function loadEmpAttendance(){
       snap.forEach(doc=>{
         const d = doc.data();
         const t = d.createdAt ? d.createdAt.toDate() : null;
-        if(t) empCalCache.push({ type:d.type, time:t });
+        if(t) empCalCache.push({ type:d.type, time:t, manual: d.manual||false });
       });
       renderEmpCalendar();
     }, ()=>{ document.getElementById('emp-attendance-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>'; });
@@ -1784,9 +1807,15 @@ function renderEmpCalendar(){
     html += `<div class="cal-day"><div class="d-num">${day}</div>`;
     if(inRec){
       const late = isLateClockIn(inRec.time);
-      html += `<span class="d-tag" style="background:${late?'#f3dbd3':'#dcece3'};color:${late?'var(--bad)':'var(--good)'};font-weight:${late?'700':'400'};">上 ${inRec.time.toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'})}</span>`;
+      const bg = inRec.manual ? '#f3e6d2' : (late?'#f3dbd3':'#dcece3');
+      const color = inRec.manual ? 'var(--warn)' : (late?'var(--bad)':'var(--good)');
+      html += `<span class="d-tag" style="background:${bg};color:${color};font-weight:${late?'700':'400'};">上 ${inRec.time.toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'})}${inRec.manual?'（申請）':''}</span>`;
     }
-    if(outRec) html += `<span class="d-tag" style="background:#f3dbd3;color:var(--bad);">下 ${outRec.time.toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'})}</span>`;
+    if(outRec){
+      const bg = outRec.manual ? '#f3e6d2' : '#f3dbd3';
+      const color = outRec.manual ? 'var(--warn)' : 'var(--bad)';
+      html += `<span class="d-tag" style="background:${bg};color:${color};">下 ${outRec.time.toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'})}${outRec.manual?'（申請）':''}</span>`;
+    }
     html += `</div>`;
   }
   html += '</div>';
@@ -1856,11 +1885,15 @@ function loadPendingStaffRequests(){
     if(snap.empty){ list.innerHTML = '<div class="empty">尚無申請</div>'; return; }
     list.innerHTML = snap.docs.map(doc=>{
       const d = doc.data();
+      staffRequestsCache[doc.id] = d;
+      const approveAction = d.category === '補打卡'
+        ? `openApproveCheckinModal('${doc.id}')`
+        : `setStaffRequestStatus('${doc.id}','approved')`;
       return `<div class="item">
         <div class="item-head"><strong>${d.name} · ${d.category}</strong></div>
         <div class="item-meta">${d.store} · ${escapeHtml(d.details)}</div>
         <div class="item-actions">
-          <button class="btn-good btn-sm" onclick="setStaffRequestStatus('${doc.id}','approved')">核准</button>
+          <button class="btn-good btn-sm" onclick="${approveAction}">核准</button>
           <button class="btn-bad btn-sm" onclick="setStaffRequestStatus('${doc.id}','rejected')">拒絕</button>
         </div>
       </div>`;
@@ -1870,6 +1903,36 @@ function loadPendingStaffRequests(){
 function setStaffRequestStatus(id, status){
   db.collection('staff_requests').doc(id).update({ status, processedBy: CURRENT_USER.name, processedAt: firebase.firestore.FieldValue.serverTimestamp() })
     .then(()=> showToast("已更新申請狀態"));
+}
+
+let staffRequestsCache = {};
+function openApproveCheckinModal(reqId){
+  document.getElementById('approve-checkin-req-id').value = reqId;
+  document.getElementById('approve-checkin-date').value = '';
+  document.getElementById('approve-checkin-time').value = '';
+  document.getElementById('approve-checkin-type').value = 'in';
+  document.getElementById('modal-approve-checkin').classList.add('active');
+}
+function confirmApproveCheckin(){
+  const reqId = document.getElementById('approve-checkin-req-id').value;
+  const date = document.getElementById('approve-checkin-date').value;
+  const time = document.getElementById('approve-checkin-time').value;
+  const type = document.getElementById('approve-checkin-type').value;
+  if(!date || !time){ showToast("請填寫日期與時間"); return; }
+  const req = staffRequestsCache[reqId];
+  if(!req){ showToast("找不到申請資料"); return; }
+  const dt = new Date(`${date}T${time}:00`);
+
+  db.collection('attendance').add({
+    uid: req.uid, name: req.name, store: req.store, type,
+    manual: true, distanceNote: '申請補打卡（經核准）',
+    createdAt: firebase.firestore.Timestamp.fromDate(dt)
+  }).then(()=>{
+    return db.collection('staff_requests').doc(reqId).update({ status:'approved', processedBy: CURRENT_USER.name, processedAt: firebase.firestore.FieldValue.serverTimestamp() });
+  }).then(()=>{
+    closeModal('modal-approve-checkin');
+    showToast("已核准並補上打卡紀錄");
+  }).catch(e=> showToast("處理失敗："+e.message));
 }
 
 const ROLE_OPTIONS = [
@@ -2073,4 +2136,4 @@ function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"\\'"); }
 </script>
 </body>
 </html>
-1.25測試
+1.26測試
