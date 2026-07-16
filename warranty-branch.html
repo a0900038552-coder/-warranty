@@ -832,70 +832,68 @@ function parseXlsx(buf, fileName) {
   const wb = XLSX.read(buf, { type: 'array', cellDates: true });
   pendingRows = [];
 
-  // 逐一處理所有工作表，跳過不需要的
-  const SKIP_SHEETS = ['廢', '交接', '報價', '退貨', 'LINE PAY', 'LINEPAY'];
+  // 跳過不需要的工作表，只處理日期範圍分頁（如 1-5, 6-10 等）
+  const SKIP_SHEETS = ['交接', '報價', '退貨', 'LINE PAY', 'LINEPAY', '廢'];
+
   wb.SheetNames.forEach(sheetName => {
-    if (SKIP_SHEETS.some(s => sheetName.includes(s))) return;
+    if (SKIP_SHEETS.some(s => sheetName.trim().includes(s))) return;
+
     const ws = wb.Sheets[sheetName];
     const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true, cellDates: true });
+    if (!rows || rows.length < 5) return;
 
-    // 找標題行（含「連絡電話」），去除全形空格後比對
-    let headerIdx = rows.findIndex(r => r.some(c => String(c).replace(/\s/g,'').includes('連絡電話') || String(c).replace(/\s/g,'').includes('聯絡電話')));
-    if (headerIdx < 0) return;
+    // 固定欄位位置（分店報表固定格式）：
+    // 欄0=A(空), 欄1=B(日期), 欄2=C(售出品項), 欄3=D(金額)
+    // 欄8=I(成本), 欄9=J(毛利), 欄10=K(名字), 欄11=L(連絡電話)
+    const COL_DATE  = 1;
+    const COL_TYPE  = 2;
+    const COL_AMT   = 3;
+    const COL_NOTE  = 7;
+    const COL_NAME  = 10;
+    const COL_PHONE = 11;
+    const HEADER_ROW = 3; // 第4行（index 3）是標題
 
-    const headers = rows[headerIdx].map(c => String(c).replace(/\s+/g,'').trim());
-    const idxOf = ks => { for (const k of ks) { const i = headers.findIndex(h => h.includes(k.replace(/\s+/g,''))); if (i >= 0) return i; } return -1; };
-
-    const col = {
-      date:  idxOf(['日期']),
-      type:  idxOf(['售出品項','維修品項','品項']),
-      phone: idxOf(['連絡電話','聯絡電話']),
-      name:  idxOf(['名字','單號','姓名']),
-      note:  idxOf(['備注','備註']),
-      amount: idxOf(['金額','金    額']),
-    };
-
-    // 偵測分店：找「單位：復原者OO店」這格
+    // 偵測分店：第3行（index 2）有「單位：復原者OO店」
     let branch = '';
-    for (const r of rows.slice(0, headerIdx + 1)) {
-      for (const c of r) {
-        const s = String(c);
-        if (s.includes('單位') && s.includes('復原者')) {
-          if (s.includes('小港')) branch = '小港店';
-          else if (s.includes('瑞隆')) branch = '瑞隆店';
-          else if (s.includes('屏東')) branch = '屏東店';
-          break;
+    for (let i = 0; i < Math.min(4, rows.length); i++) {
+      for (const c of rows[i]) {
+        const s = String(c || '');
+        if (s.includes('復原者') || s.includes('單位')) {
+          if (s.includes('小港')) { branch = '小港店'; break; }
+          if (s.includes('瑞隆')) { branch = '瑞隆店'; break; }
+          if (s.includes('屏東')) { branch = '屏東店'; break; }
         }
       }
       if (branch) break;
     }
 
     let currentDate = '';
-    rows.slice(headerIdx + 1).forEach(r => {
-      // 追蹤日期（合併儲存格），支援 Date 物件和字串
-      const rawDate = col.date >= 0 ? r[col.date] : '';
+    rows.slice(HEADER_ROW + 1).forEach(r => {
+      // 追蹤日期
+      const rawDate = r[COL_DATE];
       if (rawDate && rawDate !== '') currentDate = fmtDate(rawDate);
 
-      const phone = col.phone >= 0 ? String(r[col.phone]).trim() : '';
-      // 支援數字或字串格式，9碼自動補0
-      phone = phone.replace(/[^0-9]/g, ''); // 移除非數字字元
-      if (phone.length === 9 && phone.startsWith('9')) phone = '0' + phone;
-      if (phone.length === 10 && phone.startsWith('09')) {
-        // 合法手機號碼
-      } else if (phone.length >= 8) {
-        // 市話或其他，保留但不強制格式
-      } else {
-        return; // 太短，跳過
-      }
+      // 電話處理：可能是數字（9碼）或字串（10碼）
+      const rawPhone = r[COL_PHONE];
+      if (!rawPhone && rawPhone !== 0) return;
+      let phone = String(rawPhone).replace(/[^0-9]/g, '');
+      if (phone.length === 9) phone = '0' + phone;
+      if (phone.length < 8) return; // 太短跳過
 
-      const name = col.name >= 0 ? String(r[col.name]).trim().replace(/[RS]$/, '') : '';
+      const name = String(r[COL_NAME] || '').trim();
+      const type = String(r[COL_TYPE] || '').trim();
+      const note = String(r[COL_NOTE] || '').trim();
+      const price = String(r[COL_AMT] || '').trim();
+
+      if (!type && !name) return; // 空行跳過
+
       pendingRows.push({
-        date:  currentDate,
-        type:  col.type  >= 0 ? String(r[col.type]).trim()  : '',
-        phone: phone,
-        name:  name,
-        note:   col.note   >= 0 ? String(r[col.note]).trim()   : '',
-        price:  col.amount >= 0 ? String(r[col.amount]).trim() : '',
+        date:   currentDate,
+        type:   type,
+        phone:  phone,
+        name:   name,
+        note:   note,
+        price:  price,
         branch: branch,
       });
     });
