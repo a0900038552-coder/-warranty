@@ -195,6 +195,7 @@
       <button id="tab-ann" class="active" onclick="switchTab('ann')">📢 公告</button>
       <button id="tab-leave" onclick="switchTab('leave')">🗓 假表/請假</button>
       <button id="tab-checkin" onclick="switchTab('checkin')">🕐 打卡</button>
+      <button id="tab-requests" onclick="switchTab('requests')">📋 申請專區</button>
       <button id="tab-inv" onclick="switchTab('inv')">📦 庫存管理</button>
       <button id="tab-staff" onclick="switchTab('staff')" style="display:none;">👤 員工管理</button>
       <button id="tab-payroll" onclick="switchTab('payroll')" style="display:none;">💰 薪資管理</button>
@@ -288,7 +289,7 @@
       </div>
 
       <div class="card">
-        <h3>本人打卡紀錄</h3>
+        <h3><button class="btn-ghost btn-sm" onclick="changeAttendCalMonth(-1)">‹ 上月</button> <span id="attend-cal-label"></span> <button class="btn-ghost btn-sm" onclick="changeAttendCalMonth(1)">下月 ›</button></h3>
         <div id="my-attendance-list"><div class="empty">載入中…</div></div>
       </div>
 
@@ -299,6 +300,38 @@
           <input type="month" id="export-month">
           <button class="btn-ghost" onclick="exportAttendanceCSV()">匯出該月打卡紀錄（CSV）</button>
         </div>
+      </div>
+
+      <div class="card" id="emp-calendar-card" style="display:none;">
+        <h3><button class="btn-ghost btn-sm" onclick="changeEmpCalMonth(-1)">‹ 上月</button> <span id="emp-cal-label"></span> <button class="btn-ghost btn-sm" onclick="changeEmpCalMonth(1)">下月 ›</button></h3>
+        <div class="field"><label>選擇員工</label><select id="emp-cal-select" onchange="loadEmpAttendance()"></select></div>
+        <div id="emp-attendance-list"><div class="empty">請選擇員工</div></div>
+      </div>
+    </section>
+
+    <!-- REQUESTS PANEL -->
+    <section id="panel-requests" class="panel">
+      <div class="card">
+        <h3>提出申請</h3>
+        <div class="field"><label>申請項目</label>
+          <select id="req-category">
+            <option value="補打卡">補打卡</option>
+            <option value="薪資條">薪資條</option>
+            <option value="生日禮金">生日禮金</option>
+          </select>
+        </div>
+        <div class="field"><label>說明</label><textarea id="req-details" rows="2" placeholder="例：補打卡請寫明日期與上/下班；薪資條請寫明月份"></textarea></div>
+        <button class="btn-primary btn-block" onclick="submitStaffRequest()">送出申請</button>
+      </div>
+
+      <div class="card">
+        <h3>我的申請紀錄</h3>
+        <div id="my-requests-list"><div class="empty">載入中…</div></div>
+      </div>
+
+      <div class="card" id="pending-requests-card" style="display:none;">
+        <h3>待處理申請</h3>
+        <div id="pending-requests-list"><div class="empty">尚無申請</div></div>
       </div>
     </section>
 
@@ -312,6 +345,30 @@
         <button class="btn-ghost btn-block" style="margin-top:12px" onclick="openAddItemModal()">+ 新增料件品項</button>
       </div>
       <div class="card"><h3>異動紀錄</h3><div id="inv-log"><div class="empty">尚無紀錄</div></div></div>
+
+      <div class="card">
+        <h3>調料申請</h3>
+        <p style="font-size:12px;color:var(--ink-soft);margin-top:-6px;">向其他分店調借料件</p>
+        <div class="field"><label>日期</label><input type="date" id="xfer-date"></div>
+        <div class="field"><label>型號</label><input id="xfer-model" placeholder="例：iPhone 11 螢幕"></div>
+        <div class="field"><label>向哪個分店調借</label><select id="xfer-store"></select></div>
+        <button class="btn-good btn-block" onclick="submitTransferRequest()">申請</button>
+      </div>
+
+      <div class="card">
+        <h3>我的調料申請紀錄</h3>
+        <div id="my-transfer-list"><div class="empty">載入中…</div></div>
+      </div>
+
+      <div class="card" id="transfer-pending-card" style="display:none;">
+        <h3>申請紀錄（待處理，本店被調借）</h3>
+        <div id="transfer-pending-list"><div class="empty">尚無申請</div></div>
+      </div>
+
+      <div class="card" id="transfer-settled-card" style="display:none;">
+        <h3>核銷紀錄</h3>
+        <div id="transfer-settled-list"><div class="empty">尚無紀錄</div></div>
+      </div>
     </section>
 
     <!-- STAFF MANAGEMENT PANEL -->
@@ -568,6 +625,9 @@ function enterApp(){
   document.getElementById('notif-bell').style.display = isManager(CURRENT_USER.role) ? 'inline-block' : 'none';
   document.getElementById('store-location-card').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
   document.getElementById('team-attendance-card').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
+  document.getElementById('transfer-pending-card').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
+  document.getElementById('transfer-settled-card').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
+  document.getElementById('pending-requests-card').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
 
   viewStore = CURRENT_USER.role === 'regional_manager' ? '全部' : CURRENT_USER.store;
   document.getElementById('inv-store-label').textContent = viewStore;
@@ -579,15 +639,18 @@ function enterApp(){
   loadTyphoonDays();
   loadLeaveRequests();
   loadInventory();
+  initTransferStoreOptions();
+  loadMyTransferRequests();
   loadStoreLocations();
   loadMyAttendance();
   checkWifiGate();
+  loadMyStaffRequests();
   const exportMonthEl = document.getElementById('export-month');
   if(exportMonthEl && !exportMonthEl.value){
     const now = new Date();
     exportMonthEl.value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
   }
-  if(isManager(CURRENT_USER.role)){ loadStaffList(); loadResignationRequests(); loadPendingAccounts(); loadPayrollEmployeeOptions(); loadTeamAttendance(); }
+  if(isManager(CURRENT_USER.role)){ loadStaffList(); loadResignationRequests(); loadPendingAccounts(); loadPayrollEmployeeOptions(); loadTeamAttendance(); loadPendingTransfers(); loadSettledTransfers(); loadPendingStaffRequests(); }
 }
 
 function renderStoreSelectors(){
@@ -627,7 +690,7 @@ function renderStoreSelectors(){
 
 /* ---------- Tabs ---------- */
 function switchTab(name){
-  ['ann','leave','checkin','inv','staff','payroll'].forEach(t=>{
+  ['ann','leave','checkin','requests','inv','staff','payroll'].forEach(t=>{
     document.getElementById('tab-'+t).classList.toggle('active', t===name);
     document.getElementById('panel-'+t).classList.toggle('active', t===name);
   });
@@ -1033,6 +1096,104 @@ function openPhoto(dataUrl){
   document.getElementById('modal-photo').classList.add('active');
 }
 
+/* ---------- 調料申請（分店互相調借料件） ---------- */
+const ALL_STORES = ['楠梓店','德賢店'];
+
+function initTransferStoreOptions(){
+  const sel = document.getElementById('xfer-store');
+  if(!sel) return;
+  const options = ALL_STORES.filter(s => s !== CURRENT_USER.store);
+  sel.innerHTML = options.map(s=>`<option value="${s}">${s}</option>`).join('');
+}
+
+function submitTransferRequest(){
+  const date = document.getElementById('xfer-date').value;
+  const model = document.getElementById('xfer-model').value.trim();
+  const lendingStore = document.getElementById('xfer-store').value;
+  if(!date || !model || !lendingStore){ showToast("請填寫完整資料"); return; }
+  db.collection('material_transfers').add({
+    date, model, requestingStore: CURRENT_USER.store, lendingStore,
+    requestedBy: CURRENT_USER.name, status: 'pending',
+    returned: false, returnDate: '', amount: 0,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).then(()=>{
+    showToast("已送出調料申請");
+    document.getElementById('xfer-model').value = '';
+  }).catch(e=> showToast("送出失敗："+e.message));
+}
+
+function loadMyTransferRequests(){
+  db.collection('material_transfers').where('requestingStore','==',CURRENT_USER.store).orderBy('createdAt','desc').limit(50)
+    .onSnapshot(snap=>{
+      const list = document.getElementById('my-transfer-list');
+      if(snap.empty){ list.innerHTML = '<div class="empty">尚無申請紀錄</div>'; return; }
+      list.innerHTML = '';
+      snap.forEach(doc=>{
+        const d = doc.data();
+        const div = document.createElement('div');
+        div.className = 'item';
+        div.innerHTML = `
+          <div class="item-head"><strong>${d.date} · ${escapeHtml(d.model)}</strong><span class="badge ${d.status==='settled'?'approved':'pending'}">${d.status==='settled'?'已核銷':'處理中'}</span></div>
+          <div class="item-meta">向 ${d.lendingStore} 調借　申請人：${d.requestedBy}</div>
+        `;
+        list.appendChild(div);
+      });
+    }, ()=>{ document.getElementById('my-transfer-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>'; });
+}
+
+function transferRowHtml(id, d){
+  return `
+    <div class="item" id="xfer-row-${id}">
+      <div class="item-head"><strong>${d.requestingStore} 向 ${d.lendingStore} 調借</strong></div>
+      <div class="item-meta">${d.date} · ${escapeHtml(d.model)}　申請人：${d.requestedBy}</div>
+      <div class="rowline" style="margin-top:8px;">
+        <div class="field" style="margin-bottom:0;"><label>歸還日期</label><input type="date" value="${d.returnDate||''}" onchange="updateTransferField('${id}','returnDate',this.value)"></div>
+        <div class="field" style="margin-bottom:0;"><label>金額</label><input type="number" id="xfer-amt-${id}" value="${d.amount||0}" ${d.returned?'disabled':''} onchange="updateTransferField('${id}','amount',Number(this.value))"></div>
+      </div>
+      <div class="item-actions" style="align-items:center;margin-top:8px;">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;flex:1;">
+          <input type="checkbox" ${d.returned?'checked':''} onchange="toggleTransferReturned('${id}', this.checked)"> 料件歸還
+        </label>
+        ${d.status==='pending' ? `<button class="btn-primary btn-sm" onclick="settleTransfer('${id}')">核銷</button>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function loadPendingTransfers(){
+  let q = db.collection('material_transfers').where('status','==','pending');
+  if(viewStore !== '全部') q = q.where('lendingStore','==',viewStore);
+  q.onSnapshot(snap=>{
+    const list = document.getElementById('transfer-pending-list');
+    if(snap.empty){ list.innerHTML = '<div class="empty">尚無申請</div>'; return; }
+    list.innerHTML = snap.docs.map(doc=> transferRowHtml(doc.id, doc.data())).join('');
+  }, ()=>{ document.getElementById('transfer-pending-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>'; });
+}
+
+function loadSettledTransfers(){
+  let q = db.collection('material_transfers').where('status','==','settled').orderBy('createdAt','desc').limit(50);
+  if(viewStore !== '全部') q = q.where('lendingStore','==',viewStore);
+  q.onSnapshot(snap=>{
+    const list = document.getElementById('transfer-settled-list');
+    if(snap.empty){ list.innerHTML = '<div class="empty">尚無紀錄</div>'; return; }
+    list.innerHTML = snap.docs.map(doc=> transferRowHtml(doc.id, doc.data())).join('');
+  }, ()=>{ document.getElementById('transfer-settled-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>'; });
+}
+
+function updateTransferField(id, field, value){
+  db.collection('material_transfers').doc(id).update({ [field]: value });
+}
+function toggleTransferReturned(id, checked){
+  const amtInput = document.getElementById(`xfer-amt-${id}`);
+  if(amtInput) amtInput.disabled = checked;
+  db.collection('material_transfers').doc(id).update({ returned: checked, amount: checked ? 0 : (Number(amtInput?.value)||0) });
+}
+function settleTransfer(id){
+  db.collection('material_transfers').doc(id).update({ status:'settled', settledBy: CURRENT_USER.name, settledAt: firebase.firestore.FieldValue.serverTimestamp() })
+    .then(()=> showToast("已核銷，紀錄移到核銷紀錄"));
+}
+
+
 function requestResignation(){
   if(!confirm('確定要提出離職申請嗎？送出後將由店長/區經理審核。')) return;
   db.collection('resignation_requests').add({
@@ -1124,6 +1285,7 @@ function loadPayrollEmployeeOptions(){
     snap.forEach(doc=> employeesCache.push({ id: doc.id, ...doc.data() }));
     const sel = document.getElementById('pr-employee');
     sel.innerHTML = employeesCache.map(e=>`<option value="${e.id}">${escapeHtml(e.name)}（${e.store}）</option>`).join('');
+    populateEmpCalSelect();
   });
   const monthInput = document.getElementById('pr-month');
   if(!monthInput.value){
@@ -1513,29 +1675,122 @@ async function doClockAction(type){
     .catch(e=> showToast('打卡失敗：'+e.message));
 }
 
+let myAttendCache = [];
+let attendCalViewDate = new Date();
+
+function changeAttendCalMonth(delta){
+  attendCalViewDate = new Date(attendCalViewDate.getFullYear(), attendCalViewDate.getMonth()+delta, 1);
+  renderAttendanceCalendar();
+}
+
 function loadMyAttendance(){
-  db.collection('attendance').where('uid','==',CURRENT_USER.uid).orderBy('createdAt','desc').limit(20)
+  db.collection('attendance').where('uid','==',CURRENT_USER.uid).orderBy('createdAt','desc').limit(200)
     .onSnapshot(snap=>{
+      myAttendCache = [];
       const todayStr = new Date().toDateString();
       let todayIn = null, todayOut = null;
-      const list = document.getElementById('my-attendance-list');
-      if(snap.empty){ list.innerHTML = '<div class="empty">尚無打卡紀錄</div>'; }
-      else {
-        list.innerHTML = '';
-        snap.forEach(doc=>{
-          const d = doc.data();
-          const t = d.createdAt ? d.createdAt.toDate() : null;
-          if(t && t.toDateString()===todayStr){ if(d.type==='in' && !todayIn) todayIn=t; if(d.type==='out' && !todayOut) todayOut=t; }
-          const div = document.createElement('div');
-          div.className = 'item';
-          div.innerHTML = `<div class="item-head"><strong>${d.type==='in'?'上班':'下班'}打卡</strong><span class="mono">${t?t.toLocaleString('zh-TW'):''}</span></div>
-            <div class="item-meta">${d.distanceNote||''}</div>`;
-          list.appendChild(div);
-        });
-      }
+      snap.forEach(doc=>{
+        const d = doc.data();
+        const t = d.createdAt ? d.createdAt.toDate() : null;
+        if(!t) return;
+        myAttendCache.push({ type:d.type, time:t, note:d.distanceNote||'' });
+        if(t.toDateString()===todayStr){ if(d.type==='in' && !todayIn) todayIn=t; if(d.type==='out' && !todayOut) todayOut=t; }
+      });
       document.getElementById('checkin-status').textContent =
         `今天：${todayIn ? '已上班打卡 '+todayIn.toLocaleTimeString('zh-TW') : '尚未上班打卡'}　${todayOut ? '已下班打卡 '+todayOut.toLocaleTimeString('zh-TW') : '尚未下班打卡'}`;
-    }, ()=>{ document.getElementById('my-attendance-list').innerHTML = '<div class="empty">讀取失敗，請檢查 Firebase 設定</div>'; });
+      renderAttendanceCalendar();
+    }, (err)=>{ document.getElementById('my-attendance-list').innerHTML = '<div class="empty">讀取失敗，可能需要在 Firebase 建立索引，請查看瀏覽器 Console（F12）取得建立連結</div>'; console.error(err); });
+}
+
+function isLateClockIn(t){
+  const dow = t.getDay(); // 0 = Sunday
+  const threshold = dow === 0 ? 12 : 11;
+  return (t.getHours() > threshold) || (t.getHours() === threshold && t.getMinutes() > 0);
+}
+
+function renderAttendanceCalendar(){
+  const year = attendCalViewDate.getFullYear(), month = attendCalViewDate.getMonth();
+  document.getElementById('attend-cal-label').textContent = `${year}年${month+1}月`;
+  const firstDow = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+  const dowNames = ['日','一','二','三','四','五','六'];
+
+  let html = '<div class="cal-grid">';
+  dowNames.forEach(dn=> html += `<div class="cal-dow">${dn}</div>`);
+  for(let i=0;i<firstDow;i++) html += '<div class="cal-day empty-cell"></div>';
+
+  for(let day=1; day<=daysInMonth; day++){
+    const dayRecords = myAttendCache.filter(r => r.time.getFullYear()===year && r.time.getMonth()===month && r.time.getDate()===day);
+    const inRec = dayRecords.filter(r=>r.type==='in').sort((a,b)=>a.time-b.time)[0];
+    const outRec = dayRecords.filter(r=>r.type==='out').sort((a,b)=>b.time-a.time)[0];
+    html += `<div class="cal-day"><div class="d-num">${day}</div>`;
+    if(inRec){
+      const late = isLateClockIn(inRec.time);
+      html += `<span class="d-tag" style="background:${late?'#f3dbd3':'#dcece3'};color:${late?'var(--bad)':'var(--good)'};font-weight:${late?'700':'400'};">上 ${inRec.time.toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'})}</span>`;
+    }
+    if(outRec) html += `<span class="d-tag" style="background:#f3dbd3;color:var(--bad);">下 ${outRec.time.toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'})}</span>`;
+    html += `</div>`;
+  }
+  html += '</div>';
+  document.getElementById('my-attendance-list').innerHTML = html;
+}
+
+/* 區經理／店長：查看任一員工的打卡月曆 */
+let empCalViewDate = new Date();
+let empCalCache = [];
+
+function populateEmpCalSelect(){
+  const sel = document.getElementById('emp-cal-select');
+  if(!sel) return;
+  sel.innerHTML = '<option value="">請選擇</option>' + employeesCache.map(e=>`<option value="${e.id}">${escapeHtml(e.name)}（${e.store}）</option>`).join('');
+  document.getElementById('emp-calendar-card').style.display = 'block';
+}
+
+function changeEmpCalMonth(delta){
+  empCalViewDate = new Date(empCalViewDate.getFullYear(), empCalViewDate.getMonth()+delta, 1);
+  renderEmpCalendar();
+}
+
+function loadEmpAttendance(){
+  const uid = document.getElementById('emp-cal-select').value;
+  if(!uid){ document.getElementById('emp-attendance-list').innerHTML = '<div class="empty">請選擇員工</div>'; return; }
+  db.collection('attendance').where('uid','==',uid).orderBy('createdAt','desc').limit(200)
+    .onSnapshot(snap=>{
+      empCalCache = [];
+      snap.forEach(doc=>{
+        const d = doc.data();
+        const t = d.createdAt ? d.createdAt.toDate() : null;
+        if(t) empCalCache.push({ type:d.type, time:t });
+      });
+      renderEmpCalendar();
+    }, ()=>{ document.getElementById('emp-attendance-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>'; });
+}
+
+function renderEmpCalendar(){
+  const year = empCalViewDate.getFullYear(), month = empCalViewDate.getMonth();
+  document.getElementById('emp-cal-label').textContent = `${year}年${month+1}月`;
+  const firstDow = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+  const dowNames = ['日','一','二','三','四','五','六'];
+
+  let html = '<div class="cal-grid">';
+  dowNames.forEach(dn=> html += `<div class="cal-dow">${dn}</div>`);
+  for(let i=0;i<firstDow;i++) html += '<div class="cal-day empty-cell"></div>';
+
+  for(let day=1; day<=daysInMonth; day++){
+    const dayRecords = empCalCache.filter(r => r.time.getFullYear()===year && r.time.getMonth()===month && r.time.getDate()===day);
+    const inRec = dayRecords.filter(r=>r.type==='in').sort((a,b)=>a.time-b.time)[0];
+    const outRec = dayRecords.filter(r=>r.type==='out').sort((a,b)=>b.time-a.time)[0];
+    html += `<div class="cal-day"><div class="d-num">${day}</div>`;
+    if(inRec){
+      const late = isLateClockIn(inRec.time);
+      html += `<span class="d-tag" style="background:${late?'#f3dbd3':'#dcece3'};color:${late?'var(--bad)':'var(--good)'};font-weight:${late?'700':'400'};">上 ${inRec.time.toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'})}</span>`;
+    }
+    if(outRec) html += `<span class="d-tag" style="background:#f3dbd3;color:var(--bad);">下 ${outRec.time.toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'})}</span>`;
+    html += `</div>`;
+  }
+  html += '</div>';
+  document.getElementById('emp-attendance-list').innerHTML = html;
 }
 
 function loadTeamAttendance(){
@@ -1561,7 +1816,62 @@ function loadTeamAttendance(){
   }, ()=>{ document.getElementById('team-attendance-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>'; });
 }
 
-/* ---------- 員工管理 / 基本資料 ---------- */
+/* ---------- 申請專區（補打卡／薪資條／生日禮金） ---------- */
+function submitStaffRequest(){
+  const category = document.getElementById('req-category').value;
+  const details = document.getElementById('req-details').value.trim();
+  if(!details){ showToast("請填寫說明"); return; }
+  db.collection('staff_requests').add({
+    uid: CURRENT_USER.uid, name: CURRENT_USER.name, store: CURRENT_USER.store,
+    category, details, status: 'pending',
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).then(()=>{ showToast("已送出申請"); document.getElementById('req-details').value=''; })
+    .catch(e=> showToast("送出失敗："+e.message));
+}
+
+function loadMyStaffRequests(){
+  db.collection('staff_requests').where('uid','==',CURRENT_USER.uid).orderBy('createdAt','desc').limit(30)
+    .onSnapshot(snap=>{
+      const list = document.getElementById('my-requests-list');
+      if(snap.empty){ list.innerHTML = '<div class="empty">尚無申請紀錄</div>'; return; }
+      list.innerHTML = '';
+      snap.forEach(doc=>{
+        const d = doc.data();
+        const statusLabel = d.status==='approved'?'已核准':d.status==='rejected'?'已拒絕':'待審核';
+        const statusClass = d.status==='approved'?'approved':d.status==='rejected'?'rejected':'pending';
+        const div = document.createElement('div');
+        div.className = 'item';
+        div.innerHTML = `<div class="item-head"><strong>${d.category}</strong><span class="badge ${statusClass}">${statusLabel}</span></div>
+          <div class="item-meta">${escapeHtml(d.details)}</div>`;
+        list.appendChild(div);
+      });
+    }, ()=>{ document.getElementById('my-requests-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>'; });
+}
+
+function loadPendingStaffRequests(){
+  let q = db.collection('staff_requests').where('status','==','pending');
+  if(viewStore !== '全部') q = q.where('store','==',viewStore);
+  q.onSnapshot(snap=>{
+    const list = document.getElementById('pending-requests-list');
+    if(snap.empty){ list.innerHTML = '<div class="empty">尚無申請</div>'; return; }
+    list.innerHTML = snap.docs.map(doc=>{
+      const d = doc.data();
+      return `<div class="item">
+        <div class="item-head"><strong>${d.name} · ${d.category}</strong></div>
+        <div class="item-meta">${d.store} · ${escapeHtml(d.details)}</div>
+        <div class="item-actions">
+          <button class="btn-good btn-sm" onclick="setStaffRequestStatus('${doc.id}','approved')">核准</button>
+          <button class="btn-bad btn-sm" onclick="setStaffRequestStatus('${doc.id}','rejected')">拒絕</button>
+        </div>
+      </div>`;
+    }).join('');
+  }, ()=>{ document.getElementById('pending-requests-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>'; });
+}
+function setStaffRequestStatus(id, status){
+  db.collection('staff_requests').doc(id).update({ status, processedBy: CURRENT_USER.name, processedAt: firebase.firestore.FieldValue.serverTimestamp() })
+    .then(()=> showToast("已更新申請狀態"));
+}
+
 const ROLE_OPTIONS = [
   { v:'staff', l:'一般員工' },
   { v:'store_manager', l:'店長' },
@@ -1584,6 +1894,7 @@ function formatTenure(hireDateStr){
   return `${Math.floor(months/12)}年${months%12}個月`;
 }
 
+/* ---------- 員工管理 / 基本資料 ---------- */
 function loadStaffList(){
   let q = db.collection('employees');
   if(viewStore !== '全部') q = q.where('store','==',viewStore);
@@ -1762,4 +2073,4 @@ function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"\\'"); }
 </script>
 </body>
 </html>
-1.23 測試版
+1.25測試
