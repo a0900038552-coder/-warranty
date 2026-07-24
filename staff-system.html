@@ -208,6 +208,7 @@
         <h3>發布公告</h3>
         <div class="field"><label>標題</label><input id="ann-title" placeholder="公告標題"></div>
         <div class="field"><label>內容</label><textarea id="ann-content" rows="3" placeholder="公告內容"></textarea></div>
+        <div class="field"><label>附件 PDF（選填，檔案請控制在 700KB 內）</label><input type="file" id="ann-pdf" accept="application/pdf"></div>
         <div class="field"><label>發送對象</label>
           <select id="ann-target">
             <option value="全部">全部分店</option>
@@ -314,12 +315,14 @@
       <div class="card">
         <h3>提出申請</h3>
         <div class="field"><label>申請項目</label>
-          <select id="req-category">
+          <select id="req-category" onchange="toggleResignDateField()">
             <option value="補打卡">補打卡</option>
             <option value="薪資條">薪資條</option>
             <option value="生日禮金">生日禮金</option>
+            <option value="自願離職">自願離職</option>
           </select>
         </div>
+        <div class="field" id="req-resign-date-field" style="display:none;"><label>預計離職日期時間</label><input type="datetime-local" id="req-resign-date"></div>
         <div class="field"><label>說明</label><textarea id="req-details" rows="2" placeholder="例：補打卡請寫明日期與上/下班；薪資條請寫明月份"></textarea></div>
         <button class="btn-primary btn-block" onclick="submitStaffRequest()">送出申請</button>
       </div>
@@ -448,7 +451,9 @@
     <h3 id="ann-detail-title"></h3>
     <div class="item-meta" id="ann-detail-meta"></div>
     <div class="item-body" id="ann-detail-content"></div>
+    <div id="ann-detail-pdf"></div>
     <div class="readers" id="ann-detail-readers"></div>
+    <button class="btn-primary btn-block" id="ann-confirm-btn" style="margin-top:12px;" onclick="confirmAnnouncement()">我已閱讀並同意</button>
   </div>
 </div>
 
@@ -457,6 +462,17 @@
   <div class="modal" style="padding:10px;">
     <button class="modal-close" onclick="closeModal('modal-photo')" style="margin:6px 10px;">&times;</button>
     <img id="photo-full" style="width:100%;border-radius:8px;">
+  </div>
+</div>
+
+<!-- MODAL: 自願離職 confirm -->
+<div class="modal-bg" id="modal-resign-confirm">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modal-resign-confirm')">&times;</button>
+    <h3>確認提出自願離職申請</h3>
+    <p style="font-size:13px;color:var(--ink-soft);">送出後將由店長/區經理審核，請確認離職日期時間無誤。</p>
+    <div class="item-meta" id="resign-confirm-date"></div>
+    <button class="btn-bad btn-block" id="resign-confirm-btn" style="margin-top:14px;" disabled onclick="finalizeResignRequest()">確定送出（5）</button>
   </div>
 </div>
 
@@ -720,20 +736,39 @@ function toggleSidebar(){
 }
 
 /* ---------- 公告 ---------- */
-function publishAnnouncement(){
+function fileToBase64(file){
+  return new Promise((resolve,reject)=>{
+    const reader = new FileReader();
+    reader.onload = e=> resolve(e.target.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function publishAnnouncement(){
   const title = document.getElementById('ann-title').value.trim();
   const content = document.getElementById('ann-content').value.trim();
   const target = document.getElementById('ann-target').value;
+  const pdfFile = document.getElementById('ann-pdf').files[0];
   if(!title || !content){ showToast("請填寫標題與內容"); return; }
+
+  let pdfData = null, pdfName = null;
+  if(pdfFile){
+    if(pdfFile.size > 700*1024){ showToast("PDF 檔案太大，請控制在 700KB 以內"); return; }
+    pdfData = await fileToBase64(pdfFile);
+    pdfName = pdfFile.name;
+  }
 
   db.collection('announcements').add({
     title, content, target,
+    pdfData, pdfName,
     by: CURRENT_USER.name,
-    reads: {},
+    reads: {}, confirms: {},
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
   }).then(()=>{
     document.getElementById('ann-title').value = '';
     document.getElementById('ann-content').value = '';
+    document.getElementById('ann-pdf').value = '';
     showToast("公告已發布");
   }).catch(e=>showToast("發布失敗："+e.message));
 }
@@ -759,8 +794,11 @@ function renderAnnouncements(){
   const list = document.getElementById('ann-list');
   if(annCache.length === 0){ list.innerHTML = '<div class="empty">目前沒有公告</div>'; return; }
   list.innerHTML = '';
+  let hasUnconfirmed = false;
   annCache.forEach(d=>{
     const isRead = !!(d.reads && d.reads[CURRENT_USER.uid]);
+    const isConfirmed = !!(d.confirms && d.confirms[CURRENT_USER.uid]);
+    if(!isConfirmed) hasUnconfirmed = true;
     const date = d.createdAt ? d.createdAt.toDate().toLocaleDateString('zh-TW') : '';
     const div = document.createElement('div');
     div.className = 'item';
@@ -768,29 +806,46 @@ function renderAnnouncements(){
     div.innerHTML = `
       <div class="item-head">
         <strong>${escapeHtml(d.title)}</strong>
-        <span class="badge ${isRead ? 'read' : 'unread'}">${isRead ? '已讀' : '未讀'}</span>
+        <span class="badge ${isConfirmed ? 'read' : isRead ? 'pending' : 'unread'}">${isConfirmed ? '已確認' : isRead ? '已讀未確認' : '未讀'}</span>
       </div>
-      <div class="item-meta">${date} · ${d.by} · ${d.target}</div>
+      <div class="item-meta">${date} · ${d.by} · ${d.target}${d.pdfData ? ' · 📎附件' : ''}</div>
     `;
     list.appendChild(div);
   });
+  document.getElementById('tab-ann').classList.toggle('tab-dot', hasUnconfirmed);
 }
 
+let currentAnnId = null;
 function openAnnouncement(id){
   const d = annCache.find(a=>a.id===id);
   if(!d) return;
+  currentAnnId = id;
   document.getElementById('ann-detail-title').textContent = d.title;
   document.getElementById('ann-detail-meta').textContent =
     (d.createdAt ? d.createdAt.toDate().toLocaleString('zh-TW') : '') + ' · ' + d.by + ' · ' + d.target;
   document.getElementById('ann-detail-content').textContent = d.content;
 
+  const pdfEl = document.getElementById('ann-detail-pdf');
+  pdfEl.innerHTML = d.pdfData ? `<a href="${d.pdfData}" download="${escapeAttr(d.pdfName||'attachment.pdf')}" target="_blank" style="display:inline-block;margin-top:8px;font-size:13px;color:var(--copper-dark);">📎 開啟附件 PDF（${escapeHtml(d.pdfName||'')}）</a>` : '';
+
   const readersEl = document.getElementById('ann-detail-readers');
   if(isManager(CURRENT_USER.role)){
-    const names = d.reads ? Object.values(d.reads).map(r=>r.name) : [];
-    readersEl.textContent = names.length ? `已讀（${names.length}）：${names.join('、')}` : '尚無人已讀';
+    const readNames = d.reads ? Object.values(d.reads).map(r=>r.name) : [];
+    const confirmNames = d.confirms ? Object.values(d.confirms).map(r=>r.name) : [];
+    const scopeEmployees = employeesCache.filter(e => d.target==='全部' || e.store===d.target);
+    const unconfirmed = scopeEmployees.filter(e => !(d.confirms && d.confirms[e.id])).map(e=>e.name);
+    readersEl.innerHTML = `
+      已讀（${readNames.length}）：${readNames.join('、') || '無'}<br>
+      已確認（${confirmNames.length}）：${confirmNames.join('、') || '無'}<br>
+      ${unconfirmed.length ? `<span style="color:var(--bad);">尚未確認：${unconfirmed.join('、')}</span>` : ''}
+    `;
   } else {
     readersEl.textContent = '';
   }
+
+  const isConfirmed = !!(d.confirms && d.confirms[CURRENT_USER.uid]);
+  const confirmBtn = document.getElementById('ann-confirm-btn');
+  confirmBtn.style.display = isConfirmed ? 'none' : 'block';
 
   document.getElementById('modal-ann').classList.add('active');
 
@@ -800,6 +855,16 @@ function openAnnouncement(id){
       [`reads.${CURRENT_USER.uid}`]: { name: CURRENT_USER.name, at: firebase.firestore.FieldValue.serverTimestamp() }
     });
   }
+}
+
+function confirmAnnouncement(){
+  if(!currentAnnId) return;
+  db.collection('announcements').doc(currentAnnId).update({
+    [`confirms.${CURRENT_USER.uid}`]: { name: CURRENT_USER.name, at: firebase.firestore.FieldValue.serverTimestamp() }
+  }).then(()=>{
+    document.getElementById('ann-confirm-btn').style.display = 'none';
+    showToast("已確認並記錄");
+  });
 }
 
 /* ---------- 假表 / 請假 ---------- */
@@ -1232,6 +1297,7 @@ function loadResignationRequests(){
         div.className = 'item';
         div.innerHTML = `
           <div class="item-head"><strong>${escapeHtml(d.name)} · ${d.store}</strong></div>
+          <div class="item-meta">${d.requestedDate ? '預計離職日期時間：'+new Date(d.requestedDate).toLocaleString('zh-TW') : ''}</div>
           <div class="item-actions">
             <button class="btn-bad btn-sm" onclick="approveResignation('${doc.id}','${d.uid}')">核准離職</button>
             <button class="btn-ghost btn-sm" onclick="rejectResignation('${doc.id}')">駁回</button>
@@ -1845,9 +1911,58 @@ function loadTeamAttendance(){
   }, ()=>{ document.getElementById('team-attendance-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>'; });
 }
 
-/* ---------- 申請專區（補打卡／薪資條／生日禮金） ---------- */
+let pendingResignDate = null;
+let resignCountdownTimer = null;
+
+function openResignConfirmModal(dt){
+  pendingResignDate = dt;
+  const dtObj = new Date(dt);
+  document.getElementById('resign-confirm-date').textContent = '離職日期時間：' + dtObj.toLocaleString('zh-TW');
+  const btn = document.getElementById('resign-confirm-btn');
+  btn.disabled = true;
+  let remaining = 5;
+  btn.textContent = `確定送出（${remaining}）`;
+  clearInterval(resignCountdownTimer);
+  resignCountdownTimer = setInterval(()=>{
+    remaining--;
+    if(remaining <= 0){
+      clearInterval(resignCountdownTimer);
+      btn.disabled = false;
+      btn.textContent = '確定送出';
+    } else {
+      btn.textContent = `確定送出（${remaining}）`;
+    }
+  }, 1000);
+  document.getElementById('modal-resign-confirm').classList.add('active');
+}
+
+function finalizeResignRequest(){
+  if(!pendingResignDate) return;
+  db.collection('resignation_requests').add({
+    uid: CURRENT_USER.uid, name: CURRENT_USER.name, store: CURRENT_USER.store,
+    requestedDate: pendingResignDate, status: 'pending',
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).then(()=>{
+    closeModal('modal-resign-confirm');
+    showToast("已送出自願離職申請");
+    document.getElementById('req-resign-date').value = '';
+  }).catch(e=> showToast("送出失敗："+e.message));
+}
+
+/* ---------- 申請專區（補打卡／薪資條／生日禮金／自願離職） ---------- */
+function toggleResignDateField(){
+  const isResign = document.getElementById('req-category').value === '自願離職';
+  document.getElementById('req-resign-date-field').style.display = isResign ? 'block' : 'none';
+}
+
 function submitStaffRequest(){
   const category = document.getElementById('req-category').value;
+  if(category === '自願離職'){
+    const dt = document.getElementById('req-resign-date').value;
+    if(!dt){ showToast("請填寫預計離職日期時間"); return; }
+    openResignConfirmModal(dt);
+    return;
+  }
   const details = document.getElementById('req-details').value.trim();
   if(!details){ showToast("請填寫說明"); return; }
   db.collection('staff_requests').add({
@@ -2136,4 +2251,4 @@ function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"\\'"); }
 </script>
 </body>
 </html>
-1.26測試
+07.24
