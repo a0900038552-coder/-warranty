@@ -244,22 +244,26 @@
         <button class="btn-primary btn-block" onclick="submitLeave()">送出申請</button>
       </div>
       <div class="card" id="typhoon-card" style="display:none;">
-        <h3>颱風假／店休管理</h3>
+        <h3>公休日管理（含颱風假）</h3>
         <p style="font-size:12px;color:var(--ink-soft);margin-top:-6px;">新增日期後，當月薪資試算會自動扣除該日底薪（若員工當天有核准的特休則不扣），月曆也會標示</p>
         <div class="rowline">
           <div class="field"><label>日期</label><input type="date" id="typhoon-date"></div>
           <div class="field"><label>備註</label><input id="typhoon-note" placeholder="例：凱米颱風"></div>
         </div>
-        <button class="btn-ghost btn-block" onclick="addTyphoonDay()">+ 新增颱風假／店休日</button>
-        <div id="typhoon-list" style="margin-top:10px;"><div class="empty">尚無颱風假日</div></div>
+        <button class="btn-ghost btn-block" onclick="addTyphoonDay()">+ 新增公休日</button>
+        <div id="typhoon-list" style="margin-top:10px;"><div class="empty">尚無公休日</div></div>
+      </div>
+      <div class="card" id="leave-export-card" style="display:none;">
+        <h3>彙整休假表（匯出 Excel）</h3>
+        <div class="rowline">
+          <div class="field"><label>起始月份</label><input type="month" id="leave-export-start"></div>
+          <div class="field"><label>結束月份</label><input type="month" id="leave-export-end"></div>
+        </div>
+        <button class="btn-ghost btn-block" onclick="exportLeaveRangeCSV()">匯出區間休假表（Excel）</button>
       </div>
       <div class="card">
         <h3><button class="btn-ghost btn-sm" onclick="changeCalMonth(-1)">‹ 上月</button> <span id="cal-month-label"></span> <button class="btn-ghost btn-sm" onclick="changeCalMonth(1)">下月 ›</button></h3>
         <div id="leave-calendar"><div class="empty">載入中…</div></div>
-      </div>
-      <div class="card" id="resign-card"><h3>離職申請</h3>
-        <p style="font-size:12px;color:var(--ink-soft);margin-top:-6px;">送出後由店長/區經理審核，核准後帳號才會真正改成離職狀態</p>
-        <button class="btn-bad btn-block" onclick="requestResignation()">提出離職申請</button>
       </div>
       <div class="card"><h3>本店申請紀錄</h3><div id="leave-list"><div class="empty">載入中…</div></div></div>
     </section>
@@ -385,7 +389,18 @@
         <div id="resign-list"><div class="empty">尚無申請</div></div>
       </div>
       <div class="card">
+        <h3>離職紀錄（含自請與資遣）</h3>
+        <div id="departure-list"><div class="empty">尚無紀錄</div></div>
+      </div>
+      <div class="card">
         <h3>員工列表 · <span id="staff-store-label"></span></h3>
+        <div class="field"><label>狀態篩選</label>
+          <select id="staff-status-filter" onchange="loadStaffList()">
+            <option value="全部">全部</option>
+            <option value="在職">在職中</option>
+            <option value="離職">離職</option>
+          </select>
+        </div>
         <div id="staff-list"><div class="empty">載入中…</div></div>
       </div>
     </section>
@@ -490,6 +505,20 @@
       <div class="field"><label>時間</label><input type="time" id="approve-checkin-time"></div>
     </div>
     <button class="btn-primary btn-block" onclick="confirmApproveCheckin()">核准並補上紀錄</button>
+  </div>
+</div>
+
+<!-- MODAL: quick leave apply (from calendar day click) -->
+<div class="modal-bg" id="modal-quick-leave">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modal-quick-leave')">&times;</button>
+    <h3>申請休假 · <span id="quick-leave-date-label"></span></h3>
+    <input type="hidden" id="quick-leave-date">
+    <div class="field"><label>假別</label>
+      <select id="quick-leave-type"><option>特休</option><option>事假</option><option>病假</option><option>排休調整</option><option>其他</option></select>
+    </div>
+    <div class="field"><label>備註（選填）</label><textarea id="quick-leave-reason" rows="2"></textarea></div>
+    <button class="btn-primary btn-block" onclick="submitQuickLeave()">送出申請</button>
   </div>
 </div>
 
@@ -652,9 +681,9 @@ function enterApp(){
   document.getElementById('ann-publish-card').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
   document.getElementById('tab-staff').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
   document.getElementById('tab-payroll').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
-  document.getElementById('resign-card').style.display = isManager(CURRENT_USER.role) ? 'none' : 'block';
   document.getElementById('resign-requests-card').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
   document.getElementById('typhoon-card').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
+  document.getElementById('leave-export-card').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
   document.getElementById('notif-bell').style.display = isManager(CURRENT_USER.role) ? 'inline-block' : 'none';
   document.getElementById('store-location-card').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
   document.getElementById('team-attendance-card').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
@@ -683,7 +712,7 @@ function enterApp(){
     const now = new Date();
     exportMonthEl.value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
   }
-  if(isManager(CURRENT_USER.role)){ loadStaffList(); loadResignationRequests(); loadPendingAccounts(); loadPayrollEmployeeOptions(); loadTeamAttendance(); loadPendingTransfers(); loadSettledTransfers(); loadPendingStaffRequests(); }
+  if(isManager(CURRENT_USER.role)){ loadStaffList(); loadResignationRequests(); loadDepartureRecords(); loadPendingAccounts(); loadPayrollEmployeeOptions(); loadTeamAttendance(); loadPendingTransfers(); loadSettledTransfers(); loadPendingStaffRequests(); }
 }
 
 function renderStoreSelectors(){
@@ -996,6 +1025,39 @@ function changeCalMonth(delta){
   renderLeaveCalendar(calApprovedLeavesCache);
 }
 
+const LEAVE_TYPE_SHORT = { '排休調整':'休', '病假':'病', '事假':'事', '特休':'特', '其他':'他' };
+
+function exportLeaveRangeCSV(){
+  const startMonth = document.getElementById('leave-export-start').value;
+  const endMonth = document.getElementById('leave-export-end').value;
+  if(!startMonth || !endMonth){ showToast("請選擇起訖月份"); return; }
+  const rangeStart = `${startMonth}-01`;
+  const [ey,em] = endMonth.split('-').map(Number);
+  const rangeEnd = `${endMonth}-${String(new Date(ey,em,0).getDate()).padStart(2,'0')}`;
+
+  let q = db.collection('leave_requests').where('status','==','approved');
+  if(viewStore !== '全部') q = q.where('store','==',viewStore);
+  q.get().then(snap=>{
+    const rows = [['姓名','分店','假別','起始日','結束日','天數']];
+    snap.forEach(doc=>{
+      const d = doc.data();
+      if(d.end < rangeStart || d.start > rangeEnd) return;
+      const os = d.start > rangeStart ? d.start : rangeStart;
+      const oe = d.end < rangeEnd ? d.end : rangeEnd;
+      const days = dateDiffInclusive(os, oe);
+      rows.push([d.name, d.store, d.type, d.start, d.end, days]);
+    });
+    if(rows.length === 1){ showToast("該區間無休假紀錄"); return; }
+    const csv = '\uFEFF' + rows.map(r=> r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `休假表_${viewStore==='全部'?'全部分店':viewStore}_${startMonth}~${endMonth}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }).catch(e=> showToast("匯出失敗："+e.message));
+}
+
 function renderLeaveCalendar(approvedLeaves){
   const year = calViewDate.getFullYear(), month = calViewDate.getMonth(); // 0-indexed
   document.getElementById('cal-month-label').textContent = `${year}年${month+1}月`;
@@ -1004,21 +1066,23 @@ function renderLeaveCalendar(approvedLeaves){
 
   const dowNames = ['日','一','二','三','四','五','六'];
   let html = '<div class="cal-grid">';
-  dowNames.forEach(d=> html += `<div class="cal-dow">${d}</div>`);
+  dowNames.forEach((d,i)=> html += `<div class="cal-dow" style="${(i===0||i===6)?'color:var(--bad);':''}">${d}</div>`);
   for(let i=0;i<firstDow;i++) html += '<div class="cal-day empty-cell"></div>';
 
   for(let day=1; day<=daysInMonth; day++){
     const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    const dow = new Date(year, month, day).getDay();
     const onLeave = approvedLeaves.filter(l=> l.start <= dateStr && dateStr <= l.end);
     const isTyphoon = typhoonCache.some(t => t.date === dateStr && (viewStore==='全部' || t.store===viewStore));
-    const clickAttr = isManager(CURRENT_USER.role) ? ` onclick="openDayEditor('${dateStr}')" style="cursor:pointer;"` : '';
-    html += `<div class="cal-day"${clickAttr}>${isTyphoon ? '<span class="d-tag" style="background:#f3dbd3;color:var(--bad);">🌀 店休</span>' : ''}<div class="d-num">${day}</div>`;
-    onLeave.slice(0,3).forEach(l=> html += `<span class="d-tag">${escapeHtml(l.name)}</span>`);
+    html += `<div class="cal-day" onclick="openDayEditor('${dateStr}')" style="cursor:pointer;">`;
+    html += `<div class="d-num" style="${(dow===0||dow===6)?'color:var(--bad);font-weight:700;':''}">${day}</div>`;
+    if(isTyphoon) html += `<span class="d-tag" style="background:#f3dbd3;color:var(--bad);font-weight:700;">公休</span>`;
+    onLeave.slice(0,3).forEach(l=> html += `<span class="d-tag">${escapeHtml(l.name)}（${LEAVE_TYPE_SHORT[l.type]||l.type}）</span>`);
     if(onLeave.length > 3) html += `<span class="d-tag">+${onLeave.length-3}</span>`;
     html += `</div>`;
   }
   html += '</div>';
-  if(isManager(CURRENT_USER.role)) html += '<p style="font-size:11px;color:var(--ink-soft);margin-top:8px;">點任一天可編輯／刪除當天的假單</p>';
+  html += '<p style="font-size:11px;color:var(--ink-soft);margin-top:8px;">點任一天可查看當天排假、快速申請休假' + (isManager(CURRENT_USER.role) ? '，店長/區經理可編輯或刪除' : '') + '</p>';
   document.getElementById('leave-calendar').innerHTML = html;
 }
 
@@ -1029,24 +1093,47 @@ function openDayEditor(dateStr){
   const modal = document.getElementById('modal-day-editor');
   document.getElementById('day-editor-title').textContent = dateStr + ' 假單';
   const list = document.getElementById('day-editor-list');
-  if(entries.length === 0){ list.innerHTML = '<div class="empty">當天沒有假單</div>'; }
+  let html = `<button class="btn-primary btn-block" style="margin-bottom:10px;" onclick="closeModal('modal-day-editor');openQuickLeaveModal('${dateStr}')">+ 申請這天休假</button>`;
+  if(entries.length === 0){ html += '<div class="empty">當天沒有假單</div>'; }
   else {
-    list.innerHTML = entries.map(([id,l])=>`
+    html += entries.map(([id,l])=>`
       <div class="item">
         <div class="item-head"><strong>${l.name} · ${l.type}</strong><span class="badge ${l.status==='approved'?'approved':l.status==='rejected'?'rejected':'pending'}">${l.status==='approved'?'已核准':l.status==='rejected'?'已拒絕':'待審核'}</span></div>
         <div class="item-meta">${l.start} ~ ${l.end}${l.reason ? ' · '+escapeHtml(l.reason) : ''}</div>
+        ${isManager(CURRENT_USER.role) ? `
         <div class="item-actions">
           <button class="btn-ghost btn-sm" onclick="closeModal('modal-day-editor');openEditLeave('${id}')">編輯</button>
           <button class="btn-bad btn-sm" onclick="deleteLeaveRequest('${id}')">刪除</button>
-        </div>
+        </div>` : ''}
       </div>
     `).join('');
   }
+  list.innerHTML = html;
   modal.classList.add('active');
 }
 function deleteLeaveRequest(id){
   if(!confirm('確定要刪除這筆假單嗎？此動作無法復原。')) return;
   db.collection('leave_requests').doc(id).delete().then(()=>{ showToast("已刪除"); openDayEditor(document.getElementById('day-editor-title').textContent.replace(' 假單','')); });
+}
+
+function openQuickLeaveModal(dateStr){
+  document.getElementById('quick-leave-date').value = dateStr;
+  document.getElementById('quick-leave-date-label').textContent = dateStr;
+  document.getElementById('quick-leave-type').value = '特休';
+  document.getElementById('quick-leave-reason').value = '';
+  document.getElementById('modal-quick-leave').classList.add('active');
+}
+function submitQuickLeave(){
+  const date = document.getElementById('quick-leave-date').value;
+  const type = document.getElementById('quick-leave-type').value;
+  const reason = document.getElementById('quick-leave-reason').value.trim();
+  db.collection('leave_requests').add({
+    name: CURRENT_USER.name, uid: CURRENT_USER.uid, store: CURRENT_USER.store,
+    type, start: date, end: date, reason, status: 'pending', seenByRequester: true,
+    photoData: null,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).then(()=>{ closeModal('modal-quick-leave'); showToast("已送出申請"); })
+    .catch(e=>showToast("送出失敗："+e.message));
 }
 function openEditLeave(id){
   const d = leaveDocsCache[id];
@@ -1310,7 +1397,7 @@ function loadResignationRequests(){
 
 function approveResignation(reqId, uid){
   db.collection('employees').doc(uid).update({ status: '離職' })
-    .then(()=> db.collection('resignation_requests').doc(reqId).update({ status: 'approved' }))
+    .then(()=> db.collection('resignation_requests').doc(reqId).update({ status: 'approved', processedBy: CURRENT_USER.name, processedAt: firebase.firestore.FieldValue.serverTimestamp() }))
     .then(()=> showToast("已核准離職，該帳號下次登入會被擋下"));
 }
 function rejectResignation(reqId){
@@ -1394,7 +1481,7 @@ function loadTyphoonDays(){
   q.onSnapshot(snap=>{
     typhoonCache = [];
     const list = document.getElementById('typhoon-list');
-    if(snap.empty){ list.innerHTML = '<div class="empty">尚無颱風假日</div>'; return; }
+    if(snap.empty){ list.innerHTML = '<div class="empty">尚無公休日</div>'; return; }
     list.innerHTML = '';
     snap.forEach(doc=>{
       const d = doc.data();
@@ -1831,7 +1918,7 @@ let empCalCache = [];
 function populateEmpCalSelect(){
   const sel = document.getElementById('emp-cal-select');
   if(!sel) return;
-  sel.innerHTML = '<option value="">請選擇</option>' + employeesCache.map(e=>`<option value="${e.id}">${escapeHtml(e.name)}（${e.store}）</option>`).join('');
+  sel.innerHTML = '<option value="">請選擇</option>' + employeesCache.map(e=>`<option value="${e.id}">${escapeHtml(e.name)}（${e.store}）${e.status==='離職'?'　已離職':''}</option>`).join('');
   document.getElementById('emp-calendar-card').style.display = 'block';
 }
 
@@ -1940,7 +2027,7 @@ function finalizeResignRequest(){
   if(!pendingResignDate) return;
   db.collection('resignation_requests').add({
     uid: CURRENT_USER.uid, name: CURRENT_USER.name, store: CURRENT_USER.store,
-    requestedDate: pendingResignDate, status: 'pending',
+    requestedDate: pendingResignDate, status: 'pending', type: 'self',
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
   }).then(()=>{
     closeModal('modal-resign-confirm');
@@ -2073,9 +2160,30 @@ function formatTenure(hireDateStr){
 }
 
 /* ---------- 員工管理 / 基本資料 ---------- */
+function loadDepartureRecords(){
+  let q = db.collection('resignation_requests').where('status','==','approved').orderBy('createdAt','desc').limit(50);
+  if(viewStore !== '全部') q = q.where('store','==',viewStore);
+  q.onSnapshot(snap=>{
+    const list = document.getElementById('departure-list');
+    if(snap.empty){ list.innerHTML = '<div class="empty">尚無紀錄</div>'; return; }
+    list.innerHTML = snap.docs.map(doc=>{
+      const d = doc.data();
+      const typeLabel = d.type === 'dismissed' ? '區經理資遣' : '員工自請離職';
+      const dateStr = d.requestedDate ? new Date(d.requestedDate).toLocaleString('zh-TW') : '';
+      return `<div class="item">
+        <div class="item-head"><strong>${escapeHtml(d.name)} · ${d.store}</strong><span class="badge ${d.type==='dismissed'?'rejected':'pending'}">${typeLabel}</span></div>
+        <div class="item-meta">離職日期時間：${dateStr}　處理人：${d.processedBy||''}</div>
+      </div>`;
+    }).join('');
+  }, ()=>{ document.getElementById('departure-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>'; });
+}
+
 function loadStaffList(){
   let q = db.collection('employees');
   if(viewStore !== '全部') q = q.where('store','==',viewStore);
+  const statusFilterEl = document.getElementById('staff-status-filter');
+  const statusFilter = statusFilterEl ? statusFilterEl.value : '全部';
+  if(statusFilter !== '全部') q = q.where('status','==',statusFilter);
   q.onSnapshot(async snap=>{
       const list = document.getElementById('staff-list');
       if(snap.empty){ list.innerHTML = '<div class="empty">尚無員工資料</div>'; return; }
@@ -2134,8 +2242,8 @@ async function buildEmployeeCard(doc){
     <div class="item-actions" style="align-items:center;">
       <select style="flex:1;" onchange="updateStaffRole('${uid}', this.value)">${roleSelHtml}</select>
       ${status==='在職'
-        ? `<button class="btn-bad btn-sm" onclick="updateStaffStatus('${uid}','離職')">設為離職</button>`
-        : `<button class="btn-good btn-sm" onclick="updateStaffStatus('${uid}','在職')">恢復在職</button>`}
+        ? `<button class="btn-bad btn-sm" onclick="updateStaffStatus('${uid}','離職','${escapeAttr(d.name)}','${d.store}')">設為離職</button>`
+        : `<button class="btn-good btn-sm" onclick="updateStaffStatus('${uid}','在職','${escapeAttr(d.name)}','${d.store}')">恢復在職</button>`}
     </div>
 
     <div class="item-meta" style="margin-top:12px;font-weight:700;color:var(--ink);">基本資料（填完後按下方「儲存」）</div>
@@ -2144,8 +2252,12 @@ async function buildEmployeeCard(doc){
       <div class="field" style="margin-bottom:6px;"><label>學歷</label><input id="edu-${uid}" value="${escapeHtml(d.education||'')}"></div>
     </div>
     <div class="field" style="margin-bottom:6px;"><label>地址</label><input id="addr-${uid}" value="${escapeHtml(d.address||'')}"></div>
+    <div class="field" style="margin-bottom:6px;"><label>身分證字號</label><input id="idnum-${uid}" value="${escapeHtml(d.idNumber||'')}"></div>
+    <div class="field" style="margin-bottom:6px;"><label>出生年月日</label>
+      <div class="rowline">${yearMonthDaySelects('birth', uid, d.birthDate)}</div>
+    </div>
     <div class="field" style="margin-bottom:6px;"><label>到職日</label>
-      <div class="rowline">${yearMonthDaySelects(uid, d.hireDate)}</div>
+      <div class="rowline">${yearMonthDaySelects('hire', uid, d.hireDate)}</div>
     </div>
     <div class="field" style="margin-bottom:6px;"><label>等級</label><select id="level-${uid}">${levelSelHtml}</select></div>
     <div class="item-meta">年資：${tenureStr}</div>
@@ -2182,33 +2294,38 @@ async function buildEmployeeCard(doc){
   return div;
 }
 
-function yearMonthDaySelects(uid, existingDateStr){
+function yearMonthDaySelects(prefix, uid, existingDateStr){
   const parts = (existingDateStr||'').split('-').map(Number);
   const [ey,em,ed] = parts.length===3 ? parts : [null,null,null];
   const thisYear = new Date().getFullYear();
   let yearOpts = '<option value="">年</option>';
-  for(let y=thisYear; y>=thisYear-60; y--) yearOpts += `<option value="${y}" ${y===ey?'selected':''}>${y}</option>`;
+  for(let y=thisYear; y>=thisYear-80; y--) yearOpts += `<option value="${y}" ${y===ey?'selected':''}>${y}</option>`;
   let monthOpts = '<option value="">月</option>';
   for(let m=1;m<=12;m++) monthOpts += `<option value="${m}" ${m===em?'selected':''}>${m}</option>`;
   let dayOpts = '<option value="">日</option>';
   for(let dd=1;dd<=31;dd++) dayOpts += `<option value="${dd}" ${dd===ed?'selected':''}>${dd}</option>`;
   return `
-    <select id="hire-y-${uid}" style="flex:1;">${yearOpts}</select>
-    <select id="hire-m-${uid}" style="flex:1;">${monthOpts}</select>
-    <select id="hire-d-${uid}" style="flex:1;">${dayOpts}</select>
+    <select id="${prefix}-y-${uid}" style="flex:1;">${yearOpts}</select>
+    <select id="${prefix}-m-${uid}" style="flex:1;">${monthOpts}</select>
+    <select id="${prefix}-d-${uid}" style="flex:1;">${dayOpts}</select>
   `;
 }
 
+function readDateSelects(prefix, uid){
+  const y = document.getElementById(`${prefix}-y-${uid}`).value;
+  const m = document.getElementById(`${prefix}-m-${uid}`).value;
+  const dd = document.getElementById(`${prefix}-d-${uid}`).value;
+  return (y && m && dd) ? `${y}-${String(m).padStart(2,'0')}-${String(dd).padStart(2,'0')}` : '';
+}
+
 function saveEmployeeProfile(uid){
-  const y = document.getElementById(`hire-y-${uid}`).value;
-  const m = document.getElementById(`hire-m-${uid}`).value;
-  const dd = document.getElementById(`hire-d-${uid}`).value;
-  const hireDate = (y && m && dd) ? `${y}-${String(m).padStart(2,'0')}-${String(dd).padStart(2,'0')}` : '';
   const data = {
     phone: document.getElementById(`phone-${uid}`).value.trim(),
     education: document.getElementById(`edu-${uid}`).value.trim(),
     address: document.getElementById(`addr-${uid}`).value.trim(),
-    hireDate,
+    idNumber: document.getElementById(`idnum-${uid}`).value.trim(),
+    hireDate: readDateSelects('hire', uid),
+    birthDate: readDateSelects('birth', uid),
     level: document.getElementById(`level-${uid}`).value,
     baseSalary: Number(document.getElementById(`basesalary-${uid}`).value) || 29500,
     leaveMode: document.getElementById(`leavemode-${uid}`).value,
@@ -2239,8 +2356,18 @@ function calcAnnualLeaveDays(hireDateStr){
 function updateStaffRole(uid, role){
   db.collection('employees').doc(uid).update({ role }).then(()=>showToast("已更新身分"));
 }
-function updateStaffStatus(uid, status){
-  db.collection('employees').doc(uid).update({ status }).then(()=>showToast(status==='離職' ? "已設為離職，該帳號下次登入會被擋下" : "已恢復在職"));
+function updateStaffStatus(uid, status, name, store){
+  db.collection('employees').doc(uid).update({ status }).then(()=>{
+    showToast(status==='離職' ? "已設為離職，該帳號下次登入會被擋下" : "已恢復在職");
+    if(status === '離職' && name && store){
+      db.collection('resignation_requests').add({
+        uid, name, store, status: 'approved', type: 'dismissed',
+        requestedDate: new Date().toISOString(),
+        processedBy: CURRENT_USER.name, processedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    }
+  });
 }
 
 /* ---------- 共用工具 ---------- */
@@ -2251,4 +2378,4 @@ function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"\\'"); }
 </script>
 </body>
 </html>
-07.24
+07.24.01
