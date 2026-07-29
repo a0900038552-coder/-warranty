@@ -1307,7 +1307,10 @@ function loadMyTransferRequests(){
         `;
         list.appendChild(div);
       });
-    }, ()=>{ document.getElementById('my-transfer-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>'; });
+    }, (err)=>{ 
+  console.error('調借申請讀取失敗:', err);
+  document.getElementById('my-transfer-list').innerHTML = '<div class="empty">讀取失敗,可能需要建立索引</div>'; 
+});
 }
 
 function transferRowHtml(id, d){
@@ -2383,4 +2386,4 @@ function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"\\'"); }
 </script>
 </body>
 </html>
-07.29.02
+07.29.03
