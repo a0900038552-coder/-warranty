@@ -2084,7 +2084,9 @@ function loadMyStaffRequests(){
           <div class="item-meta">${escapeHtml(d.details)}</div>`;
         list.appendChild(div);
       });
-    }, ()=>{ document.getElementById('my-requests-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>'; });
+   }, (err)=>{ console.error('我的申請紀錄讀取失敗:', err);
+  document.getElementById('my-requests-list').innerHTML = '<div class="empty">讀取失敗,可能需要建立索引</div>'; 
+});
 }
 
 function loadPendingStaffRequests(){
