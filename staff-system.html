@@ -1817,14 +1817,17 @@ function loadStoreLocations(){
     snap.forEach(doc=> storeLocations[doc.id] = doc.data());
     const info = document.getElementById('store-location-info');
     const entries = Object.entries(storeLocations);
-    info.innerHTML = entries.length ? entries.map(([store,loc])=>
-  (typeof loc.lat === 'number' && typeof loc.lng === 'number')
-    ? <div class="item-meta">${store}: ${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)} (範圍 ${loc.radius||300} 公尺) ${loc.authorizedIP?'  WiFi IP：'+loc.authorizedIP:''}</div>
-    : <div class="item-meta">${store}: 尚未設定座標 ${loc.authorizedIP?'  WiFi IP：'+loc.authorizedIP:''}</div>
-).join('') : '<div class="empty">尚未設定任何分店座標</div>';
+    info.innerHTML = entries.length ? entries.map(([store,loc])=>{
+      const hasCoord = typeof loc.lat === 'number' && typeof loc.lng === 'number';
+      const wifi = loc.authorizedIP ? '  WiFi IP：'+loc.authorizedIP : '';
+      return hasCoord
+        ? `<div class="item-meta">${store}: ${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)} (範圍 ${loc.radius||300} 公尺)${wifi}</div>`
+        : `<div class="item-meta">${store}: 尚未設定座標${wifi}</div>`;
+    }).join('') : '<div class="empty">尚未設定任何分店座標</div>';
     if(CURRENT_USER) checkWifiGate();
   });
 }
+
 
 async function doClockAction(type){
   let pos = null, distanceNote = '定位擷取失敗，僅記錄時間';
@@ -2380,4 +2383,4 @@ function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"\\'"); }
 </script>
 </body>
 </html>
-07.29.01
+07.29.02
