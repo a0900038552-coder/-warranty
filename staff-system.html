@@ -1014,7 +1014,10 @@ function loadLeaveRequests(){
       calApprovedLeavesCache = approvedForCal;
       renderNotifBell(pendingItems);
       renderLeaveCalendar(approvedForCal);
-    }, ()=>{ document.getElementById('leave-list').innerHTML = '<div class="empty">讀取失敗，請檢查 Firebase 設定</div>'; });
+    }, (err)=>{ 
+  console.error('本店申請紀錄讀取失敗:', err);
+  document.getElementById('my-requests-list').innerHTML = '<div class="empty">讀取失敗,可能需要建立索引</div>'; 
+});
 }
 
 let calApprovedLeavesCache = [];
@@ -2388,4 +2391,4 @@ function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"\\'"); }
 </script>
 </body>
 </html>
-07.29.04
+07.29.05
