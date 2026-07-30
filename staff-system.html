@@ -1,72 +1,3 @@
-<!DOCTYPE html>
-<html lang="zh-Hant">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>復原者 內部系統</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-<style>
-  :root{
-    --ink:#1c1f26; --ink-soft:#3a3f4b; --paper:#f6f4f0; --card:#ffffff;
-    --line:#e2ddd3; --copper:#c1723d; --copper-dark:#9c5a2e;
-    --good:#3f7a5c; --bad:#b3432b; --warn:#c1953d;
-  }
-  *{box-sizing:border-box;}
-  body{margin:0;background:var(--paper);color:var(--ink);font-family:'Noto Sans TC',sans-serif;-webkit-font-smoothing:antialiased;}
-  .mono{font-family:'IBM Plex Mono',monospace;}
-  .trace{height:8px;background-image:radial-gradient(circle, var(--copper) 1.5px, transparent 1.6px);background-size:14px 8px;background-position:center;opacity:.55;}
-  header.top{background:var(--ink);color:#fff;padding:18px 20px 14px;}
-  header.top h1{margin:0;font-size:19px;font-weight:900;letter-spacing:.02em;}
-  header.top p{margin:4px 0 0;font-size:12px;color:#b9bdc7;font-family:'IBM Plex Mono',monospace;}
-
-  #login-screen{max-width:380px;margin:8vh auto;padding:0 20px;}
-  .auth-tabs{display:flex;gap:8px;margin-bottom:16px;}
-  .auth-tabs button{flex:1;background:#fff;border:1px solid var(--line);color:var(--ink-soft);padding:9px;border-radius:8px;font-weight:700;font-size:13px;}
-  .auth-tabs button.active{background:var(--ink);color:#fff;border-color:var(--ink);}
-  .auth-pane{display:none;} .auth-pane.active{display:block;}
-  .field{margin-bottom:12px;}
-  .field label{display:block;font-size:12px;color:var(--ink-soft);margin-bottom:5px;font-family:'IBM Plex Mono',monospace;}
-  input,select,textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--card);font-size:15px;font-family:inherit;color:var(--ink);}
-  input:focus,select:focus,textarea:focus{outline:2px solid var(--copper);outline-offset:1px;}
-  button{cursor:pointer;border:none;border-radius:8px;padding:11px 16px;font-size:14px;font-weight:700;font-family:'Noto Sans TC',sans-serif;}
-  .btn-primary{background:var(--copper);color:#fff;} .btn-primary:hover{background:var(--copper-dark);}
-  .btn-ghost{background:transparent;color:var(--ink-soft);border:1px solid var(--line);}
-  .btn-good{background:var(--good);color:#fff;} .btn-bad{background:var(--bad);color:#fff;}
-  .btn-block{width:100%;} .btn-sm{padding:6px 10px;font-size:12px;}
-
-  #app{display:none;}
-  nav.tabs{display:flex;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5;overflow-x:auto;}
-  nav.tabs button{flex:1;min-width:90px;background:none;border-radius:0;padding:14px 6px;color:var(--ink-soft);font-weight:700;border-bottom:3px solid transparent;font-size:13px;}
-  nav.tabs button.active{color:var(--copper-dark);border-bottom:3px solid var(--copper);}
-
-  main{padding:16px 16px 60px;max-width:640px;margin:0 auto;}
-  .panel{display:none;} .panel.active{display:block;}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px;}
-  .card h3{margin:0 0 12px;font-size:15px;}
-  .rowline{display:flex;gap:10px;} .rowline>*{flex:1;}
-
-  .badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-family:'IBM Plex Mono',monospace;font-weight:600;}
-  .badge.pending{background:#f3e6d2;color:var(--warn);}
-  .badge.approved{background:#dcece3;color:var(--good);}
-  .badge.rejected{background:#f3dbd3;color:var(--bad);}
-  .badge.unread{background:#f3dbd3;color:var(--bad);}
-  .badge.read{background:#e9e6df;color:var(--ink-soft);}
-
-  .item{border-top:1px solid var(--line);padding:12px 0;cursor:pointer;}
-  .item:first-child{border-top:none;padding-top:0;}
-  .item-head{display:flex;justify-content:space-between;align-items:center;gap:8px;}
-  .item-head strong{font-size:14px;}
-  .item-meta{font-size:12px;color:var(--ink-soft);margin-top:3px;font-family:'IBM Plex Mono',monospace;}
-  .item-actions{display:flex;gap:6px;margin-top:8px;}
-  .item-body{font-size:13px;color:var(--ink-soft);margin-top:6px;line-height:1.5;}
-
-  .stock-row{display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--line);padding:12px 0;}
-  .stock-row:first-child{border-top:none;padding-top:0;}
-  .stock-name{font-size:14px;} .stock-meta{font-size:11px;color:var(--ink-soft);font-family:'IBM Plex Mono',monospace;margin-top:2px;}
   .stepper{display:flex;align-items:center;gap:10px;}
   .stepper button{width:36px;height:36px;border-radius:50%;background:var(--ink);color:#fff;font-size:18px;font-weight:900;padding:0;line-height:1;}
   .stepper button.minus{background:var(--bad);}
@@ -814,7 +745,8 @@ function loadAnnouncements(){
         }
       });
       renderAnnouncements();
-    }, err=>{
+    }, (err)=>{
+      console.error('公告讀取失敗：', err);
       document.getElementById('ann-list').innerHTML = '<div class="empty">讀取失敗，請檢查 Firebase 設定</div>';
     });
 }
@@ -1014,10 +946,10 @@ function loadLeaveRequests(){
       calApprovedLeavesCache = approvedForCal;
       renderNotifBell(pendingItems);
       renderLeaveCalendar(approvedForCal);
-    }, (err)=>{ 
-  console.error('本店申請紀錄讀取失敗:', err);
-  document.getElementById('my-requests-list').innerHTML = '<div class="empty">讀取失敗,可能需要建立索引</div>'; 
-});
+    }, (err)=>{
+      console.error('假表讀取失敗：', err);
+      document.getElementById('leave-list').innerHTML = '<div class="empty">讀取失敗，請檢查 Firebase 設定</div>';
+    });
 }
 
 let calApprovedLeavesCache = [];
@@ -1181,7 +1113,10 @@ function loadInventory(){
       invItemsCache = [];
       snap.forEach(doc=> invItemsCache.push({id:doc.id, ...doc.data()}));
       renderInventory();
-    }, ()=>{ document.getElementById('inv-list').innerHTML = '<div class="empty">讀取失敗，請檢查 Firebase 設定</div>'; });
+    }, (err)=>{
+      console.error('庫存讀取失敗：', err);
+      document.getElementById('inv-list').innerHTML = '<div class="empty">讀取失敗，請檢查 Firebase 設定</div>';
+    });
 
   let logQ = db.collection('inventory_transactions').orderBy('createdAt','desc').limit(20);
   if(viewStore !== '全部') logQ = logQ.where('store','==',viewStore);
@@ -1198,7 +1133,7 @@ function loadInventory(){
           <div class="item-meta">${d.by||''}</div>`;
         log.appendChild(div);
       });
-    });
+    }, (err)=>{ console.error('異動紀錄讀取失敗：', err); });
 }
 
 function renderInventory(){
@@ -1310,10 +1245,10 @@ function loadMyTransferRequests(){
         `;
         list.appendChild(div);
       });
-    }, (err)=>{ 
-  console.error('調借申請讀取失敗:', err);
-  document.getElementById('my-transfer-list').innerHTML = '<div class="empty">讀取失敗,可能需要建立索引</div>'; 
-});
+    }, (err)=>{
+      console.error('我的調料申請紀錄讀取失敗：', err);
+      document.getElementById('my-transfer-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>';
+    });
 }
 
 function transferRowHtml(id, d){
@@ -1342,7 +1277,10 @@ function loadPendingTransfers(){
     const list = document.getElementById('transfer-pending-list');
     if(snap.empty){ list.innerHTML = '<div class="empty">尚無申請</div>'; return; }
     list.innerHTML = snap.docs.map(doc=> transferRowHtml(doc.id, doc.data())).join('');
-  }, ()=>{ document.getElementById('transfer-pending-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>'; });
+  }, (err)=>{
+    console.error('待處理調料讀取失敗：', err);
+    document.getElementById('transfer-pending-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>';
+  });
 }
 
 function loadSettledTransfers(){
@@ -1352,7 +1290,10 @@ function loadSettledTransfers(){
     const list = document.getElementById('transfer-settled-list');
     if(snap.empty){ list.innerHTML = '<div class="empty">尚無紀錄</div>'; return; }
     list.innerHTML = snap.docs.map(doc=> transferRowHtml(doc.id, doc.data())).join('');
-  }, ()=>{ document.getElementById('transfer-settled-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>'; });
+  }, (err)=>{
+    console.error('核銷紀錄讀取失敗：', err);
+    document.getElementById('transfer-settled-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>';
+  });
 }
 
 function updateTransferField(id, field, value){
@@ -1398,7 +1339,10 @@ function loadResignationRequests(){
         `;
         list.appendChild(div);
       });
-    }, ()=>{ document.getElementById('resign-list').innerHTML = '<div class="empty">讀取失敗，請檢查 Firebase 設定</div>'; });
+    }, (err)=>{
+      console.error('離職申請讀取失敗：', err);
+      document.getElementById('resign-list').innerHTML = '<div class="empty">讀取失敗，請檢查 Firebase 設定</div>';
+    });
 }
 
 function approveResignation(reqId, uid){
@@ -1431,7 +1375,10 @@ function loadPendingAccounts(){
         `;
         list.appendChild(div);
       });
-    }, ()=>{ document.getElementById('pending-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立 Firestore 索引，請查看瀏覽器 Console</div>'; });
+    }, (err)=>{
+      console.error('待審核帳號讀取失敗：', err);
+      document.getElementById('pending-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立 Firestore 索引，請查看瀏覽器 Console</div>';
+    });
 }
 function approveAccount(uid){
   db.collection('employees').doc(uid).update({ status: '在職' }).then(()=>showToast("已核准，該員工可以登入了"));
@@ -1462,7 +1409,7 @@ function loadPayrollEmployeeOptions(){
     const sel = document.getElementById('pr-employee');
     sel.innerHTML = employeesCache.map(e=>`<option value="${e.id}">${escapeHtml(e.name)}（${e.store}）</option>`).join('');
     populateEmpCalSelect();
-  });
+  }, (err)=>{ console.error('員工選單讀取失敗：', err); });
   const monthInput = document.getElementById('pr-month');
   if(!monthInput.value){
     const now = new Date();
@@ -1499,7 +1446,10 @@ function loadTyphoonDays(){
         <div class="item-meta">${escapeHtml(d.note||'')}</div>`;
       list.appendChild(div);
     });
-  }, ()=>{ document.getElementById('typhoon-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>'; });
+  }, (err)=>{
+    console.error('公休日讀取失敗：', err);
+    document.getElementById('typhoon-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>';
+  });
 }
 function deleteTyphoonDay(id){ db.collection('typhoon_days').doc(id).delete().then(()=>showToast("已刪除")); }
 
@@ -1823,24 +1773,19 @@ function loadStoreLocations(){
     snap.forEach(doc=> storeLocations[doc.id] = doc.data());
     const info = document.getElementById('store-location-info');
     const entries = Object.entries(storeLocations);
-    info.innerHTML = entries.length ? entries.map(([store,loc])=>{
-      const hasCoord = typeof loc.lat === 'number' && typeof loc.lng === 'number';
-      const wifi = loc.authorizedIP ? '  WiFi IP：'+loc.authorizedIP : '';
-      return hasCoord
-        ? `<div class="item-meta">${store}: ${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)} (範圍 ${loc.radius||300} 公尺)${wifi}</div>`
-        : `<div class="item-meta">${store}: 尚未設定座標${wifi}</div>`;
-    }).join('') : '<div class="empty">尚未設定任何分店座標</div>';
+    info.innerHTML = entries.length ? entries.map(([store,loc])=>
+      `<div class="item-meta">${store}：${(loc.lat!=null && loc.lng!=null) ? loc.lat.toFixed(5)+', '+loc.lng.toFixed(5)+'（範圍 '+(loc.radius||300)+' 公尺）' : '尚未設定座標'}${loc.authorizedIP?'　WiFi IP：'+loc.authorizedIP:''}</div>`
+    ).join('') : '<div class="empty">尚未設定任何分店座標</div>';
     if(CURRENT_USER) checkWifiGate();
-  });
+  }, (err)=>{ console.error('分店座標讀取失敗：', err); });
 }
-
 
 async function doClockAction(type){
   let pos = null, distanceNote = '定位擷取失敗，僅記錄時間';
   try{
     pos = await getGeolocation();
     const loc = storeLocations[CURRENT_USER.store];
-    if(loc){
+    if(loc && loc.lat!=null && loc.lng!=null){
       const dist = Math.round(haversineDistance(pos.lat,pos.lng,loc.lat,loc.lng));
       distanceNote = dist <= (loc.radius||300) ? `距離店裡約 ${dist} 公尺內` : `⚠ 距離店裡約 ${dist} 公尺，超出範圍`;
     } else {
@@ -1950,7 +1895,10 @@ function loadEmpAttendance(){
         if(t) empCalCache.push({ type:d.type, time:t, manual: d.manual||false });
       });
       renderEmpCalendar();
-    }, ()=>{ document.getElementById('emp-attendance-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>'; });
+    }, (err)=>{
+      console.error('員工打卡月曆讀取失敗：', err);
+      document.getElementById('emp-attendance-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>';
+    });
 }
 
 function renderEmpCalendar(){
@@ -2006,7 +1954,10 @@ function loadTeamAttendance(){
       <div class="item"><div class="item-head"><strong>${escapeHtml(n)}</strong></div>
       <div class="item-meta">上班：${byPerson[n].in?byPerson[n].in.toLocaleTimeString('zh-TW'):'尚未打卡'}　下班：${byPerson[n].out?byPerson[n].out.toLocaleTimeString('zh-TW'):'尚未打卡'}</div></div>
     `).join('') : '<div class="empty">今天還沒有人打卡</div>';
-  }, ()=>{ document.getElementById('team-attendance-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>'; });
+  }, (err)=>{
+    console.error('今日打卡總覽讀取失敗：', err);
+    document.getElementById('team-attendance-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>';
+  });
 }
 
 let pendingResignDate = null;
@@ -2087,9 +2038,10 @@ function loadMyStaffRequests(){
           <div class="item-meta">${escapeHtml(d.details)}</div>`;
         list.appendChild(div);
       });
-   }, (err)=>{ console.error('我的申請紀錄讀取失敗:', err);
-  document.getElementById('my-requests-list').innerHTML = '<div class="empty">讀取失敗,可能需要建立索引</div>'; 
-});
+    }, (err)=>{
+      console.error('我的申請紀錄讀取失敗：', err);
+      document.getElementById('my-requests-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>';
+    });
 }
 
 function loadPendingStaffRequests(){
@@ -2113,7 +2065,10 @@ function loadPendingStaffRequests(){
         </div>
       </div>`;
     }).join('');
-  }, ()=>{ document.getElementById('pending-requests-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>'; });
+  }, (err)=>{
+    console.error('待處理申請讀取失敗：', err);
+    document.getElementById('pending-requests-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>';
+  });
 }
 function setStaffRequestStatus(id, status){
   db.collection('staff_requests').doc(id).update({ status, processedBy: CURRENT_USER.name, processedAt: firebase.firestore.FieldValue.serverTimestamp() })
@@ -2188,7 +2143,10 @@ function loadDepartureRecords(){
         <div class="item-meta">離職日期時間：${dateStr}　處理人：${d.processedBy||''}</div>
       </div>`;
     }).join('');
-  }, ()=>{ document.getElementById('departure-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>'; });
+  }, (err)=>{
+    console.error('離職紀錄讀取失敗：', err);
+    document.getElementById('departure-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>';
+  });
 }
 
 function loadStaffList(){
@@ -2203,7 +2161,10 @@ function loadStaffList(){
       const cards = await Promise.all(snap.docs.map(doc=>buildEmployeeCard(doc)));
       list.innerHTML = '';
       cards.forEach(c=> list.appendChild(c));
-    }, ()=>{ document.getElementById('staff-list').innerHTML = '<div class="empty">讀取失敗，請檢查 Firebase 設定</div>'; });
+    }, (err)=>{
+      console.error('員工列表讀取失敗：', err);
+      document.getElementById('staff-list').innerHTML = '<div class="empty">讀取失敗，請檢查 Firebase 設定</div>';
+    });
 }
 
 async function buildEmployeeCard(doc){
@@ -2391,4 +2352,4 @@ function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"\\'"); }
 </script>
 </body>
 </html>
-07.29.05
+0730.01
