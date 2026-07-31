@@ -411,14 +411,15 @@
         <h3>月薪試算</h3>
         <div class="field"><label>選擇員工</label><select id="pr-employee"></select></div>
         <div class="field"><label>結算月份</label><input type="month" id="pr-month"></div>
+        <div class="field"><label>本月實際在職天數（留空預設 30 天；中途到職／離職請填實際天數）</label><input type="number" id="pr-work-days" min="1" max="31" placeholder="預設 30"></div>
         <button class="btn-ghost btn-block" onclick="calcPayroll()">試算</button>
 
         <div id="pr-result" style="display:none;margin-top:14px;">
-          <div class="item"><div class="item-head"><strong>底薪</strong><span class="mono" id="pr-base"></span></div></div>
+          <div class="item"><div class="item-head"><strong>底薪</strong><span class="mono" id="pr-base"></span></div><div class="item-meta" id="pr-base-note"></div></div>
           <div class="item"><div class="item-head"><strong>颱風/店休扣款</strong><span class="mono" id="pr-typhoon"></span></div><div class="item-meta" id="pr-typhoon-days"></div></div>
           <div class="item"><div class="item-head"><strong>事假/病假扣款</strong><span class="mono" id="pr-leave-deduct"></span></div><div class="item-meta" id="pr-leave-detail"></div></div>
-          <div class="item"><div class="item-head"><strong>勞保自付額</strong><span class="mono" id="pr-labor-ins"></span></div></div>
-          <div class="item"><div class="item-head"><strong>健保自付額</strong><span class="mono" id="pr-health-ins"></span></div><div class="item-meta">勞健保為依底薪估算之概算金額，正式投保級距請以勞保局／健保署公告為準</div></div>
+          <div class="item"><div class="item-head"><strong>勞保自付額</strong><span class="mono" id="pr-labor-ins"></span></div><div class="item-meta" id="pr-labor-note"></div></div>
+          <div class="item"><div class="item-head"><strong>健保自付額</strong><span class="mono" id="pr-health-ins"></span></div><div class="item-meta">勞健保為依底薪估算之概算金額，正式投保級距請以勞保局／健保署公告為準<br><span id="pr-health-note"></span></div></div>
 
           <div class="item">
             <div class="item-head"><strong>加班費</strong><span class="mono" id="pr-overtime"></span></div>
@@ -1524,6 +1525,7 @@ function deleteTyphoonDay(id){ db.collection('typhoon_days').doc(id).delete().th
 
 /* 月薪試算 */
 let prBaseSalary = 0, prTyphoonDeduction = 0, prLeaveDeduction = 0, prLaborIns = 0, prHealthIns = 0;
+let prWorkDays = 30, prProratedBase = 0;
 let prCurrentEmployee = null, prCurrentMonth = '';
 const LEAVE_DEDUCT_RATIO = { '事假':1, '病假':0.5, '特休':0, '排休調整':0, '其他':0 };
 
@@ -1559,6 +1561,10 @@ async function calcPayroll(){
   const monthEnd = `${month}-${String(daysInMonth).padStart(2,'0')}`;
   const dayRate = prBaseSalary / 30;
 
+  const workDaysInput = document.getElementById('pr-work-days').value;
+  prWorkDays = workDaysInput ? Math.min(31, Math.max(1, Number(workDaysInput))) : 30;
+  prProratedBase = Math.round(dayRate * prWorkDays);
+
   // 抓該分店在此月份的颱風假日
   const typhoonInMonth = typhoonCache.filter(t => t.store === emp.store && t.date >= monthStart && t.date <= monthEnd);
 
@@ -1569,7 +1575,10 @@ async function calcPayroll(){
   const deductedTyphoonDays = typhoonInMonth.filter(t => !approvedLeaves.some(l => l.start <= t.date && t.date <= l.end));
   prTyphoonDeduction = Math.round(deductedTyphoonDays.length * dayRate);
 
-  document.getElementById('pr-base').textContent = prBaseSalary.toLocaleString();
+  document.getElementById('pr-base').textContent = prProratedBase.toLocaleString();
+  document.getElementById('pr-base-note').textContent = prWorkDays === 30
+    ? `以整月 30 天計算（日薪 ${Math.round(dayRate)} 元）`
+    : `依實際在職 ${prWorkDays} 天計算（日薪 ${Math.round(dayRate)} 元 × ${prWorkDays} 天，原底薪 ${prBaseSalary.toLocaleString()} 元）`;
   document.getElementById('pr-typhoon').textContent = '-' + prTyphoonDeduction.toLocaleString();
   document.getElementById('pr-typhoon-days').textContent = deductedTyphoonDays.length
     ? `扣款日期：${deductedTyphoonDays.map(d=>d.date).join('、')}（每日 ${Math.round(dayRate)} 元）`
@@ -1592,11 +1601,13 @@ async function calcPayroll(){
   document.getElementById('pr-leave-deduct').textContent = '-' + prLeaveDeduction.toLocaleString();
   document.getElementById('pr-leave-detail').textContent = leaveBreakdown.length ? leaveBreakdown.join('、') : '本月無事假／病假扣款';
 
-  // 勞健保自付額（依底薪概算）
-  prLaborIns = calcLaborInsurance(prBaseSalary);
-  prHealthIns = calcHealthInsurance(prBaseSalary);
+  // 勞健保自付額（依底薪概算，若非整月在職則依比例試算，僅供結算參考）
+  prLaborIns = Math.round(calcLaborInsurance(prBaseSalary) * prWorkDays / 30);
+  prHealthIns = Math.round(calcHealthInsurance(prBaseSalary) * prWorkDays / 30);
   document.getElementById('pr-labor-ins').textContent = '-' + prLaborIns.toLocaleString();
   document.getElementById('pr-health-ins').textContent = '-' + prHealthIns.toLocaleString();
+  document.getElementById('pr-labor-note').textContent = prWorkDays === 30 ? '' : `依實際在職 ${prWorkDays} 天比例試算（整月為 ${calcLaborInsurance(prBaseSalary).toLocaleString()} 元）`;
+  document.getElementById('pr-health-note').textContent = prWorkDays === 30 ? '' : `依實際在職 ${prWorkDays} 天比例試算（整月為 ${calcHealthInsurance(prBaseSalary).toLocaleString()} 元），正式應以勞健保局當月實際加保天數認定為準`;
   document.getElementById('pr-hourly-rate').textContent = Math.round(prBaseSalary/30/8);
   document.getElementById('ot-h1').value = 0; document.getElementById('ot-h2').value = 0; document.getElementById('ot-h3').value = 0;
 
@@ -1647,7 +1658,7 @@ function updatePayrollTotals(){
 
   const extra = Number(document.getElementById('pr-extra').value) || 0;
   const adjust = Number(document.getElementById('pr-adjust').value) || 0;
-  const suggested = prBaseSalary - prTyphoonDeduction - prLeaveDeduction - prLaborIns - prHealthIns + bonusAmount + profitBonus + overtimePay + extra + adjust;
+  const suggested = prProratedBase - prTyphoonDeduction - prLeaveDeduction - prLaborIns - prHealthIns + bonusAmount + profitBonus + overtimePay + extra + adjust;
   document.getElementById('pr-suggested').textContent = suggested.toLocaleString() + ' 元';
 }
 
@@ -1657,6 +1668,7 @@ function collectPayrollData(){
   return {
     uid: prCurrentEmployee.id, name: prCurrentEmployee.name, store: prCurrentEmployee.store,
     month: prCurrentMonth, baseSalary: prBaseSalary,
+    workDays: prWorkDays, proratedBase: prProratedBase,
     typhoonDeduction: prTyphoonDeduction, leaveDeduction: prLeaveDeduction,
     laborInsurance: prLaborIns, healthInsurance: prHealthIns,
     scores, totalScore: Number(document.getElementById('pr-total-score').textContent),
@@ -1693,7 +1705,7 @@ function printPayslip(){
     <p>姓名：${data.name}　分店：${data.store}　月份：${data.month}</p>
     <table>
       <tr><th>項目</th><th>金額</th></tr>
-      <tr><td>底薪</td><td>${data.baseSalary.toLocaleString()}</td></tr>
+      <tr><td>底薪${data.workDays===30?'':`（依實際在職 ${data.workDays} 天比例，原底薪 ${data.baseSalary.toLocaleString()}）`}</td><td>${data.proratedBase.toLocaleString()}</td></tr>
       <tr><td>颱風／店休扣款</td><td>-${data.typhoonDeduction.toLocaleString()}</td></tr>
       <tr><td>事假／病假扣款</td><td>-${data.leaveDeduction.toLocaleString()}</td></tr>
       <tr><td>勞保自付額</td><td>-${data.laborInsurance.toLocaleString()}</td></tr>
@@ -1720,7 +1732,7 @@ function emailPayslip(){
   const body = encodeURIComponent(
 `${data.name} 您好，附上 ${data.month} 薪資明細（PDF 請另外附加此信）：
 
-底薪：${data.baseSalary.toLocaleString()}
+底薪${data.workDays===30?'':`（依實際在職 ${data.workDays} 天比例，原底薪 ${data.baseSalary.toLocaleString()}）`}：${data.proratedBase.toLocaleString()}
 颱風／店休扣款：-${data.typhoonDeduction.toLocaleString()}
 事假／病假扣款：-${data.leaveDeduction.toLocaleString()}
 勞保自付額：-${data.laborInsurance.toLocaleString()}
@@ -2420,5 +2432,4 @@ function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':
 function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"\\'"); }
 </script>
 </body>
-</html>
-0730.02
+</html>0731.01
