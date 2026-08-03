@@ -1638,8 +1638,8 @@ function updatePayrollTotals(){
 
   const bonusBase = Number(document.getElementById('pr-bonus-base').value) || 0;
   let tierPercent = 0, tierLabel = '';
-  if(totalScore >= 80){ tierPercent = 1; tierLabel = '達 80 分以上，獎金 100% 發放'; }
-  else if(totalScore >= 60){ tierPercent = 0.5; tierLabel = '60~79 分，獎金 50% 發放'; }
+  if(totalScore >= 80){ tierPercent = 1; tierLabel = '達 80 分以上，分紅 100% 發放'; }
+  else if(totalScore >= 60){ tierPercent = 0.5; tierLabel = '60~79 分，分紅 50% 發放'; }
   else { tierPercent = 0; tierLabel = '未滿 60 分，不發放分紅'; }
   const bonusAmount = Math.round(bonusBase * tierPercent);
   document.getElementById('pr-bonus').textContent = '+' + bonusAmount.toLocaleString();
@@ -1721,7 +1721,7 @@ function printPayslip(){
       <tr><td>其他調整</td><td>${data.adjust.toLocaleString()}</td></tr>
       <tr class="total"><td>建議薪資合計</td><td>${data.suggestedTotal.toLocaleString()}</td></tr>
     </table>
-    <p style="margin-top:24px;font-size:12px;color:#888;">勞健保為依底薪估算之概算金額，正式投保級距請以勞保局／健保署公告為準；此單為系統試算建議金額，實際發放請以公司規定為準。</p>
+    <p style="margin-top:24px;font-size:12px;color:#888;">薪資單有任何問題請於發薪當月提出異議。</p>
     </body></html>
   `);
   w.document.close();
