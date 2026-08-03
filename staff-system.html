@@ -418,8 +418,8 @@
           <div class="item"><div class="item-head"><strong>底薪</strong><span class="mono" id="pr-base"></span></div><div class="item-meta" id="pr-base-note"></div></div>
           <div class="item"><div class="item-head"><strong>颱風/店休扣款</strong><span class="mono" id="pr-typhoon"></span></div><div class="item-meta" id="pr-typhoon-days"></div></div>
           <div class="item"><div class="item-head"><strong>事假/病假扣款</strong><span class="mono" id="pr-leave-deduct"></span></div><div class="item-meta" id="pr-leave-detail"></div></div>
-          <div class="item"><div class="item-head"><strong>勞保自付額</strong><span class="mono" id="pr-labor-ins"></span></div><div class="item-meta" id="pr-labor-note"></div></div>
-          <div class="item"><div class="item-head"><strong>健保自付額</strong><span class="mono" id="pr-health-ins"></span></div><div class="item-meta">勞健保為依底薪估算之概算金額，正式投保級距請以勞保局／健保署公告為準<br><span id="pr-health-note"></span></div></div>
+          <div class="item"><div class="item-head"><strong>勞保自付額</strong><input type="number" min="0" class="mono" id="pr-labor-ins" style="width:110px;text-align:right;" oninput="updatePayrollTotals()"></div><div class="item-meta" id="pr-labor-note"></div></div>
+          <div class="item"><div class="item-head"><strong>健保自付額</strong><input type="number" min="0" class="mono" id="pr-health-ins" style="width:110px;text-align:right;" oninput="updatePayrollTotals()"></div><div class="item-meta">勞健保為依底薪估算之概算金額，可手動修改為正式投保金額；正式投保級距請以勞保局／健保署公告為準<br><span id="pr-health-note"></span></div></div>
 
           <div class="item">
             <div class="item-head"><strong>加班費</strong><span class="mono" id="pr-overtime"></span></div>
@@ -1604,8 +1604,8 @@ async function calcPayroll(){
   // 勞健保自付額（依底薪概算，若非整月在職則依比例試算，僅供結算參考）
   prLaborIns = Math.round(calcLaborInsurance(prBaseSalary) * prWorkDays / 30);
   prHealthIns = Math.round(calcHealthInsurance(prBaseSalary) * prWorkDays / 30);
-  document.getElementById('pr-labor-ins').textContent = '-' + prLaborIns.toLocaleString();
-  document.getElementById('pr-health-ins').textContent = '-' + prHealthIns.toLocaleString();
+  document.getElementById('pr-labor-ins').value = prLaborIns;
+  document.getElementById('pr-health-ins').value = prHealthIns;
   document.getElementById('pr-labor-note').textContent = prWorkDays === 30 ? '' : `依實際在職 ${prWorkDays} 天比例試算（整月為 ${calcLaborInsurance(prBaseSalary).toLocaleString()} 元）`;
   document.getElementById('pr-health-note').textContent = prWorkDays === 30 ? '' : `依實際在職 ${prWorkDays} 天比例試算（整月為 ${calcHealthInsurance(prBaseSalary).toLocaleString()} 元），正式應以勞健保局當月實際加保天數認定為準`;
   document.getElementById('pr-hourly-rate').textContent = Math.round(prBaseSalary/30/8);
@@ -1625,6 +1625,9 @@ async function calcPayroll(){
 }
 
 function updatePayrollTotals(){
+  prLaborIns = Number(document.getElementById('pr-labor-ins').value) || 0;
+  prHealthIns = Number(document.getElementById('pr-health-ins').value) || 0;
+
   let totalScore = 0;
   KPI_ITEMS.forEach(k=>{
     const val = Number(document.getElementById('score-'+k.key).value) || 0;
@@ -1711,7 +1714,7 @@ function printPayslip(){
       <tr><td>勞保自付額</td><td>-${data.laborInsurance.toLocaleString()}</td></tr>
       <tr><td>健保自付額</td><td>-${data.healthInsurance.toLocaleString()}</td></tr>
       <tr><td>績效總分</td><td>${data.totalScore} 分</td></tr>
-      <tr><td>績效獎金</td><td>+${data.bonusAmount.toLocaleString()}</td></tr>
+      <tr><td>分紅獎金</td><td>+${data.bonusAmount.toLocaleString()}</td></tr>
       <tr><td>業績分紅（毛利 ${data.grossProfit.toLocaleString()}）</td><td>+${data.profitBonus.toLocaleString()}</td></tr>
       <tr><td>加班費（1.34倍${data.overtimeHours.h1}h／1.67倍${data.overtimeHours.h2}h／2倍${data.overtimeHours.h3}h）</td><td>+${data.overtimePay.toLocaleString()}</td></tr>
       <tr><td>其他加項</td><td>+${data.extra.toLocaleString()}</td></tr>
@@ -2432,4 +2435,4 @@ function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':
 function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"\\'"); }
 </script>
 </body>
-</html>0731.01
+</html>0803.01
