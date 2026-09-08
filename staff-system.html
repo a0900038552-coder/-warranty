@@ -411,15 +411,14 @@
         <h3>月薪試算</h3>
         <div class="field"><label>選擇員工</label><select id="pr-employee"></select></div>
         <div class="field"><label>結算月份</label><input type="month" id="pr-month"></div>
-        <div class="field"><label>本月實際在職天數（留空預設 30 天；中途到職／離職請填實際天數）</label><input type="number" id="pr-work-days" min="1" max="31" placeholder="預設 30"></div>
         <button class="btn-ghost btn-block" onclick="calcPayroll()">試算</button>
 
         <div id="pr-result" style="display:none;margin-top:14px;">
-          <div class="item"><div class="item-head"><strong>底薪</strong><span class="mono" id="pr-base"></span></div><div class="item-meta" id="pr-base-note"></div></div>
+          <div class="item"><div class="item-head"><strong>底薪</strong><span class="mono" id="pr-base"></span></div></div>
           <div class="item"><div class="item-head"><strong>颱風/店休扣款</strong><span class="mono" id="pr-typhoon"></span></div><div class="item-meta" id="pr-typhoon-days"></div></div>
           <div class="item"><div class="item-head"><strong>事假/病假扣款</strong><span class="mono" id="pr-leave-deduct"></span></div><div class="item-meta" id="pr-leave-detail"></div></div>
-          <div class="item"><div class="item-head"><strong>勞保自付額</strong><input type="number" min="0" class="mono" id="pr-labor-ins" style="width:110px;text-align:right;" oninput="updatePayrollTotals()"></div><div class="item-meta" id="pr-labor-note"></div></div>
-          <div class="item"><div class="item-head"><strong>健保自付額</strong><input type="number" min="0" class="mono" id="pr-health-ins" style="width:110px;text-align:right;" oninput="updatePayrollTotals()"></div><div class="item-meta">勞健保為依底薪估算之概算金額，可手動修改為正式投保金額；正式投保級距請以勞保局／健保署公告為準<br><span id="pr-health-note"></span></div></div>
+          <div class="item"><div class="item-head"><strong>勞保自付額</strong><span class="mono" id="pr-labor-ins"></span></div></div>
+          <div class="item"><div class="item-head"><strong>健保自付額</strong><span class="mono" id="pr-health-ins"></span></div><div class="item-meta">勞健保為依底薪估算之概算金額，正式投保級距請以勞保局／健保署公告為準</div></div>
 
           <div class="item">
             <div class="item-head"><strong>加班費</strong><span class="mono" id="pr-overtime"></span></div>
@@ -437,8 +436,8 @@
             <div class="item-meta" style="margin-top:6px;">加權總分：<span id="pr-total-score" class="mono">0</span> 分</div>
           </div>
 
-          <div class="field"><label>本月分紅基準（元）</label><input type="number" id="pr-bonus-base" value="0" onchange="calcPayroll()"></div>
-          <div class="item"><div class="item-head"><strong>分紅獎金（依總分比例發放）</strong><span class="mono" id="pr-bonus"></span></div><div class="item-meta" id="pr-bonus-tier"></div></div>
+          <div class="field"><label>本月獎金基準（元）</label><input type="number" id="pr-bonus-base" value="0" onchange="calcPayroll()"></div>
+          <div class="item"><div class="item-head"><strong>績效獎金（依總分比例發放）</strong><span class="mono" id="pr-bonus"></span></div><div class="item-meta" id="pr-bonus-tier"></div></div>
 
           <div class="field"><label>本月毛利（元）</label><input type="number" id="pr-gross-profit" value="0" onchange="calcPayroll()" oninput="updatePayrollTotals()"></div>
           <div class="item"><div class="item-head"><strong>業績分紅（毛利達11萬門檻）</strong><span class="mono" id="pr-profit-bonus"></span></div><div class="item-meta" id="pr-profit-bonus-note"></div></div>
@@ -460,6 +459,20 @@
   </div>
 </div>
 
+<!-- MODAL: signature pad -->
+<div class="modal-bg" id="modal-signature">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modal-signature')">&times;</button>
+    <h3 id="signature-title">請簽名確認</h3>
+    <p style="font-size:12px;color:var(--ink-soft);margin-top:-6px;">用手指或滑鼠在下方框內簽名</p>
+    <canvas id="signature-canvas" style="width:100%;height:180px;border:1px solid var(--line);border-radius:8px;background:#fff;touch-action:none;"></canvas>
+    <div class="rowline" style="margin-top:10px;">
+      <button class="btn-ghost" onclick="clearSignature()">清除重簽</button>
+      <button class="btn-primary" onclick="saveSignature()">確認簽名</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL: announcement detail -->
 <div class="modal-bg" id="modal-ann">
   <div class="modal">
@@ -469,7 +482,7 @@
     <div class="item-body" id="ann-detail-content"></div>
     <div id="ann-detail-pdf"></div>
     <div class="readers" id="ann-detail-readers"></div>
-    <button class="btn-primary btn-block" id="ann-confirm-btn" style="margin-top:12px;" onclick="confirmAnnouncement()">我已閱讀並同意</button>
+    <button class="btn-primary btn-block" id="ann-confirm-btn" style="margin-top:12px;" onclick="openSignaturePad('公告確認簽名', confirmAnnouncement)">簽名確認已閱讀</button>
   </div>
 </div>
 
@@ -766,6 +779,51 @@ function toggleSidebar(){
 }
 
 /* ---------- 公告 ---------- */
+/* ---------- 簽名板 ---------- */
+let sigCanvas, sigCtx, sigDrawing = false, sigHasDrawn = false, sigCallback = null;
+
+function initSignatureCanvas(){
+  sigCanvas = document.getElementById('signature-canvas');
+  const rect = sigCanvas.getBoundingClientRect();
+  sigCanvas.width = rect.width * 2;
+  sigCanvas.height = rect.height * 2;
+  sigCtx = sigCanvas.getContext('2d');
+  sigCtx.scale(2,2);
+  sigCtx.lineWidth = 2;
+  sigCtx.lineCap = 'round';
+  sigCtx.strokeStyle = '#1c1f26';
+  sigHasDrawn = false;
+
+  const getPos = e=>{
+    const r = sigCanvas.getBoundingClientRect();
+    const p = e.touches ? e.touches[0] : e;
+    return { x: p.clientX - r.left, y: p.clientY - r.top };
+  };
+  sigCanvas.onpointerdown = e=>{ sigDrawing = true; sigHasDrawn = true; const p=getPos(e); sigCtx.beginPath(); sigCtx.moveTo(p.x,p.y); };
+  sigCanvas.onpointermove = e=>{ if(!sigDrawing) return; const p=getPos(e); sigCtx.lineTo(p.x,p.y); sigCtx.stroke(); };
+  sigCanvas.onpointerup = ()=>{ sigDrawing = false; };
+  sigCanvas.onpointerleave = ()=>{ sigDrawing = false; };
+}
+
+function openSignaturePad(title, callback){
+  document.getElementById('signature-title').textContent = title;
+  sigCallback = callback;
+  document.getElementById('modal-signature').classList.add('active');
+  setTimeout(initSignatureCanvas, 50); // 等 modal 顯示後才量得到正確尺寸
+}
+
+function clearSignature(){
+  if(sigCtx) sigCtx.clearRect(0,0,sigCanvas.width,sigCanvas.height);
+  sigHasDrawn = false;
+}
+
+function saveSignature(){
+  if(!sigHasDrawn){ showToast("請先簽名再確認"); return; }
+  const dataUrl = sigCanvas.toDataURL('image/png');
+  closeModal('modal-signature');
+  if(sigCallback) sigCallback(dataUrl);
+}
+
 function fileToBase64(file){
   return new Promise((resolve,reject)=>{
     const reader = new FileReader();
@@ -815,8 +873,7 @@ function loadAnnouncements(){
         }
       });
       renderAnnouncements();
-    }, (err)=>{
-      console.error('公告讀取失敗：', err);
+    }, err=>{
       document.getElementById('ann-list').innerHTML = '<div class="empty">讀取失敗，請檢查 Firebase 設定</div>';
     });
 }
@@ -862,13 +919,21 @@ function openAnnouncement(id){
   const readersEl = document.getElementById('ann-detail-readers');
   if(isManager(CURRENT_USER.role)){
     const readNames = d.reads ? Object.values(d.reads).map(r=>r.name) : [];
-    const confirmNames = d.confirms ? Object.values(d.confirms).map(r=>r.name) : [];
+    const confirmEntries = d.confirms ? Object.values(d.confirms) : [];
     const scopeEmployees = employeesCache.filter(e => d.target==='全部' || e.store===d.target);
     const unconfirmed = scopeEmployees.filter(e => !(d.confirms && d.confirms[e.id])).map(e=>e.name);
     readersEl.innerHTML = `
       已讀（${readNames.length}）：${readNames.join('、') || '無'}<br>
-      已確認（${confirmNames.length}）：${confirmNames.join('、') || '無'}<br>
-      ${unconfirmed.length ? `<span style="color:var(--bad);">尚未確認：${unconfirmed.join('、')}</span>` : ''}
+      已確認簽名（${confirmEntries.length}）：
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;">
+        ${confirmEntries.map(c=>`
+          <div style="text-align:center;">
+            ${c.signature ? `<img src="${c.signature}" style="width:70px;height:40px;object-fit:contain;border:1px solid var(--line);border-radius:4px;background:#fff;">` : ''}
+            <div style="font-size:11px;">${escapeHtml(c.name)}</div>
+          </div>
+        `).join('') || '無'}
+      </div>
+      ${unconfirmed.length ? `<div style="margin-top:8px;color:var(--bad);">尚未確認：${unconfirmed.join('、')}</div>` : ''}
     `;
   } else {
     readersEl.textContent = '';
@@ -888,13 +953,13 @@ function openAnnouncement(id){
   }
 }
 
-function confirmAnnouncement(){
+function confirmAnnouncement(signatureDataUrl){
   if(!currentAnnId) return;
   db.collection('announcements').doc(currentAnnId).update({
-    [`confirms.${CURRENT_USER.uid}`]: { name: CURRENT_USER.name, at: firebase.firestore.FieldValue.serverTimestamp() }
+    [`confirms.${CURRENT_USER.uid}`]: { name: CURRENT_USER.name, signature: signatureDataUrl || null, at: firebase.firestore.FieldValue.serverTimestamp() }
   }).then(()=>{
     document.getElementById('ann-confirm-btn').style.display = 'none';
-    showToast("已確認並記錄");
+    showToast("已簽名確認並記錄");
   });
 }
 
@@ -1016,10 +1081,7 @@ function loadLeaveRequests(){
       calApprovedLeavesCache = approvedForCal;
       renderNotifBell(pendingItems);
       renderLeaveCalendar(approvedForCal);
-    }, (err)=>{
-      console.error('假表讀取失敗：', err);
-      document.getElementById('leave-list').innerHTML = '<div class="empty">讀取失敗，請檢查 Firebase 設定</div>';
-    });
+    }, ()=>{ document.getElementById('leave-list').innerHTML = '<div class="empty">讀取失敗，請檢查 Firebase 設定</div>'; });
 }
 
 let calApprovedLeavesCache = [];
@@ -1183,10 +1245,7 @@ function loadInventory(){
       invItemsCache = [];
       snap.forEach(doc=> invItemsCache.push({id:doc.id, ...doc.data()}));
       renderInventory();
-    }, (err)=>{
-      console.error('庫存讀取失敗：', err);
-      document.getElementById('inv-list').innerHTML = '<div class="empty">讀取失敗，請檢查 Firebase 設定</div>';
-    });
+    }, ()=>{ document.getElementById('inv-list').innerHTML = '<div class="empty">讀取失敗，請檢查 Firebase 設定</div>'; });
 
   let logQ = db.collection('inventory_transactions').orderBy('createdAt','desc').limit(20);
   if(viewStore !== '全部') logQ = logQ.where('store','==',viewStore);
@@ -1203,7 +1262,7 @@ function loadInventory(){
           <div class="item-meta">${d.by||''}</div>`;
         log.appendChild(div);
       });
-    }, (err)=>{ console.error('異動紀錄讀取失敗：', err); });
+    });
 }
 
 function renderInventory(){
@@ -1315,10 +1374,7 @@ function loadMyTransferRequests(){
         `;
         list.appendChild(div);
       });
-    }, (err)=>{
-      console.error('我的調料申請紀錄讀取失敗：', err);
-      document.getElementById('my-transfer-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>';
-    });
+    }, ()=>{ document.getElementById('my-transfer-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>'; });
 }
 
 function transferRowHtml(id, d){
@@ -1347,10 +1403,7 @@ function loadPendingTransfers(){
     const list = document.getElementById('transfer-pending-list');
     if(snap.empty){ list.innerHTML = '<div class="empty">尚無申請</div>'; return; }
     list.innerHTML = snap.docs.map(doc=> transferRowHtml(doc.id, doc.data())).join('');
-  }, (err)=>{
-    console.error('待處理調料讀取失敗：', err);
-    document.getElementById('transfer-pending-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>';
-  });
+  }, ()=>{ document.getElementById('transfer-pending-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>'; });
 }
 
 function loadSettledTransfers(){
@@ -1360,10 +1413,7 @@ function loadSettledTransfers(){
     const list = document.getElementById('transfer-settled-list');
     if(snap.empty){ list.innerHTML = '<div class="empty">尚無紀錄</div>'; return; }
     list.innerHTML = snap.docs.map(doc=> transferRowHtml(doc.id, doc.data())).join('');
-  }, (err)=>{
-    console.error('核銷紀錄讀取失敗：', err);
-    document.getElementById('transfer-settled-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>';
-  });
+  }, ()=>{ document.getElementById('transfer-settled-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>'; });
 }
 
 function updateTransferField(id, field, value){
@@ -1409,10 +1459,7 @@ function loadResignationRequests(){
         `;
         list.appendChild(div);
       });
-    }, (err)=>{
-      console.error('離職申請讀取失敗：', err);
-      document.getElementById('resign-list').innerHTML = '<div class="empty">讀取失敗，請檢查 Firebase 設定</div>';
-    });
+    }, ()=>{ document.getElementById('resign-list').innerHTML = '<div class="empty">讀取失敗，請檢查 Firebase 設定</div>'; });
 }
 
 function approveResignation(reqId, uid){
@@ -1445,10 +1492,7 @@ function loadPendingAccounts(){
         `;
         list.appendChild(div);
       });
-    }, (err)=>{
-      console.error('待審核帳號讀取失敗：', err);
-      document.getElementById('pending-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立 Firestore 索引，請查看瀏覽器 Console</div>';
-    });
+    }, ()=>{ document.getElementById('pending-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立 Firestore 索引，請查看瀏覽器 Console</div>'; });
 }
 function approveAccount(uid){
   db.collection('employees').doc(uid).update({ status: '在職' }).then(()=>showToast("已核准，該員工可以登入了"));
@@ -1479,7 +1523,7 @@ function loadPayrollEmployeeOptions(){
     const sel = document.getElementById('pr-employee');
     sel.innerHTML = employeesCache.map(e=>`<option value="${e.id}">${escapeHtml(e.name)}（${e.store}）</option>`).join('');
     populateEmpCalSelect();
-  }, (err)=>{ console.error('員工選單讀取失敗：', err); });
+  });
   const monthInput = document.getElementById('pr-month');
   if(!monthInput.value){
     const now = new Date();
@@ -1516,16 +1560,12 @@ function loadTyphoonDays(){
         <div class="item-meta">${escapeHtml(d.note||'')}</div>`;
       list.appendChild(div);
     });
-  }, (err)=>{
-    console.error('公休日讀取失敗：', err);
-    document.getElementById('typhoon-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>';
-  });
+  }, ()=>{ document.getElementById('typhoon-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>'; });
 }
 function deleteTyphoonDay(id){ db.collection('typhoon_days').doc(id).delete().then(()=>showToast("已刪除")); }
 
 /* 月薪試算 */
 let prBaseSalary = 0, prTyphoonDeduction = 0, prLeaveDeduction = 0, prLaborIns = 0, prHealthIns = 0;
-let prWorkDays = 30, prProratedBase = 0;
 let prCurrentEmployee = null, prCurrentMonth = '';
 const LEAVE_DEDUCT_RATIO = { '事假':1, '病假':0.5, '特休':0, '排休調整':0, '其他':0 };
 
@@ -1561,10 +1601,6 @@ async function calcPayroll(){
   const monthEnd = `${month}-${String(daysInMonth).padStart(2,'0')}`;
   const dayRate = prBaseSalary / 30;
 
-  const workDaysInput = document.getElementById('pr-work-days').value;
-  prWorkDays = workDaysInput ? Math.min(31, Math.max(1, Number(workDaysInput))) : 30;
-  prProratedBase = Math.round(dayRate * prWorkDays);
-
   // 抓該分店在此月份的颱風假日
   const typhoonInMonth = typhoonCache.filter(t => t.store === emp.store && t.date >= monthStart && t.date <= monthEnd);
 
@@ -1575,10 +1611,7 @@ async function calcPayroll(){
   const deductedTyphoonDays = typhoonInMonth.filter(t => !approvedLeaves.some(l => l.start <= t.date && t.date <= l.end));
   prTyphoonDeduction = Math.round(deductedTyphoonDays.length * dayRate);
 
-  document.getElementById('pr-base').textContent = prProratedBase.toLocaleString();
-  document.getElementById('pr-base-note').textContent = prWorkDays === 30
-    ? `以整月 30 天計算（日薪 ${Math.round(dayRate)} 元）`
-    : `依實際在職 ${prWorkDays} 天計算（日薪 ${Math.round(dayRate)} 元 × ${prWorkDays} 天，原底薪 ${prBaseSalary.toLocaleString()} 元）`;
+  document.getElementById('pr-base').textContent = prBaseSalary.toLocaleString();
   document.getElementById('pr-typhoon').textContent = '-' + prTyphoonDeduction.toLocaleString();
   document.getElementById('pr-typhoon-days').textContent = deductedTyphoonDays.length
     ? `扣款日期：${deductedTyphoonDays.map(d=>d.date).join('、')}（每日 ${Math.round(dayRate)} 元）`
@@ -1601,13 +1634,11 @@ async function calcPayroll(){
   document.getElementById('pr-leave-deduct').textContent = '-' + prLeaveDeduction.toLocaleString();
   document.getElementById('pr-leave-detail').textContent = leaveBreakdown.length ? leaveBreakdown.join('、') : '本月無事假／病假扣款';
 
-  // 勞健保自付額（依底薪概算，若非整月在職則依比例試算，僅供結算參考）
-  prLaborIns = Math.round(calcLaborInsurance(prBaseSalary) * prWorkDays / 30);
-  prHealthIns = Math.round(calcHealthInsurance(prBaseSalary) * prWorkDays / 30);
-  document.getElementById('pr-labor-ins').value = prLaborIns;
-  document.getElementById('pr-health-ins').value = prHealthIns;
-  document.getElementById('pr-labor-note').textContent = prWorkDays === 30 ? '' : `依實際在職 ${prWorkDays} 天比例試算（整月為 ${calcLaborInsurance(prBaseSalary).toLocaleString()} 元）`;
-  document.getElementById('pr-health-note').textContent = prWorkDays === 30 ? '' : `依實際在職 ${prWorkDays} 天比例試算（整月為 ${calcHealthInsurance(prBaseSalary).toLocaleString()} 元），正式應以勞健保局當月實際加保天數認定為準`;
+  // 勞健保自付額（依底薪概算）
+  prLaborIns = calcLaborInsurance(prBaseSalary);
+  prHealthIns = calcHealthInsurance(prBaseSalary);
+  document.getElementById('pr-labor-ins').textContent = '-' + prLaborIns.toLocaleString();
+  document.getElementById('pr-health-ins').textContent = '-' + prHealthIns.toLocaleString();
   document.getElementById('pr-hourly-rate').textContent = Math.round(prBaseSalary/30/8);
   document.getElementById('ot-h1').value = 0; document.getElementById('ot-h2').value = 0; document.getElementById('ot-h3').value = 0;
 
@@ -1615,8 +1646,8 @@ async function calcPayroll(){
   const scoreFields = document.getElementById('pr-score-fields');
   scoreFields.innerHTML = KPI_ITEMS.map(k=>`
     <div class="rowline" style="align-items:center;margin-top:6px;">
-      <div style="flex:2;font-size:12px;">${k.label}（${Math.round(k.weight*100)}%）</div>
-      <input type="number" min="0" max="100" value="0" style="flex:1;" id="score-${k.key}" oninput="updatePayrollTotals()">
+      <div style="flex:2;font-size:12px;">${k.label}（滿分 ${Math.round(k.weight*100)} 分）</div>
+      <input type="number" min="0" max="${Math.round(k.weight*100)}" value="0" style="flex:1;" id="score-${k.key}" oninput="updatePayrollTotals()">
     </div>
   `).join('');
 
@@ -1625,21 +1656,19 @@ async function calcPayroll(){
 }
 
 function updatePayrollTotals(){
-  prLaborIns = Number(document.getElementById('pr-labor-ins').value) || 0;
-  prHealthIns = Number(document.getElementById('pr-health-ins').value) || 0;
-
   let totalScore = 0;
   KPI_ITEMS.forEach(k=>{
-    const val = Number(document.getElementById('score-'+k.key).value) || 0;
-    totalScore += val * k.weight;
+    const cap = Math.round(k.weight*100);
+    const val = Math.min(Number(document.getElementById('score-'+k.key).value) || 0, cap);
+    totalScore += val;
   });
   totalScore = Math.round(totalScore * 10) / 10;
   document.getElementById('pr-total-score').textContent = totalScore;
 
   const bonusBase = Number(document.getElementById('pr-bonus-base').value) || 0;
   let tierPercent = 0, tierLabel = '';
-  if(totalScore >= 80){ tierPercent = 1; tierLabel = '達 80 分以上，分紅 100% 發放'; }
-  else if(totalScore >= 60){ tierPercent = 0.5; tierLabel = '60~79 分，分紅 50% 發放'; }
+  if(totalScore >= 80){ tierPercent = 1; tierLabel = '達 80 分以上，獎金 100% 發放'; }
+  else if(totalScore >= 60){ tierPercent = 0.5; tierLabel = '60~79 分，獎金 50% 發放'; }
   else { tierPercent = 0; tierLabel = '未滿 60 分，不發放分紅'; }
   const bonusAmount = Math.round(bonusBase * tierPercent);
   document.getElementById('pr-bonus').textContent = '+' + bonusAmount.toLocaleString();
@@ -1661,7 +1690,7 @@ function updatePayrollTotals(){
 
   const extra = Number(document.getElementById('pr-extra').value) || 0;
   const adjust = Number(document.getElementById('pr-adjust').value) || 0;
-  const suggested = prProratedBase - prTyphoonDeduction - prLeaveDeduction - prLaborIns - prHealthIns + bonusAmount + profitBonus + overtimePay + extra + adjust;
+  const suggested = prBaseSalary - prTyphoonDeduction - prLeaveDeduction - prLaborIns - prHealthIns + bonusAmount + profitBonus + overtimePay + extra + adjust;
   document.getElementById('pr-suggested').textContent = suggested.toLocaleString() + ' 元';
 }
 
@@ -1671,7 +1700,6 @@ function collectPayrollData(){
   return {
     uid: prCurrentEmployee.id, name: prCurrentEmployee.name, store: prCurrentEmployee.store,
     month: prCurrentMonth, baseSalary: prBaseSalary,
-    workDays: prWorkDays, proratedBase: prProratedBase,
     typhoonDeduction: prTyphoonDeduction, leaveDeduction: prLeaveDeduction,
     laborInsurance: prLaborIns, healthInsurance: prHealthIns,
     scores, totalScore: Number(document.getElementById('pr-total-score').textContent),
@@ -1708,20 +1736,20 @@ function printPayslip(){
     <p>姓名：${data.name}　分店：${data.store}　月份：${data.month}</p>
     <table>
       <tr><th>項目</th><th>金額</th></tr>
-      <tr><td>底薪${data.workDays===30?'':`（依實際在職 ${data.workDays} 天比例，原底薪 ${data.baseSalary.toLocaleString()}）`}</td><td>${data.proratedBase.toLocaleString()}</td></tr>
+      <tr><td>底薪</td><td>${data.baseSalary.toLocaleString()}</td></tr>
       <tr><td>颱風／店休扣款</td><td>-${data.typhoonDeduction.toLocaleString()}</td></tr>
       <tr><td>事假／病假扣款</td><td>-${data.leaveDeduction.toLocaleString()}</td></tr>
       <tr><td>勞保自付額</td><td>-${data.laborInsurance.toLocaleString()}</td></tr>
       <tr><td>健保自付額</td><td>-${data.healthInsurance.toLocaleString()}</td></tr>
       <tr><td>績效總分</td><td>${data.totalScore} 分</td></tr>
-      <tr><td>分紅獎金</td><td>+${data.bonusAmount.toLocaleString()}</td></tr>
+      <tr><td>績效獎金</td><td>+${data.bonusAmount.toLocaleString()}</td></tr>
       <tr><td>業績分紅（毛利 ${data.grossProfit.toLocaleString()}）</td><td>+${data.profitBonus.toLocaleString()}</td></tr>
       <tr><td>加班費（1.34倍${data.overtimeHours.h1}h／1.67倍${data.overtimeHours.h2}h／2倍${data.overtimeHours.h3}h）</td><td>+${data.overtimePay.toLocaleString()}</td></tr>
       <tr><td>其他加項</td><td>+${data.extra.toLocaleString()}</td></tr>
       <tr><td>其他調整</td><td>${data.adjust.toLocaleString()}</td></tr>
       <tr class="total"><td>建議薪資合計</td><td>${data.suggestedTotal.toLocaleString()}</td></tr>
     </table>
-    <p style="margin-top:24px;font-size:12px;color:#888;">薪資單有任何問題請於發薪當月提出異議。</p>
+    <p style="margin-top:24px;font-size:12px;color:#888;">勞健保為依底薪估算之概算金額，正式投保級距請以勞保局／健保署公告為準；此單為系統試算建議金額，實際發放請以公司規定為準。</p>
     </body></html>
   `);
   w.document.close();
@@ -1735,7 +1763,7 @@ function emailPayslip(){
   const body = encodeURIComponent(
 `${data.name} 您好，附上 ${data.month} 薪資明細（PDF 請另外附加此信）：
 
-底薪${data.workDays===30?'':`（依實際在職 ${data.workDays} 天比例，原底薪 ${data.baseSalary.toLocaleString()}）`}：${data.proratedBase.toLocaleString()}
+底薪：${data.baseSalary.toLocaleString()}
 颱風／店休扣款：-${data.typhoonDeduction.toLocaleString()}
 事假／病假扣款：-${data.leaveDeduction.toLocaleString()}
 勞保自付額：-${data.laborInsurance.toLocaleString()}
@@ -1861,7 +1889,7 @@ function loadStoreLocations(){
       `<div class="item-meta">${store}：${(loc.lat!=null && loc.lng!=null) ? loc.lat.toFixed(5)+', '+loc.lng.toFixed(5)+'（範圍 '+(loc.radius||300)+' 公尺）' : '尚未設定座標'}${loc.authorizedIP?'　WiFi IP：'+loc.authorizedIP:''}</div>`
     ).join('') : '<div class="empty">尚未設定任何分店座標</div>';
     if(CURRENT_USER) checkWifiGate();
-  }, (err)=>{ console.error('分店座標讀取失敗：', err); });
+  });
 }
 
 async function doClockAction(type){
@@ -1979,10 +2007,7 @@ function loadEmpAttendance(){
         if(t) empCalCache.push({ type:d.type, time:t, manual: d.manual||false });
       });
       renderEmpCalendar();
-    }, (err)=>{
-      console.error('員工打卡月曆讀取失敗：', err);
-      document.getElementById('emp-attendance-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>';
-    });
+    }, ()=>{ document.getElementById('emp-attendance-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>'; });
 }
 
 function renderEmpCalendar(){
@@ -2038,10 +2063,7 @@ function loadTeamAttendance(){
       <div class="item"><div class="item-head"><strong>${escapeHtml(n)}</strong></div>
       <div class="item-meta">上班：${byPerson[n].in?byPerson[n].in.toLocaleTimeString('zh-TW'):'尚未打卡'}　下班：${byPerson[n].out?byPerson[n].out.toLocaleTimeString('zh-TW'):'尚未打卡'}</div></div>
     `).join('') : '<div class="empty">今天還沒有人打卡</div>';
-  }, (err)=>{
-    console.error('今日打卡總覽讀取失敗：', err);
-    document.getElementById('team-attendance-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>';
-  });
+  }, ()=>{ document.getElementById('team-attendance-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>'; });
 }
 
 let pendingResignDate = null;
@@ -2122,10 +2144,7 @@ function loadMyStaffRequests(){
           <div class="item-meta">${escapeHtml(d.details)}</div>`;
         list.appendChild(div);
       });
-    }, (err)=>{
-      console.error('我的申請紀錄讀取失敗：', err);
-      document.getElementById('my-requests-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>';
-    });
+    }, ()=>{ document.getElementById('my-requests-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>'; });
 }
 
 function loadPendingStaffRequests(){
@@ -2149,10 +2168,7 @@ function loadPendingStaffRequests(){
         </div>
       </div>`;
     }).join('');
-  }, (err)=>{
-    console.error('待處理申請讀取失敗：', err);
-    document.getElementById('pending-requests-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>';
-  });
+  }, ()=>{ document.getElementById('pending-requests-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>'; });
 }
 function setStaffRequestStatus(id, status){
   db.collection('staff_requests').doc(id).update({ status, processedBy: CURRENT_USER.name, processedAt: firebase.firestore.FieldValue.serverTimestamp() })
@@ -2227,10 +2243,7 @@ function loadDepartureRecords(){
         <div class="item-meta">離職日期時間：${dateStr}　處理人：${d.processedBy||''}</div>
       </div>`;
     }).join('');
-  }, (err)=>{
-    console.error('離職紀錄讀取失敗：', err);
-    document.getElementById('departure-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>';
-  });
+  }, ()=>{ document.getElementById('departure-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>'; });
 }
 
 function loadStaffList(){
@@ -2245,10 +2258,7 @@ function loadStaffList(){
       const cards = await Promise.all(snap.docs.map(doc=>buildEmployeeCard(doc)));
       list.innerHTML = '';
       cards.forEach(c=> list.appendChild(c));
-    }, (err)=>{
-      console.error('員工列表讀取失敗：', err);
-      document.getElementById('staff-list').innerHTML = '<div class="empty">讀取失敗，請檢查 Firebase 設定</div>';
-    });
+    }, ()=>{ document.getElementById('staff-list').innerHTML = '<div class="empty">讀取失敗，請檢查 Firebase 設定</div>'; });
 }
 
 async function buildEmployeeCard(doc){
@@ -2435,4 +2445,4 @@ function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':
 function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"\\'"); }
 </script>
 </body>
-</html>0803.01
+</html> 0908.01
