@@ -130,6 +130,32 @@
     .sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:14;}
     .sidebar-overlay.open{display:block;}
   }
+
+  /* ---- 平板：加寬內容區，側邊選單維持常駐 ---- */
+  @media (min-width:760px) and (max-width:1199px){
+    main{max-width:820px;}
+  }
+
+  /* ---- 桌機：內容區加寬，卡片改成雙欄排列 ---- */
+  @media (min-width:1200px){
+    .layout{max-width:1400px;}
+    main{max-width:none;}
+    main .panel.active{
+      display:grid;
+      grid-template-columns:repeat(2,1fr);
+      gap:14px;
+      align-items:start;
+    }
+    main .panel.active > .card{margin-bottom:0;}
+    /* 月曆、大型表單、長列表這類卡片維持整列寬度，避免被壓窄 */
+    main .panel.active > .card:has(.cal-grid),
+    main .panel.active > .card:has(#pr-score-fields),
+    main .panel.active > .card:has(#staff-list),
+    main .panel.active > .card:has(#inv-list),
+    main .panel.active > .card:has(#team-attendance-list){
+      grid-column:1 / -1;
+    }
+  }
 </style>
 </head>
 <body>
@@ -2951,4 +2977,4 @@ function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':
 function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"\\'"); }
 </script>
 </body>
-</html>V9.17.6
+</html>V9.17.7
