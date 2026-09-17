@@ -197,6 +197,7 @@
       <button id="tab-leave" onclick="switchTab('leave')">🗓 假表/請假</button>
       <button id="tab-checkin" onclick="switchTab('checkin')">🕐 打卡</button>
       <button id="tab-requests" onclick="switchTab('requests')">📋 申請專區</button>
+      <button id="tab-mail" onclick="switchTab('mail')">✉️ 內部信件</button>
       <button id="tab-inv" onclick="switchTab('inv')">📦 庫存管理</button>
       <button id="tab-staff" onclick="switchTab('staff')" style="display:none;">👤 員工管理</button>
       <button id="tab-payroll" onclick="switchTab('payroll')" style="display:none;">💰 薪資管理</button>
@@ -210,6 +211,7 @@
         <div class="field"><label>標題</label><input id="ann-title" placeholder="公告標題"></div>
         <div class="field"><label>內容</label><textarea id="ann-content" rows="3" placeholder="公告內容"></textarea></div>
         <div class="field"><label>附件 PDF（選填，檔案請控制在 700KB 內）</label><input type="file" id="ann-pdf" accept="application/pdf"></div>
+        <div class="field"><label>外部連結（選填，例如 Google 雲端硬碟分享網址，適合大檔案）</label><input id="ann-link" placeholder="https://drive.google.com/..."></div>
         <div class="field"><label>發送對象</label>
           <select id="ann-target">
             <option value="全部">全部分店</option>
@@ -343,6 +345,32 @@
       </div>
     </section>
 
+    <!-- INTERNAL MAIL PANEL -->
+    <section id="panel-mail" class="panel">
+      <div class="card">
+        <h3>寫信</h3>
+        <div class="field" id="mail-recipient-field" style="display:none;"><label>收件對象</label><select id="mail-recipient"></select></div>
+        <div class="field"><label>類別</label>
+          <select id="mail-category">
+            <option value="一般事務">一般事務</option>
+            <option value="意見反應">意見反應（員工用）</option>
+            <option value="工作環境問題">工作環境問題（員工用）</option>
+            <option value="PIP績效改善通知">PIP績效改善通知（管理層用）</option>
+            <option value="薪資問題異議">薪資問題異議</option>
+            <option value="正式面談紀錄">正式面談紀錄（管理層用）</option>
+          </select>
+        </div>
+        <div class="field"><label>主旨</label><input id="mail-title" placeholder="請輸入主旨"></div>
+        <div class="field"><label>內容</label><textarea id="mail-content" rows="4" placeholder="請輸入內容…"></textarea></div>
+        <button class="btn-primary btn-block" onclick="sendInternalMail()">送出</button>
+      </div>
+
+      <div class="card">
+        <h3>信件紀錄</h3>
+        <div id="internal-mail-list"><div class="empty">載入中…</div></div>
+      </div>
+    </section>
+
     <!-- INVENTORY PANEL -->
     <section id="panel-inv" class="panel">
       <div class="card">
@@ -438,14 +466,14 @@
             <div class="item-meta" style="margin-top:6px;">加權總分：<span id="pr-total-score" class="mono">0</span> 分</div>
           </div>
 
-          <div class="field"><label>本月獎金基準（元）</label><input type="number" id="pr-bonus-base" value="0" onchange="calcPayroll()"></div>
+          <div class="field"><label>本月獎金基準（元）</label><input type="number" id="pr-bonus-base" value="0" onchange="updatePayrollTotals()"></div>
           <div class="item"><div class="item-head"><strong>績效獎金（依總分比例發放）</strong><span class="mono" id="pr-bonus"></span></div><div class="item-meta" id="pr-bonus-tier"></div></div>
 
-          <div class="field"><label>本月毛利（元）</label><input type="number" id="pr-gross-profit" value="0" onchange="calcPayroll()" oninput="updatePayrollTotals()"></div>
+          <div class="field"><label>本月毛利（元）</label><input type="number" id="pr-gross-profit" value="0" onchange="updatePayrollTotals()" oninput="updatePayrollTotals()"></div>
           <div class="item"><div class="item-head"><strong>業績分紅（毛利達11萬門檻）</strong><span class="mono" id="pr-profit-bonus"></span></div><div class="item-meta" id="pr-profit-bonus-note"></div></div>
 
-          <div class="field"><label>其他加項（元，選填）</label><input type="number" id="pr-extra" value="0" onchange="calcPayroll()"></div>
-          <div class="field"><label>其他調整（元，可為負數，選填）</label><input type="number" id="pr-adjust" value="0" onchange="calcPayroll()"></div>
+          <div class="field"><label>其他加項（元，選填）</label><input type="number" id="pr-extra" value="0" onchange="updatePayrollTotals()"></div>
+          <div class="field"><label>其他調整（元，可為負數，選填）</label><input type="number" id="pr-adjust" value="0" onchange="updatePayrollTotals()"></div>
 
           <div class="item" style="background:#fdf6ef;margin:0 -16px;padding:12px 16px;">
             <div class="item-head"><strong>建議薪資試算</strong><span class="mono" id="pr-suggested" style="font-size:18px;"></span></div>
@@ -458,6 +486,25 @@
       </div>
     </section>
     </main>
+  </div>
+</div>
+
+<!-- MODAL: internal mail detail -->
+<div class="modal-bg" id="modal-mail-detail">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modal-mail-detail')">&times;</button>
+    <h3 id="mail-detail-title"></h3>
+    <div class="item-meta" id="mail-detail-meta"></div>
+    <div class="item-body" id="mail-detail-content"></div>
+  </div>
+</div>
+
+<!-- MODAL: missed check-in warning -->
+<div class="modal-bg" id="modal-missed-checkin">
+  <div class="modal">
+    <h3>⚠ 前一天未打卡</h3>
+    <p id="missed-checkin-msg" style="font-size:14px;line-height:1.6;"></p>
+    <button class="btn-primary btn-block" onclick="ackMissedCheckin()">確認</button>
   </div>
 </div>
 
@@ -646,18 +693,58 @@ function doRegister(){
 }
 
 /* ---------- 登入 ---------- */
+let sessionWatcherTimer = null;
+function startSessionWatcher(){
+  if(sessionWatcherTimer) clearInterval(sessionWatcherTimer);
+  sessionWatcherTimer = setInterval(()=>{
+    if(!CURRENT_USER) return;
+    const sessionStart = Number(localStorage.getItem('sessionStart')) || 0;
+    if(Date.now() - sessionStart > SESSION_MAX_MS){
+      showToast("登入已超過 6 小時，即將登出");
+      setTimeout(()=>{ localStorage.removeItem('sessionStart'); auth.signOut(); }, 1500);
+      return;
+    }
+    // 順便即時檢查帳號是否被停權（離職／拒絕），不用等 6 小時
+    db.collection('employees').doc(CURRENT_USER.uid).get().then(doc=>{
+      if(!doc.exists) return;
+      const status = doc.data().status;
+      if(status === '離職' || status === '拒絕'){
+        showToast("此帳號權限已被變更，即將登出");
+        setTimeout(()=>{ localStorage.removeItem('sessionStart'); auth.signOut(); }, 1500);
+      }
+    });
+  }, 5 * 60 * 1000); // 每 5 分鐘檢查一次
+}
+
 function doLogin(){
   const email = document.getElementById('login-email').value.trim();
   const pass = document.getElementById('login-pass').value;
   const err = document.getElementById('login-error');
   err.textContent = '';
-  auth.signInWithEmailAndPassword(email, pass).catch(e=> err.textContent = "登入失敗：" + e.message);
+  auth.signInWithEmailAndPassword(email, pass).then(()=>{
+    localStorage.setItem('sessionStart', String(Date.now()));
+  }).catch(e=> err.textContent = "登入失敗：" + e.message);
 }
 
-function doLogout(){ auth.signOut(); }
+function doLogout(){ localStorage.removeItem('sessionStart'); auth.signOut(); }
+
+const SESSION_MAX_MS = 6 * 60 * 60 * 1000; // 6 小時
 
 auth.onAuthStateChanged(user=>{
   if(user){
+    // 檢查是否已超過 6 小時的登入時效
+    let sessionStart = Number(localStorage.getItem('sessionStart'));
+    if(!sessionStart){
+      sessionStart = Date.now();
+      localStorage.setItem('sessionStart', String(sessionStart));
+    }
+    if(Date.now() - sessionStart > SESSION_MAX_MS){
+      localStorage.removeItem('sessionStart');
+      auth.signOut();
+      document.getElementById('login-error').textContent = "登入已超過 6 小時，請重新登入";
+      return;
+    }
+
     db.collection('employees').doc(user.uid).get().then(doc=>{
       if(!doc.exists){
         document.getElementById('login-error').textContent = "找不到員工資料，請聯絡管理者";
@@ -682,6 +769,7 @@ auth.onAuthStateChanged(user=>{
       }
       CURRENT_USER = { uid: user.uid, name: d.name, store: d.store, role: d.role, level: d.level || '' };
       enterApp();
+      startSessionWatcher();
     });
   } else {
     CURRENT_USER = null;
@@ -723,6 +811,8 @@ function enterApp(){
   loadMyAttendance();
   checkWifiGate();
   loadMyStaffRequests();
+  loadInternalMails();
+  populateMailRecipientOptions();
   const exportMonthEl = document.getElementById('export-month');
   if(exportMonthEl && !exportMonthEl.value){
     const now = new Date();
@@ -768,7 +858,7 @@ function renderStoreSelectors(){
 
 /* ---------- Tabs ---------- */
 function switchTab(name){
-  ['ann','leave','checkin','requests','inv','staff','payroll'].forEach(t=>{
+  ['ann','leave','checkin','requests','mail','inv','staff','payroll'].forEach(t=>{
     document.getElementById('tab-'+t).classList.toggle('active', t===name);
     document.getElementById('panel-'+t).classList.toggle('active', t===name);
   });
@@ -840,6 +930,7 @@ async function publishAnnouncement(){
   const content = document.getElementById('ann-content').value.trim();
   const target = document.getElementById('ann-target').value;
   const pdfFile = document.getElementById('ann-pdf').files[0];
+  const linkUrl = document.getElementById('ann-link').value.trim();
   if(!title || !content){ showToast("請填寫標題與內容"); return; }
 
   let pdfData = null, pdfName = null;
@@ -851,7 +942,7 @@ async function publishAnnouncement(){
 
   db.collection('announcements').add({
     title, content, target,
-    pdfData, pdfName,
+    pdfData, pdfName, linkUrl: linkUrl || null,
     by: CURRENT_USER.name,
     reads: {}, confirms: {},
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -859,6 +950,7 @@ async function publishAnnouncement(){
     document.getElementById('ann-title').value = '';
     document.getElementById('ann-content').value = '';
     document.getElementById('ann-pdf').value = '';
+    document.getElementById('ann-link').value = '';
     showToast("公告已發布");
   }).catch(e=>showToast("發布失敗："+e.message));
 }
@@ -898,7 +990,7 @@ function renderAnnouncements(){
         <strong>${escapeHtml(d.title)}</strong>
         <span class="badge ${isConfirmed ? 'read' : isRead ? 'pending' : 'unread'}">${isConfirmed ? '已確認' : isRead ? '已讀未確認' : '未讀'}</span>
       </div>
-      <div class="item-meta">${date} · ${d.by} · ${d.target}${d.pdfData ? ' · 📎附件' : ''}</div>
+      <div class="item-meta">${date} · ${d.by} · ${d.target}${d.pdfData ? ' · 📎附件' : ''}${d.linkUrl ? ' · 🔗連結' : ''}</div>
     `;
     list.appendChild(div);
   });
@@ -916,7 +1008,9 @@ function openAnnouncement(id){
   document.getElementById('ann-detail-content').textContent = d.content;
 
   const pdfEl = document.getElementById('ann-detail-pdf');
-  pdfEl.innerHTML = d.pdfData ? `<a href="${d.pdfData}" download="${escapeAttr(d.pdfName||'attachment.pdf')}" target="_blank" style="display:inline-block;margin-top:8px;font-size:13px;color:var(--copper-dark);">📎 開啟附件 PDF（${escapeHtml(d.pdfName||'')}）</a>` : '';
+  let pdfHtml = d.pdfData ? `<a href="${d.pdfData}" download="${escapeAttr(d.pdfName||'attachment.pdf')}" target="_blank" style="display:inline-block;margin-top:8px;font-size:13px;color:var(--copper-dark);">📎 開啟附件 PDF（${escapeHtml(d.pdfName||'')}）</a>` : '';
+  if(d.linkUrl) pdfHtml += `<a href="${escapeAttr(d.linkUrl)}" target="_blank" rel="noopener" style="display:inline-block;margin-top:8px;margin-left:12px;font-size:13px;color:var(--copper-dark);">🔗 開啟外部連結</a>`;
+  pdfEl.innerHTML = pdfHtml;
 
   const readersEl = document.getElementById('ann-detail-readers');
   if(isManager(CURRENT_USER.role)){
@@ -1525,6 +1619,7 @@ function loadPayrollEmployeeOptions(){
     const sel = document.getElementById('pr-employee');
     sel.innerHTML = employeesCache.map(e=>`<option value="${e.id}">${escapeHtml(e.name)}（${e.store}）</option>`).join('');
     populateEmpCalSelect();
+    populateMailRecipientOptions();
   });
   const monthInput = document.getElementById('pr-month');
   if(!monthInput.value){
@@ -1874,11 +1969,43 @@ async function registerStoreWifi(){
   }catch(e){ showToast('取得 IP 失敗：'+e.message); }
 }
 
+let missedCheckinPending = false;
+
+function checkMissedCheckin(){
+  const y = new Date(); y.setDate(y.getDate()-1);
+  const dateStr = `${y.getFullYear()}-${String(y.getMonth()+1).padStart(2,'0')}-${String(y.getDate()).padStart(2,'0')}`;
+
+  // 排除：昨天已有上班打卡
+  const hasIn = myAttendCache.some(r => r.type==='in' && r.time.toDateString() === y.toDateString());
+  if(hasIn){ missedCheckinPending = false; return; }
+
+  // 排除：昨天是公休／颱風假
+  const isClosedDay = typhoonCache.some(t => t.date === dateStr && t.store === CURRENT_USER.store);
+  if(isClosedDay){ missedCheckinPending = false; return; }
+
+  // 排除：昨天有已核准的請假
+  const onLeave = Object.values(leaveDocsCache).some(l => l.uid === CURRENT_USER.uid && l.status === 'approved' && l.start <= dateStr && dateStr <= l.end);
+  if(onLeave){ missedCheckinPending = false; return; }
+
+  missedCheckinPending = true;
+  document.getElementById('missed-checkin-msg').textContent = `${dateStr} 未打卡，請向區經理申請補打卡，未打卡將影響當月績效評比。`;
+  document.getElementById('modal-missed-checkin').classList.add('active');
+  document.getElementById('clock-in-btn').disabled = true;
+  document.getElementById('clock-out-btn').disabled = true;
+}
+
+function ackMissedCheckin(){
+  missedCheckinPending = false;
+  document.getElementById('modal-missed-checkin').classList.remove('active');
+  checkWifiGate();
+}
+
 async function checkWifiGate(){
   const statusEl = document.getElementById('wifi-gate-status');
   const inBtn = document.getElementById('clock-in-btn'), outBtn = document.getElementById('clock-out-btn');
   statusEl.textContent = '檢查連線中…';
   inBtn.disabled = true; outBtn.disabled = true;
+  if(missedCheckinPending) return; // 前一天未打卡尚未確認前，不開放打卡
   const loc = storeLocations[CURRENT_USER.store];
   if(!loc || !loc.authorizedIP){
     statusEl.textContent = '本店尚未設定 WiFi 限制，可直接打卡';
@@ -1971,6 +2098,19 @@ function loadStoreLocations(){
 }
 
 async function doClockAction(type){
+  const now = new Date();
+  if(type === 'in' && (now.getHours() < 10 || (now.getHours() === 10 && now.getMinutes() < 50))){
+    showToast("尚未到可以打卡的時間（10:50 後才能上班打卡）");
+    return;
+  }
+
+  const todayStr = now.toDateString();
+  const already = myAttendCache.find(r => r.type === type && r.time.toDateString() === todayStr);
+  if(already){
+    showToast(`今天已經打過${type==='in'?'上班':'下班'}卡了（${already.time.toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'})}），系統只會採計當天最早的一次`);
+    return;
+  }
+
   let pos = null, distanceNote = '定位擷取失敗，僅記錄時間';
   try{
     pos = await getGeolocation();
@@ -2015,6 +2155,7 @@ function loadMyAttendance(){
       document.getElementById('checkin-status').textContent =
         `今天：${todayIn ? '已上班打卡 '+todayIn.toLocaleTimeString('zh-TW') : '尚未上班打卡'}　${todayOut ? '已下班打卡 '+todayOut.toLocaleTimeString('zh-TW') : '尚未下班打卡'}`;
       renderAttendanceCalendar();
+      checkMissedCheckin();
     }, (err)=>{ document.getElementById('my-attendance-list').innerHTML = '<div class="empty">讀取失敗，可能需要在 Firebase 建立索引，請查看瀏覽器 Console（F12）取得建立連結</div>'; console.error(err); });
 }
 
@@ -2186,6 +2327,88 @@ function finalizeResignRequest(){
 function toggleResignDateField(){
   const isResign = document.getElementById('req-category').value === '自願離職';
   document.getElementById('req-resign-date-field').style.display = isResign ? 'block' : 'none';
+}
+
+/* ---------- 內部信件（雙向：管理層⇄員工） ---------- */
+function populateMailRecipientOptions(){
+  const field = document.getElementById('mail-recipient-field');
+  const sel = document.getElementById('mail-recipient');
+  if(isManager(CURRENT_USER.role)){
+    field.style.display = 'block';
+    sel.innerHTML = employeesCache.filter(e=>e.id!==CURRENT_USER.uid).map(e=>`<option value="${e.id}">${escapeHtml(e.name)}（${e.store}）</option>`).join('');
+  } else {
+    field.style.display = 'none';
+  }
+}
+
+function sendInternalMail(){
+  const title = document.getElementById('mail-title').value.trim();
+  const content = document.getElementById('mail-content').value.trim();
+  const category = document.getElementById('mail-category').value;
+  if(!title || !content){ showToast("請填寫主旨與內容"); return; }
+
+  const mgr = isManager(CURRENT_USER.role);
+  const data = {
+    senderUid: CURRENT_USER.uid, senderName: CURRENT_USER.name, senderStore: CURRENT_USER.store,
+    direction: mgr ? 'to_employee' : 'to_management',
+    category, title, content, status: 'unread',
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  };
+  if(mgr){
+    const recipientUid = document.getElementById('mail-recipient').value;
+    const recipient = employeesCache.find(e=>e.id===recipientUid);
+    if(!recipient){ showToast("請選擇收件對象"); return; }
+    data.receiverUid = recipientUid;
+    data.receiverName = recipient.name;
+    data.receiverStore = recipient.store;
+  } else {
+    data.receiverStore = CURRENT_USER.store; // 給該店與所有區經理看
+  }
+
+  db.collection('internal_mails').add(data).then(()=>{
+    showToast("信件已送出");
+    document.getElementById('mail-title').value = '';
+    document.getElementById('mail-content').value = '';
+  }).catch(e=> showToast("送出失敗："+e.message));
+}
+
+let mailCache = {};
+function loadInternalMails(){
+  db.collection('internal_mails').orderBy('createdAt','desc').limit(200).onSnapshot(snap=>{
+    const list = document.getElementById('internal-mail-list');
+    const mgr = isManager(CURRENT_USER.role);
+    const mails = [];
+    snap.forEach(doc=>{
+      const d = doc.data();
+      mailCache[doc.id] = d;
+      const isMine = d.senderUid === CURRENT_USER.uid || d.receiverUid === CURRENT_USER.uid;
+      const isToManagementInScope = d.direction === 'to_management' && mgr && (viewStore === '全部' || d.senderStore === viewStore || CURRENT_USER.role === 'regional_manager');
+      if(isMine || isToManagementInScope) mails.push({ id: doc.id, ...d });
+    });
+    if(!mails.length){ list.innerHTML = '<div class="empty">尚無信件</div>'; return; }
+    list.innerHTML = mails.map(m=>{
+      const unread = m.status === 'unread' && m.senderUid !== CURRENT_USER.uid;
+      const toLabel = m.direction === 'to_employee' ? (m.receiverName||'') : '管理層';
+      return `
+      <div class="item ${unread?'unseen':''}" onclick="openMailDetail('${m.id}')" style="cursor:pointer;">
+        <div class="item-head"><strong>[${m.category}] ${escapeHtml(m.title)}</strong><span class="badge ${unread?'unread':'read'}">${unread?'未讀':'已讀'}</span></div>
+        <div class="item-meta">${m.senderName} → ${toLabel}</div>
+      </div>`;
+    }).join('');
+  }, ()=>{ document.getElementById('internal-mail-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>'; });
+}
+
+function openMailDetail(id){
+  const m = mailCache[id];
+  if(!m) return;
+  document.getElementById('mail-detail-title').textContent = `[${m.category}] ${m.title}`;
+  const toLabel = m.direction === 'to_employee' ? (m.receiverName||'') : '管理層';
+  document.getElementById('mail-detail-meta').textContent = `${m.senderName} → ${toLabel}`;
+  document.getElementById('mail-detail-content').textContent = m.content;
+  document.getElementById('modal-mail-detail').classList.add('active');
+  if(m.status === 'unread' && m.senderUid !== CURRENT_USER.uid){
+    db.collection('internal_mails').doc(id).update({ status:'read', readAt: firebase.firestore.FieldValue.serverTimestamp() });
+  }
 }
 
 function submitStaffRequest(){
@@ -2523,4 +2746,4 @@ function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':
 function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"\\'"); }
 </script>
 </body>
-</html>v9.17
+</html>v9.17.1
