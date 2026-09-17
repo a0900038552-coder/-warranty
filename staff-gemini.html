@@ -273,6 +273,10 @@
 
     <!-- CHECK-IN PANEL -->
     <section id="panel-checkin" class="panel">
+      <div class="card" id="my-todo-card" style="display:none;">
+        <h3>我的待辦事項</h3>
+        <div id="my-todo-list"></div>
+      </div>
       <div class="card" id="store-location-card" style="display:none;">
         <h3>分店座標設定</h3>
         <p style="font-size:12px;color:var(--ink-soft);margin-top:-6px;">請站在店內，點下方按鈕擷取目前位置作為分店座標基準</p>
@@ -420,6 +424,10 @@
       <div class="card">
         <h3>離職紀錄（含自請與資遣）</h3>
         <div id="departure-list"><div class="empty">尚無紀錄</div></div>
+      </div>
+      <div class="card">
+        <h3>員工待辦事項總覽（本月未完成打卡）</h3>
+        <div id="team-todo-list"><div class="empty">載入中…</div></div>
       </div>
       <div class="card">
         <h3>員工列表 · <span id="staff-store-label"></span></h3>
@@ -772,7 +780,7 @@ auth.onAuthStateChanged(user=>{
         auth.signOut();
         return;
       }
-      CURRENT_USER = { uid: user.uid, name: d.name, store: d.store, role: d.role, level: d.level || '' };
+      CURRENT_USER = { uid: user.uid, name: d.name, store: d.store, role: d.role, level: d.level || '', hireDate: d.hireDate || null };
       enterApp();
       startSessionWatcher();
     });
@@ -1652,6 +1660,7 @@ function loadPayrollEmployeeOptions(){
     sel.innerHTML = employeesCache.map(e=>`<option value="${e.id}">${escapeHtml(e.name)}（${e.store}）</option>`).join('');
     populateEmpCalSelect();
     populateMailRecipientOptions();
+    loadTeamTodoOverview();
   });
   const monthInput = document.getElementById('pr-month');
   if(!monthInput.value){
@@ -2028,11 +2037,33 @@ async function registerStoreWifi(){
 
 let missedCheckinPending = false;
 
+function computeMissingDays(uid, store, hireDate, attendRecords){
+  const today = new Date();
+  const year = today.getFullYear(), month = today.getMonth();
+  const daysToCheck = today.getDate() - 1; // 檢查到昨天為止，今天還沒過完不算
+  const missing = [];
+  for(let day=1; day<=daysToCheck; day++){
+    const d = new Date(year, month, day);
+    const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    if(hireDate && dateStr < hireDate) continue; // 到職前不算
+    const hasIn = attendRecords.some(r => r.type==='in' && r.time.toDateString() === d.toDateString());
+    if(hasIn) continue;
+    const isClosedDay = typhoonCache.some(t => t.date === dateStr && t.store === store);
+    if(isClosedDay) continue;
+    const onLeave = Object.values(leaveDocsCache).some(l => l.uid === uid && l.status === 'approved' && l.start <= dateStr && dateStr <= l.end);
+    if(onLeave) continue;
+    missing.push(dateStr);
+  }
+  return missing;
+}
+
 function checkMissedCheckin(){
   const y = new Date(); y.setDate(y.getDate()-1);
   const dateStr = `${y.getFullYear()}-${String(y.getMonth()+1).padStart(2,'0')}-${String(y.getDate()).padStart(2,'0')}`;
 
-  // 排除：昨天已有上班打卡
+  const missingDays = computeMissingDays(CURRENT_USER.uid, CURRENT_USER.store, CURRENT_USER.hireDate, myAttendCache);
+  renderMyTodoList(missingDays);
+
   const hasIn = myAttendCache.some(r => r.type==='in' && r.time.toDateString() === y.toDateString());
   if(hasIn){ missedCheckinPending = false; return; }
 
@@ -2045,10 +2076,20 @@ function checkMissedCheckin(){
   if(onLeave){ missedCheckinPending = false; return; }
 
   missedCheckinPending = true;
-  document.getElementById('missed-checkin-msg').textContent = `${dateStr} 未打卡，請向區經理申請補打卡，未打卡將影響當月績效評比。`;
+  const monthList = missingDays.length > 1 ? `\n\n本月尚有 ${missingDays.length} 天未打卡：${missingDays.join('、')}` : '';
+  document.getElementById('missed-checkin-msg').textContent = `${dateStr} 未打卡，請向區經理申請補打卡，未打卡將影響當月績效評比。${monthList}`;
   document.getElementById('modal-missed-checkin').classList.add('active');
   document.getElementById('clock-in-btn').disabled = true;
   document.getElementById('clock-out-btn').disabled = true;
+}
+
+function renderMyTodoList(missingDays){
+  const card = document.getElementById('my-todo-card');
+  const list = document.getElementById('my-todo-list');
+  if(!card || !list) return;
+  if(missingDays.length === 0){ card.style.display = 'none'; return; }
+  card.style.display = 'block';
+  list.innerHTML = `<div class="item"><div class="item-head"><strong>本月未完成打卡</strong><span class="mono late-tag">${missingDays.length} 天</span></div><div class="item-meta">${missingDays.join('、')}　請向店長/區經理申請補打卡</div></div>`;
 }
 
 function ackMissedCheckin(){
@@ -2586,6 +2627,33 @@ function formatTenure(hireDateStr){
 }
 
 /* ---------- 員工管理 / 基本資料 ---------- */
+async function loadTeamTodoOverview(){
+  const list = document.getElementById('team-todo-list');
+  if(!employeesCache.length){ list.innerHTML = '<div class="empty">尚無員工資料</div>'; return; }
+  const now = new Date();
+  const monthStart = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+  const active = employeesCache.filter(e => (e.status||'在職') === '在職');
+
+  const results = await Promise.all(active.map(async e=>{
+    const snap = await db.collection('attendance').where('uid','==',e.id).where('type','==','in').orderBy('createdAt','desc').limit(60).get();
+    const records = snap.docs.map(doc=>{
+      const t = doc.data().createdAt ? doc.data().createdAt.toDate() : null;
+      return t ? { type:'in', time:t } : null;
+    }).filter(Boolean).filter(r => `${r.time.getFullYear()}-${String(r.time.getMonth()+1).padStart(2,'0')}-01` === monthStart);
+    const missing = computeMissingDays(e.id, e.store, e.hireDate, records);
+    return { name: e.name, store: e.store, missing };
+  }));
+
+  const withIssues = results.filter(r => r.missing.length > 0);
+  if(withIssues.length === 0){ list.innerHTML = '<div class="empty">本月無人有未完成打卡的待辦事項</div>'; return; }
+  list.innerHTML = withIssues.map(r=>`
+    <div class="item">
+      <div class="item-head"><strong>${escapeHtml(r.name)} · ${r.store}</strong><span class="mono late-tag">${r.missing.length} 天</span></div>
+      <div class="item-meta">${r.missing.join('、')}</div>
+    </div>
+  `).join('');
+}
+
 function loadDepartureRecords(){
   let q = db.collection('resignation_requests').where('status','==','approved').orderBy('createdAt','desc').limit(50);
   if(viewStore !== '全部') q = q.where('store','==',viewStore);
@@ -2803,4 +2871,4 @@ function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':
 function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"\\'"); }
 </script>
 </body>
-</html>v9.17.3
+</html>v9.17.4
