@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>復原者 內部系統v2</title>
+<title>復原者 內部系統V2</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
@@ -251,9 +251,12 @@
         <h3>公休日管理（含颱風假）</h3>
         <p style="font-size:12px;color:var(--ink-soft);margin-top:-6px;">新增日期後，當月薪資試算會自動扣除該日底薪（若員工當天有核准的特休則不扣），月曆也會標示</p>
         <div class="rowline">
+          <div class="field"><label>分店</label>
+            <select id="typhoon-store"><option value="楠梓店">楠梓店</option><option value="德賢店">德賢店</option></select>
+          </div>
           <div class="field"><label>日期</label><input type="date" id="typhoon-date"></div>
-          <div class="field"><label>備註</label><input id="typhoon-note" placeholder="例：凱米颱風"></div>
         </div>
+        <div class="field"><label>備註</label><input id="typhoon-note" placeholder="例：凱米颱風"></div>
         <button class="btn-ghost btn-block" onclick="addTyphoonDay()">+ 新增公休日</button>
         <div id="typhoon-list" style="margin-top:10px;"><div class="empty">尚無公休日</div></div>
       </div>
@@ -278,12 +281,20 @@
         <h3>我的待辦事項</h3>
         <div id="my-todo-list"></div>
       </div>
+      <div class="card" id="my-ann-todo-card" style="display:none;">
+        <h3>未讀／未簽名的公告</h3>
+        <div id="my-ann-todo-list"></div>
+      </div>
       <div class="card" id="my-todo-empty-card">
         <div class="empty">目前沒有待辦事項</div>
       </div>
       <div class="card" id="team-todo-card" style="display:none;">
         <h3>員工待辦事項總覽（本月未完成打卡）</h3>
         <div id="team-todo-list"><div class="empty">載入中…</div></div>
+      </div>
+      <div class="card" id="team-ann-todo-card" style="display:none;">
+        <h3>員工公告未讀／未簽名總覽</h3>
+        <div id="team-ann-todo-list"><div class="empty">載入中…</div></div>
       </div>
     </section>
 
@@ -807,6 +818,7 @@ function enterApp(){
   document.getElementById('tab-staff').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
   document.getElementById('tab-payroll').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
   document.getElementById('team-todo-card').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
+  document.getElementById('team-ann-todo-card').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
   document.getElementById('resign-requests-card').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
   document.getElementById('typhoon-card').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
   document.getElementById('leave-export-card').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
@@ -1017,6 +1029,52 @@ function renderAnnouncements(){
     list.appendChild(div);
   });
   document.getElementById('tab-ann').classList.toggle('tab-dot', hasUnconfirmed);
+  renderAnnouncementTodo();
+  loadTeamAnnouncementTodoOverview();
+}
+
+function renderAnnouncementTodo(){
+  const card = document.getElementById('my-ann-todo-card');
+  const list = document.getElementById('my-ann-todo-list');
+  if(!card || !list) return;
+  const unconfirmed = annCache.filter(d => !(d.confirms && d.confirms[CURRENT_USER.uid]));
+  if(unconfirmed.length === 0){ card.style.display = 'none'; updateMyTodoEmptyState(); return; }
+  card.style.display = 'block';
+  list.innerHTML = unconfirmed.map(d=>{
+    const isRead = !!(d.reads && d.reads[CURRENT_USER.uid]);
+    return `<div class="item" onclick="switchTab('ann');openAnnouncement('${d.id}')" style="cursor:pointer;">
+      <div class="item-head"><strong>${escapeHtml(d.title)}</strong><span class="badge ${isRead?'pending':'unread'}">${isRead?'已讀未簽名':'未讀'}</span></div>
+    </div>`;
+  }).join('');
+  updateMyTodoEmptyState();
+}
+
+function updateMyTodoEmptyState(){
+  const checkinCard = document.getElementById('my-todo-card');
+  const annCard = document.getElementById('my-ann-todo-card');
+  const emptyCard = document.getElementById('my-todo-empty-card');
+  if(!emptyCard) return;
+  const bothEmpty = checkinCard.style.display === 'none' && annCard.style.display === 'none';
+  emptyCard.style.display = bothEmpty ? 'block' : 'none';
+}
+
+function loadTeamAnnouncementTodoOverview(){
+  const list = document.getElementById('team-ann-todo-list');
+  const card = document.getElementById('team-ann-todo-card');
+  if(!list || !card || !isManager(CURRENT_USER.role) || !employeesCache.length) return;
+  const active = employeesCache.filter(e => (e.status||'在職') === '在職');
+  const rows = active.map(e=>{
+    const relevant = annCache.filter(d => d.target === '全部' || d.target === e.store);
+    const unconfirmed = relevant.filter(d => !(d.confirms && d.confirms[e.id]));
+    return { name: e.name, store: e.store, count: unconfirmed.length, titles: unconfirmed.map(d=>d.title) };
+  }).filter(r => r.count > 0);
+  if(rows.length === 0){ list.innerHTML = '<div class="empty">目前所有人都已讀並簽名確認公告</div>'; return; }
+  list.innerHTML = rows.map(r=>`
+    <div class="item">
+      <div class="item-head"><strong>${escapeHtml(r.name)} · ${r.store}</strong><span class="mono late-tag">${r.count} 則</span></div>
+      <div class="item-meta">${r.titles.map(escapeHtml).join('、')}</div>
+    </div>
+  `).join('');
 }
 
 function googleDrivePreviewUrl(url){
@@ -1670,6 +1728,7 @@ function loadPayrollEmployeeOptions(){
     populateEmpCalSelect();
     populateMailRecipientOptions();
     loadTeamTodoOverview();
+    loadTeamAnnouncementTodoOverview();
   });
   const monthInput = document.getElementById('pr-month');
   if(!monthInput.value){
@@ -1683,11 +1742,12 @@ let typhoonCache = [];
 function addTyphoonDay(){
   const date = document.getElementById('typhoon-date').value;
   const note = document.getElementById('typhoon-note').value.trim();
+  const store = document.getElementById('typhoon-store').value;
   if(!date){ showToast("請選擇日期"); return; }
   db.collection('typhoon_days').add({
-    date, note, store: viewStore !== '全部' ? viewStore : CURRENT_USER.store,
+    date, note, store,
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
-  }).then(()=>{ showToast("已新增颱風假日"); document.getElementById('typhoon-note').value=''; });
+  }).then(()=>{ showToast(`已新增 ${store} 公休日`); document.getElementById('typhoon-note').value=''; });
 }
 function loadTyphoonDays(){
   let q = db.collection('typhoon_days').orderBy('date','desc');
@@ -2100,15 +2160,14 @@ function checkMissedCheckin(){
 function renderMyTodoList(missingDays){
   const card = document.getElementById('my-todo-card');
   const list = document.getElementById('my-todo-list');
-  const emptyCard = document.getElementById('my-todo-empty-card');
   if(!card || !list) return;
   if(missingDays.length === 0){
     card.style.display = 'none';
-    if(emptyCard) emptyCard.style.display = 'block';
+    updateMyTodoEmptyState();
     return;
   }
   card.style.display = 'block';
-  if(emptyCard) emptyCard.style.display = 'none';
+  updateMyTodoEmptyState();
   list.innerHTML = `<div class="item"><div class="item-head"><strong>本月未完成打卡</strong><span class="mono late-tag">${missingDays.length} 天</span></div><div class="item-meta">${missingDays.map(formatMissingDay).join('、')}　請向店長/區經理申請補打卡</div></div>`;
 }
 
@@ -2892,4 +2951,4 @@ function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':
 function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"\\'"); }
 </script>
 </body>
-</html>v9.17.5
+</html>V9.17.6
