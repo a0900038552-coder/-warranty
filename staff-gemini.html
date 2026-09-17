@@ -339,6 +339,9 @@
 
       <div class="card">
         <h3>打卡</h3>
+        <div class="field"><label>今天在哪個分店打卡（跨店支援時可切換）</label>
+          <select id="clock-store-select" onchange="checkWifiGate()"><option value="楠梓店">楠梓店</option><option value="德賢店">德賢店</option></select>
+        </div>
         <div id="wifi-gate-status" class="item-meta" style="margin-bottom:8px;">檢查連線中…</div>
         <div id="checkin-status" class="item-meta" style="margin-bottom:10px;">載入中…</div>
         <div class="rowline">
@@ -840,6 +843,7 @@ function enterApp(){
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').style.display = 'block';
   document.getElementById('who-label').textContent = `${CURRENT_USER.name} · ${CURRENT_USER.store} · ${roleLabel(CURRENT_USER.role)}${CURRENT_USER.level ? ' · '+CURRENT_USER.level : ''}`;
+  document.getElementById('clock-store-select').value = CURRENT_USER.store;
   document.getElementById('ann-publish-card').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
   document.getElementById('tab-staff').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
   document.getElementById('tab-payroll').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
@@ -2209,7 +2213,7 @@ async function checkWifiGate(){
   statusEl.textContent = '檢查連線中…';
   inBtn.disabled = true; outBtn.disabled = true;
   if(missedCheckinPending) return; // 前一天未打卡尚未確認前，不開放打卡
-  const loc = storeLocations[CURRENT_USER.store];
+  const loc = storeLocations[getClockStore()];
   if(!loc || !loc.authorizedIP){
     statusEl.textContent = '本店尚未設定 WiFi 限制，可直接打卡';
     inBtn.disabled = false; outBtn.disabled = false;
@@ -2226,6 +2230,11 @@ async function checkWifiGate(){
   }catch(e){
     statusEl.textContent = '網路連線檢查失敗，請確認網路後重試';
   }
+}
+
+function getClockStore(){
+  const sel = document.getElementById('clock-store-select');
+  return sel && sel.value ? sel.value : CURRENT_USER.store;
 }
 
 function exportAttendanceCSV(){
@@ -2315,9 +2324,11 @@ async function doClockAction(type){
   }
 
   let pos = null, distanceNote = '定位擷取失敗，僅記錄時間';
+  const clockStore = getClockStore();
+  const isSupport = clockStore !== CURRENT_USER.store;
   try{
     pos = await getGeolocation();
-    const loc = storeLocations[CURRENT_USER.store];
+    const loc = storeLocations[clockStore];
     if(loc && loc.lat!=null && loc.lng!=null){
       const dist = Math.round(haversineDistance(pos.lat,pos.lng,loc.lat,loc.lng));
       distanceNote = dist <= (loc.radius||300) ? `距離店裡約 ${dist} 公尺內` : `⚠ 距離店裡約 ${dist} 公尺，超出範圍`;
@@ -2325,9 +2336,10 @@ async function doClockAction(type){
       distanceNote = '該分店尚未設定座標，僅記錄位置';
     }
   }catch(e){ /* 定位失敗仍允許打卡，只是不記錄距離 */ }
+  if(isSupport) distanceNote += `（跨店支援：${clockStore}）`;
 
   db.collection('attendance').add({
-    uid: CURRENT_USER.uid, name: CURRENT_USER.name, store: CURRENT_USER.store,
+    uid: CURRENT_USER.uid, name: CURRENT_USER.name, store: clockStore, homeStore: CURRENT_USER.store, isSupport,
     type, lat: pos?.lat||null, lng: pos?.lng||null, distanceNote,
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
   }).then(()=> showToast((type==='in'?'上班':'下班') + '打卡成功'))
@@ -2977,4 +2989,4 @@ function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':
 function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"\\'"); }
 </script>
 </body>
-</html>V9.17.7
+</html>V9.17.8
