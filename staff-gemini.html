@@ -94,6 +94,7 @@
   .readers{font-size:11px;color:var(--ink-soft);margin-top:8px;font-family:'IBM Plex Mono',monospace;}
   .tab-dot{position:relative;}
   .tab-dot::after{content:'';position:absolute;top:8px;right:16px;width:8px;height:8px;border-radius:50%;background:var(--bad);}
+  .tab-badge{position:absolute;top:8px;right:14px;background:var(--bad);color:#fff;font-size:10px;font-weight:700;min-width:16px;height:16px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 4px;line-height:1;}
   .leave-photo-thumb{width:56px;height:56px;object-fit:cover;border-radius:8px;margin-top:8px;cursor:pointer;border:1px solid var(--line);}
   .item.unseen{background:#fff8ee;margin:0 -16px;padding:12px 16px;border-radius:8px;}
 
@@ -311,6 +312,10 @@
         <h3>未讀／未簽名的公告</h3>
         <div id="my-ann-todo-list"></div>
       </div>
+      <div class="card" id="my-mail-todo-card" style="display:none;">
+        <h3>未讀信件</h3>
+        <div id="my-mail-todo-list"></div>
+      </div>
       <div class="card" id="my-todo-empty-card">
         <div class="empty">目前沒有待辦事項</div>
       </div>
@@ -418,6 +423,7 @@
         </div>
         <div class="field"><label>主旨</label><input id="mail-title" placeholder="請輸入主旨"></div>
         <div class="field"><label>內容</label><textarea id="mail-content" rows="4" placeholder="請輸入內容…"></textarea></div>
+        <div class="field"><label>附件連結（選填，例如 Google 雲端硬碟的 PDF 或圖片）</label><input id="mail-link" placeholder="https://drive.google.com/..."></div>
         <button class="btn-primary btn-block" onclick="sendInternalMail()">送出</button>
       </div>
 
@@ -556,6 +562,8 @@
     <h3 id="mail-detail-title"></h3>
     <div class="item-meta" id="mail-detail-meta"></div>
     <div class="item-body" id="mail-detail-content"></div>
+    <div id="mail-detail-link"></div>
+    <div id="mail-detail-embed"></div>
   </div>
 </div>
 
@@ -828,7 +836,7 @@ auth.onAuthStateChanged(user=>{
         auth.signOut();
         return;
       }
-      CURRENT_USER = { uid: user.uid, name: d.name, store: d.store, role: d.role, level: d.level || '', hireDate: d.hireDate || null };
+      CURRENT_USER = { uid: user.uid, name: d.name, store: d.store, role: d.role, level: d.level || '', hireDate: d.hireDate || null, employType: d.employType || 'fulltime' };
       enterApp();
       startSessionWatcher();
     });
@@ -1068,6 +1076,8 @@ function renderAnnouncementTodo(){
   const list = document.getElementById('my-ann-todo-list');
   if(!card || !list) return;
   const unconfirmed = annCache.filter(d => !(d.confirms && d.confirms[CURRENT_USER.uid]));
+  myUnconfirmedAnnCount = unconfirmed.length;
+  refreshTodoTabBadge();
   if(unconfirmed.length === 0){ card.style.display = 'none'; updateMyTodoEmptyState(); return; }
   card.style.display = 'block';
   list.innerHTML = unconfirmed.map(d=>{
@@ -1082,10 +1092,11 @@ function renderAnnouncementTodo(){
 function updateMyTodoEmptyState(){
   const checkinCard = document.getElementById('my-todo-card');
   const annCard = document.getElementById('my-ann-todo-card');
+  const mailCard = document.getElementById('my-mail-todo-card');
   const emptyCard = document.getElementById('my-todo-empty-card');
   if(!emptyCard) return;
-  const bothEmpty = checkinCard.style.display === 'none' && annCard.style.display === 'none';
-  emptyCard.style.display = bothEmpty ? 'block' : 'none';
+  const allEmpty = checkinCard.style.display === 'none' && annCard.style.display === 'none' && (!mailCard || mailCard.style.display === 'none');
+  emptyCard.style.display = allEmpty ? 'block' : 'none';
 }
 
 function loadTeamAnnouncementTodoOverview(){
@@ -1831,48 +1842,14 @@ async function calcPayroll(){
   const emp = employeesCache.find(e=>e.id===uid);
   if(!emp){ showToast("找不到員工資料"); return; }
   prCurrentEmployee = emp; prCurrentMonth = month;
-  prBaseSalary = emp.baseSalary || 29500;
+  const isPT = (emp.employType||'fulltime') === 'parttime';
 
   const [y,m] = month.split('-').map(Number);
   const monthStart = `${month}-01`;
   const daysInMonth = new Date(y, m, 0).getDate();
   const monthEnd = `${month}-${String(daysInMonth).padStart(2,'0')}`;
-  const dayRate = prBaseSalary / 30;
 
-  // 抓該分店在此月份的颱風假日
-  const typhoonInMonth = typhoonCache.filter(t => t.store === emp.store && t.date >= monthStart && t.date <= monthEnd);
-
-  // 抓該員工已核准的請假
-  const leaveSnap = await db.collection('leave_requests').where('uid','==',uid).where('status','==','approved').get();
-  const approvedLeaves = leaveSnap.docs.map(d=>d.data());
-
-  const deductedTyphoonDays = typhoonInMonth.filter(t => !approvedLeaves.some(l => l.start <= t.date && t.date <= l.end));
-  prTyphoonDeduction = Math.round(deductedTyphoonDays.length * dayRate);
-
-  document.getElementById('pr-base').textContent = prBaseSalary.toLocaleString();
-  document.getElementById('pr-typhoon').textContent = '-' + prTyphoonDeduction.toLocaleString();
-  document.getElementById('pr-typhoon-days').textContent = deductedTyphoonDays.length
-    ? `扣款日期：${deductedTyphoonDays.map(d=>d.date).join('、')}（每日 ${Math.round(dayRate)} 元）`
-    : '本月無颱風／店休扣款日';
-
-  // 事假/病假扣款：計算與本月重疊的天數，依假別比例扣款
-  let leaveDeductDays = 0;
-  const leaveBreakdown = [];
-  approvedLeaves.forEach(l=>{
-    const ratio = LEAVE_DEDUCT_RATIO[l.type];
-    if(!ratio) return;
-    const overlapStart = l.start > monthStart ? l.start : monthStart;
-    const overlapEnd = l.end < monthEnd ? l.end : monthEnd;
-    if(overlapStart > overlapEnd) return;
-    const days = dateDiffInclusive(overlapStart, overlapEnd);
-    leaveDeductDays += days * ratio;
-    leaveBreakdown.push(`${l.type} ${days}天(${ratio===1?'全扣':'半薪'})`);
-  });
-  prLeaveDeduction = Math.round(leaveDeductDays * dayRate);
-  document.getElementById('pr-leave-deduct').textContent = '-' + prLeaveDeduction.toLocaleString();
-  document.getElementById('pr-leave-detail').textContent = leaveBreakdown.length ? leaveBreakdown.join('、') : '本月無事假／病假扣款';
-
-  // 本月遲到紀錄（僅供參考，套用既有的遲到判定規則：平日/週六11點後、週日12點後）
+  // 本月打卡紀錄（正職/PT都需要，PT 用來算工時）
   const attSnap = await db.collection('attendance').where('uid','==',uid).orderBy('createdAt','desc').limit(200).get();
   const byDate = {};
   attSnap.docs.forEach(doc=>{
@@ -1886,18 +1863,73 @@ async function calcPayroll(){
     if(d.type==='out' && (!byDate[dateStr].out || t > byDate[dateStr].out)) byDate[dateStr].out = t;
   });
   prMonthlyAttendance = Object.entries(byDate).map(([date,v])=>({ date, in:v.in||null, out:v.out||null, late: v.in ? isLateClockIn(v.in) : false })).sort((a,b)=> a.date<b.date?-1:1);
+
+  if(isPT){
+    // ---- PT／貼班：用打卡時數 × 時薪計算，不套用月薪底薪那套邏輯 ----
+    let hoursWorked = 0;
+    prMonthlyAttendance.forEach(d=>{ if(d.in && d.out && d.out > d.in) hoursWorked += (d.out - d.in) / 3600000; });
+    hoursWorked = Math.round(hoursWorked * 10) / 10;
+    const hourlyRate = emp.hourlyRate || 190;
+    prBaseSalary = Math.round(hoursWorked * hourlyRate);
+    prTyphoonDeduction = 0;
+    prLeaveDeduction = 0;
+    prLaborIns = 0;
+    prHealthIns = 0;
+
+    document.getElementById('pr-base').textContent = `${prBaseSalary.toLocaleString()}（本月工時 ${hoursWorked} 小時 × 時薪 ${hourlyRate} 元）`;
+    document.getElementById('pr-typhoon').textContent = '不適用（PT／貼班）';
+    document.getElementById('pr-typhoon-days').textContent = 'PT／貼班人員免此項扣款';
+    document.getElementById('pr-leave-deduct').textContent = '不適用（PT／貼班）';
+    document.getElementById('pr-leave-detail').textContent = 'PT／貼班人員免此項扣款';
+    document.getElementById('pr-labor-ins').textContent = '未自動試算';
+    document.getElementById('pr-health-ins').textContent = '未自動試算，請依實際投保狀況另行處理';
+  } else {
+    // ---- 正職：維持原本月薪底薪邏輯 ----
+    prBaseSalary = emp.baseSalary || 29500;
+    const dayRate = prBaseSalary / 30;
+
+    const typhoonInMonth = typhoonCache.filter(t => t.store === emp.store && t.date >= monthStart && t.date <= monthEnd);
+    const leaveSnap = await db.collection('leave_requests').where('uid','==',uid).where('status','==','approved').get();
+    const approvedLeaves = leaveSnap.docs.map(d=>d.data());
+
+    const deductedTyphoonDays = typhoonInMonth.filter(t => !approvedLeaves.some(l => l.start <= t.date && t.date <= l.end));
+    prTyphoonDeduction = Math.round(deductedTyphoonDays.length * dayRate);
+
+    document.getElementById('pr-base').textContent = prBaseSalary.toLocaleString();
+    document.getElementById('pr-typhoon').textContent = '-' + prTyphoonDeduction.toLocaleString();
+    document.getElementById('pr-typhoon-days').textContent = deductedTyphoonDays.length
+      ? `扣款日期：${deductedTyphoonDays.map(d=>d.date).join('、')}（每日 ${Math.round(dayRate)} 元）`
+      : '本月無颱風／店休扣款日';
+
+    let leaveDeductDays = 0;
+    const leaveBreakdown = [];
+    approvedLeaves.forEach(l=>{
+      const ratio = LEAVE_DEDUCT_RATIO[l.type];
+      if(!ratio) return;
+      const overlapStart = l.start > monthStart ? l.start : monthStart;
+      const overlapEnd = l.end < monthEnd ? l.end : monthEnd;
+      if(overlapStart > overlapEnd) return;
+      const days = dateDiffInclusive(overlapStart, overlapEnd);
+      leaveDeductDays += days * ratio;
+      leaveBreakdown.push(`${l.type} ${days}天(${ratio===1?'全扣':'半薪'})`);
+    });
+    prLeaveDeduction = Math.round(leaveDeductDays * dayRate);
+    document.getElementById('pr-leave-deduct').textContent = '-' + prLeaveDeduction.toLocaleString();
+    document.getElementById('pr-leave-detail').textContent = leaveBreakdown.length ? leaveBreakdown.join('、') : '本月無事假／病假扣款';
+
+    prLaborIns = calcLaborInsurance(prBaseSalary);
+    prHealthIns = calcHealthInsurance(prBaseSalary);
+    document.getElementById('pr-labor-ins').textContent = '-' + prLaborIns.toLocaleString();
+    document.getElementById('pr-health-ins').textContent = '-' + prHealthIns.toLocaleString();
+  }
+
   const lateDays = prMonthlyAttendance.filter(d=>d.late);
   document.getElementById('pr-late-count').textContent = lateDays.length + ' 天';
   document.getElementById('pr-late-detail').textContent = lateDays.length
     ? lateDays.map(d=> `${d.date}（${d.in.toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'})}）`).join('、')
     : '本月無遲到紀錄';
 
-  // 勞健保自付額（依底薪概算）
-  prLaborIns = calcLaborInsurance(prBaseSalary);
-  prHealthIns = calcHealthInsurance(prBaseSalary);
-  document.getElementById('pr-labor-ins').textContent = '-' + prLaborIns.toLocaleString();
-  document.getElementById('pr-health-ins').textContent = '-' + prHealthIns.toLocaleString();
-  document.getElementById('pr-hourly-rate').textContent = Math.round(prBaseSalary/30/8);
+  document.getElementById('pr-hourly-rate').textContent = isPT ? (emp.hourlyRate||190) : Math.round(prBaseSalary/30/8);
   document.getElementById('ot-h1').value = 0; document.getElementById('ot-h2').value = 0; document.getElementById('ot-h3').value = 0;
   document.getElementById('pr-extra-list').innerHTML = '';
   extraItemSeq = 0;
@@ -1981,7 +2013,7 @@ function collectPayrollData(){
   KPI_ITEMS.forEach(k=> scores[k.key] = Number(document.getElementById('score-'+k.key).value) || 0);
   return {
     uid: prCurrentEmployee.id, name: prCurrentEmployee.name, store: prCurrentEmployee.store,
-    month: prCurrentMonth, baseSalary: prBaseSalary,
+    month: prCurrentMonth, baseSalary: prBaseSalary, isPT: (prCurrentEmployee.employType||'fulltime')==='parttime',
     typhoonDeduction: prTyphoonDeduction, leaveDeduction: prLeaveDeduction,
     laborInsurance: prLaborIns, healthInsurance: prHealthIns,
     scores, totalScore: Number(document.getElementById('pr-total-score').textContent),
@@ -2048,7 +2080,7 @@ function printPayslip(){
       <p>姓名：${data.name}　分店：${data.store}　月份：${data.month}</p>
       <table>
         <tr><th>項目</th><th>金額</th></tr>
-        <tr><td>底薪</td><td>${data.baseSalary.toLocaleString()}</td></tr>
+        <tr><td>${data.isPT ? '本月工資（時薪制）' : '底薪'}</td><td>${data.baseSalary.toLocaleString()}</td></tr>
         <tr><td>颱風／店休扣款</td><td>-${data.typhoonDeduction.toLocaleString()}</td></tr>
         <tr><td>事假／病假扣款</td><td>-${data.leaveDeduction.toLocaleString()}</td></tr>
         <tr><td>勞保自付額</td><td>-${data.laborInsurance.toLocaleString()}</td></tr>
@@ -2101,7 +2133,7 @@ function emailPayslip(){
   const body = encodeURIComponent(
 `${data.name} 您好，附上 ${data.month} 薪資明細（PDF 請另外附加此信，內含薪資單、考核評分表、打卡表三份）：
 
-底薪：${data.baseSalary.toLocaleString()}
+${data.isPT ? '本月工資（時薪制）' : '底薪'}：${data.baseSalary.toLocaleString()}
 颱風／店休扣款：-${data.typhoonDeduction.toLocaleString()}
 事假／病假扣款：-${data.leaveDeduction.toLocaleString()}
 勞保自付額：-${data.laborInsurance.toLocaleString()}
@@ -2162,6 +2194,13 @@ function formatMissingDay(m){
 }
 
 function checkMissedCheckin(){
+  // PT／貼班人員沒有固定班表，跳過未打卡檢查
+  if(CURRENT_USER.employType === 'parttime'){
+    missedCheckinPending = false;
+    renderMyTodoList([]);
+    return;
+  }
+
   const y = new Date(); y.setDate(y.getDate()-1);
   const dateStr = `${y.getFullYear()}-${String(y.getMonth()+1).padStart(2,'0')}-${String(y.getDate()).padStart(2,'0')}`;
 
@@ -2191,6 +2230,8 @@ function renderMyTodoList(missingDays){
   const card = document.getElementById('my-todo-card');
   const list = document.getElementById('my-todo-list');
   if(!card || !list) return;
+  myMissingDaysCount = missingDays.length;
+  refreshTodoTabBadge();
   if(missingDays.length === 0){
     card.style.display = 'none';
     updateMyTodoEmptyState();
@@ -2560,13 +2601,14 @@ function sendInternalMail(){
   const title = document.getElementById('mail-title').value.trim();
   const content = document.getElementById('mail-content').value.trim();
   const category = document.getElementById('mail-category').value;
+  const linkUrl = document.getElementById('mail-link').value.trim();
   if(!title || !content){ showToast("請填寫主旨與內容"); return; }
 
   const mgr = isManager(CURRENT_USER.role);
   const data = {
     senderUid: CURRENT_USER.uid, senderName: CURRENT_USER.name, senderStore: CURRENT_USER.store,
     direction: mgr ? 'to_employee' : 'to_management',
-    category, title, content, status: 'unread',
+    category, title, content, status: 'unread', linkUrl: linkUrl || null,
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
   };
   if(mgr){
@@ -2584,10 +2626,17 @@ function sendInternalMail(){
     showToast("信件已送出");
     document.getElementById('mail-title').value = '';
     document.getElementById('mail-content').value = '';
+    document.getElementById('mail-link').value = '';
   }).catch(e=> showToast("送出失敗："+e.message));
 }
 
 let mailCache = {};
+let myUnreadMailCount = 0;
+let myMissingDaysCount = 0;
+let myUnconfirmedAnnCount = 0;
+function refreshTodoTabBadge(){
+  updateTabBadge('tab-todo', myMissingDaysCount + myUnconfirmedAnnCount + myUnreadMailCount);
+}
 function loadInternalMails(){
   db.collection('internal_mails').orderBy('createdAt','desc').limit(200).onSnapshot(snap=>{
     const list = document.getElementById('internal-mail-list');
@@ -2600,9 +2649,16 @@ function loadInternalMails(){
       const isToManagementInScope = d.direction === 'to_management' && mgr && (viewStore === '全部' || d.senderStore === viewStore || CURRENT_USER.role === 'regional_manager');
       if(isMine || isToManagementInScope) mails.push({ id: doc.id, ...d });
     });
+
+    // 未讀數：以「我是收件人」為準（不含自己寄出的信）
+    myUnreadMailCount = mails.filter(m => m.status === 'unread' && m.senderUid !== CURRENT_USER.uid).length;
+    updateTabBadge('tab-mail', myUnreadMailCount);
+    refreshTodoTabBadge();
+    renderMailTodo(mails.filter(m => m.status === 'unread' && m.senderUid !== CURRENT_USER.uid));
+
     if(!mails.length){ list.innerHTML = '<div class="empty">尚無信件</div>'; return; }
     list.innerHTML = mails.map(m=>{
-      const unread = m.status === 'unread' && m.senderUid !== CURRENT_USER.uid;
+      const unread = m.status === 'unread'; // 已讀狀態不受「誰在看」影響，如實反映收件人是否讀過
       const toLabel = m.direction === 'to_employee' ? (m.receiverName||'') : '管理層';
       return `
       <div class="item ${unread?'unseen':''}" onclick="openMailDetail('${m.id}')" style="cursor:pointer;">
@@ -2613,6 +2669,33 @@ function loadInternalMails(){
   }, ()=>{ document.getElementById('internal-mail-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>'; });
 }
 
+function updateTabBadge(tabId, count){
+  const btn = document.getElementById(tabId);
+  if(!btn) return;
+  let badge = btn.querySelector('.tab-badge');
+  if(count > 0){
+    if(!badge){ badge = document.createElement('span'); badge.className = 'tab-badge'; btn.appendChild(badge); }
+    badge.textContent = count > 99 ? '99+' : count;
+  } else if(badge){
+    badge.remove();
+  }
+}
+
+function renderMailTodo(unreadMails){
+  const card = document.getElementById('my-mail-todo-card');
+  const list = document.getElementById('my-mail-todo-list');
+  if(!card || !list) return;
+  if(unreadMails.length === 0){ card.style.display = 'none'; updateMyTodoEmptyState(); return; }
+  card.style.display = 'block';
+  updateMyTodoEmptyState();
+  list.innerHTML = unreadMails.map(m=>`
+    <div class="item" onclick="switchTab('mail');openMailDetail('${m.id}')" style="cursor:pointer;">
+      <div class="item-head"><strong>[${m.category}] ${escapeHtml(m.title)}</strong><span class="badge unread">未讀</span></div>
+      <div class="item-meta">來自：${m.senderName}</div>
+    </div>
+  `).join('');
+}
+
 function openMailDetail(id){
   const m = mailCache[id];
   if(!m) return;
@@ -2620,6 +2703,14 @@ function openMailDetail(id){
   const toLabel = m.direction === 'to_employee' ? (m.receiverName||'') : '管理層';
   document.getElementById('mail-detail-meta').textContent = `${m.senderName} → ${toLabel}`;
   document.getElementById('mail-detail-content').textContent = m.content;
+
+  const linkEl = document.getElementById('mail-detail-link');
+  linkEl.innerHTML = m.linkUrl ? `<a href="${escapeAttr(m.linkUrl)}" target="_blank" rel="noopener" style="display:inline-block;margin-top:8px;font-size:13px;color:var(--copper-dark);">🔗 在新分頁開啟附件</a>` : '';
+
+  const embedEl = document.getElementById('mail-detail-embed');
+  const embedUrl = googleDrivePreviewUrl(m.linkUrl);
+  embedEl.innerHTML = embedUrl ? `<iframe src="${embedUrl}" style="width:100%;height:400px;border:1px solid var(--line);border-radius:8px;margin-top:10px;" allow="autoplay"></iframe>` : '';
+
   document.getElementById('modal-mail-detail').classList.add('active');
   if(m.status === 'unread' && m.senderUid !== CURRENT_USER.uid){
     db.collection('internal_mails').doc(id).update({ status:'read', readAt: firebase.firestore.FieldValue.serverTimestamp() });
@@ -2749,7 +2840,7 @@ async function loadTeamTodoOverview(){
   if(!employeesCache.length){ list.innerHTML = '<div class="empty">尚無員工資料</div>'; return; }
   const now = new Date();
   const monthStart = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
-  const active = employeesCache.filter(e => (e.status||'在職') === '在職');
+  const active = employeesCache.filter(e => (e.status||'在職') === '在職' && (e.employType||'fulltime') !== 'parttime');
 
   const results = await Promise.all(active.map(async e=>{
     const snap = await db.collection('attendance').where('uid','==',e.id).orderBy('createdAt','desc').limit(120).get();
@@ -2813,6 +2904,7 @@ async function buildEmployeeCard(doc){
   const levelSelHtml = LEVEL_OPTIONS.map(l=>`<option ${l===d.level?'selected':''}>${l}</option>`).join('');
   const leaveMode = d.leaveMode || 'auto';
   const baseSalary = d.baseSalary || 29500;
+  const employType = d.employType || 'fulltime';
   const autoLeave = d.hireDate ? calcAnnualLeaveDays(d.hireDate) : 0;
   const entitledLeave = leaveMode === 'custom' ? (d.customAnnualLeaveDays||0) : autoLeave;
   const carryover = d.carryoverDays || 0;
@@ -2874,7 +2966,18 @@ async function buildEmployeeCard(doc){
     <div class="field" style="margin-bottom:6px;"><label>等級</label><select id="level-${uid}">${levelSelHtml}</select></div>
     <div class="item-meta">年資：${tenureStr}</div>
 
-    <div class="field" style="margin-top:8px;margin-bottom:6px;"><label>基本工資（元，未填預設 29,500）</label><input type="number" id="basesalary-${uid}" value="${baseSalary}"></div>
+    <div class="field" style="margin-top:8px;margin-bottom:6px;"><label>雇用身分</label>
+      <select id="employtype-${uid}" onchange="toggleEmployTypeFields('${uid}')">
+        <option value="fulltime" ${employType==='fulltime'?'selected':''}>正職（月薪）</option>
+        <option value="parttime" ${employType==='parttime'?'selected':''}>PT／貼班（時薪）</option>
+      </select>
+    </div>
+    <div id="fulltime-fields-${uid}" style="display:${employType==='parttime'?'none':'block'};">
+      <div class="field" style="margin-bottom:6px;"><label>基本工資（元，未填預設 29,500）</label><input type="number" id="basesalary-${uid}" value="${baseSalary}"></div>
+    </div>
+    <div id="parttime-fields-${uid}" style="display:${employType==='parttime'?'block':'none'};">
+      <div class="field" style="margin-bottom:6px;"><label>時薪（元/小時，未填預設 190）</label><input type="number" id="hourlyrate-${uid}" value="${d.hourlyRate||190}"></div>
+    </div>
 
     <div class="rowline">
       <div class="item" style="background:#f3f3f0;"><div class="item-meta">勞保自付額（不可修改）<br><span class="mono">${laborSelf.toLocaleString()}</span></div></div>
@@ -2930,6 +3033,12 @@ function readDateSelects(prefix, uid){
   return (y && m && dd) ? `${y}-${String(m).padStart(2,'0')}-${String(dd).padStart(2,'0')}` : '';
 }
 
+function toggleEmployTypeFields(uid){
+  const type = document.getElementById(`employtype-${uid}`).value;
+  document.getElementById(`fulltime-fields-${uid}`).style.display = type==='parttime' ? 'none' : 'block';
+  document.getElementById(`parttime-fields-${uid}`).style.display = type==='parttime' ? 'block' : 'none';
+}
+
 function saveEmployeeProfile(uid){
   const data = {
     phone: document.getElementById(`phone-${uid}`).value.trim(),
@@ -2939,7 +3048,9 @@ function saveEmployeeProfile(uid){
     hireDate: readDateSelects('hire', uid),
     birthDate: readDateSelects('birth', uid),
     level: document.getElementById(`level-${uid}`).value,
+    employType: document.getElementById(`employtype-${uid}`).value,
     baseSalary: Number(document.getElementById(`basesalary-${uid}`).value) || 29500,
+    hourlyRate: Number(document.getElementById(`hourlyrate-${uid}`).value) || 190,
     leaveMode: document.getElementById(`leavemode-${uid}`).value,
     customAnnualLeaveDays: Number(document.getElementById(`customdays-${uid}`).value) || 0,
     carryoverDays: Number(document.getElementById(`carryover-${uid}`).value) || 0
@@ -2989,4 +3100,4 @@ function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':
 function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"\\'"); }
 </script>
 </body>
-</html>V9.17.8
+</html>V9.17.9
