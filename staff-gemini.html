@@ -9,6 +9,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 :root{
 --ink:#1c1f26; --ink-soft:#3a3f4b; --paper:#f6f4f0; --card:#ffffff;
@@ -240,6 +241,11 @@ grid-column:1 / -1;
 <div class="field"><label>內容</label><textarea id="ann-content" rows="3" placeholder="公告內容"></textarea></div>
 <div class="field"><label>附件 PDF（選填，檔案請控制在 700KB 內）</label><input type="file" id="ann-pdf" accept="application/pdf"></div>
 <div class="field"><label>外部連結（選填，例如 Google 雲端硬碟分享網址，適合大檔案）</label><input id="ann-link" placeholder="https://drive.google.com/..."></div>
+<div class="field">
+<label>或直接上傳到 Google 雲端硬碟（沒有 700KB 限制，會自動填入上面的連結）</label>
+<input type="file" id="ann-drive-file">
+<button class="btn-ghost btn-block" style="margin-top:6px;" onclick="uploadToDriveAndFillLink('ann-drive-file','ann-link', this)">☁️ 上傳到雲端硬碟</button>
+</div>
 <div class="field"><label>發送對象</label>
 <select id="ann-target">
 <option value="全部">全部分店</option>
@@ -409,7 +415,10 @@ grid-column:1 / -1;
 <!-- INTERNAL MAIL PANEL -->
 <section id="panel-mail" class="panel">
 <div class="card">
-<h3>寫信</h3>
+<h3 id="mail-compose-title">寫信</h3>
+<div id="mail-reply-banner" style="display:none;background:#fdf6ef;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:var(--copper-dark);">
+<span id="mail-reply-banner-text"></span> <button class="btn-ghost btn-sm" style="float:right;padding:2px 8px;" onclick="cancelReply()">取消回覆</button>
+</div>
 <div class="field" id="mail-recipient-field" style="display:none;"><label>收件對象</label><select id="mail-recipient"></select></div>
 <div class="field"><label>類別</label>
 <select id="mail-category">
@@ -422,8 +431,14 @@ grid-column:1 / -1;
 </select>
 </div>
 <div class="field"><label>主旨</label><input id="mail-title" placeholder="請輸入主旨"></div>
-<div class="field"><label>內容</label><textarea id="mail-content" rows="4" placeholder="請輸入內容…"></textarea></div>
+<div class="field"><label>內容</label><textarea id="mail-content" rows="8" style="min-height:180px;" placeholder="請輸入內容…"></textarea></div>
+<div class="field"><label>上傳照片（選填，檔案請控制在 700KB 內）</label><input type="file" id="mail-photo" accept="image/*"></div>
 <div class="field"><label>附件連結（選填，例如 Google 雲端硬碟的 PDF 或圖片）</label><input id="mail-link" placeholder="https://drive.google.com/..."></div>
+<div class="field">
+<label>或直接上傳到 Google 雲端硬碟（沒有大小限制，會自動填入上面的連結）</label>
+<input type="file" id="mail-drive-file">
+<button class="btn-ghost btn-block" style="margin-top:6px;" onclick="uploadToDriveAndFillLink('mail-drive-file','mail-link', this)">☁️ 上傳到雲端硬碟</button>
+</div>
 <button class="btn-primary btn-block" onclick="sendInternalMail()">送出</button>
 </div>
 
@@ -557,13 +572,15 @@ grid-column:1 / -1;
 
 <!-- MODAL: internal mail detail -->
 <div class="modal-bg" id="modal-mail-detail">
-<div class="modal">
+<div class="modal" style="max-width:640px;">
 <button class="modal-close" onclick="closeModal('modal-mail-detail')">&times;</button>
 <h3 id="mail-detail-title"></h3>
 <div class="item-meta" id="mail-detail-meta"></div>
-<div class="item-body" id="mail-detail-content"></div>
+<div class="item-body" id="mail-detail-content" style="white-space:pre-wrap;min-height:80px;"></div>
+<div id="mail-detail-photo"></div>
 <div id="mail-detail-link"></div>
 <div id="mail-detail-embed"></div>
+<button class="btn-ghost btn-block" style="margin-top:14px;" onclick="replyToMail()">↩ 回覆</button>
 </div>
 </div>
 
@@ -717,6 +734,79 @@ appId: "1:357168697896:web:79b3f2faa217d7ad449b1d"
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
+
+/* ---------- Google 雲端硬碟上傳 ---------- */
+const DRIVE_CLIENT_ID = '668779704922-bi6hnutrnbsbdgpskjs3aadkf43eakh0.apps.googleusercontent.com';
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+let driveTokenClient = null;
+let driveAccessToken = null;
+
+function ensureDriveTokenClient(){
+if(driveTokenClient) return;
+if(typeof google === 'undefined' || !google.accounts){
+throw new Error('Google 登入元件尚未載入完成，請稍等一下再試一次');
+}
+driveTokenClient = google.accounts.oauth2.initTokenClient({
+client_id: DRIVE_CLIENT_ID,
+scope: DRIVE_SCOPE,
+callback: ()=>{} // 個別呼叫時會覆寫
+});
+}
+
+function getDriveAccessToken(){
+return new Promise((resolve, reject)=>{
+ensureDriveTokenClient();
+driveTokenClient.callback = (resp)=>{
+if(resp.error){ reject(resp); return; }
+driveAccessToken = resp.access_token;
+resolve(driveAccessToken);
+};
+driveTokenClient.requestAccessToken({ prompt: driveAccessToken ? '' : 'consent' });
+});
+}
+
+async function uploadFileToDrive(file){
+const token = await getDriveAccessToken();
+const metadata = { name: file.name, mimeType: file.type };
+const form = new FormData();
+form.append('metadata', new Blob([JSON.stringify(metadata)], { type:'application/json' }));
+form.append('file', file);
+
+const uploadRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
+method: 'POST',
+headers: { Authorization: 'Bearer ' + token },
+body: form
+});
+if(!uploadRes.ok) throw new Error('上傳失敗（'+uploadRes.status+'）');
+const uploaded = await uploadRes.json();
+
+// 設成「知道連結的人可檢視」，其他員工才打得開
+await fetch(`https://www.googleapis.com/drive/v3/files/${uploaded.id}/permissions`, {
+method: 'POST',
+headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+body: JSON.stringify({ role: 'reader', type: 'anyone' })
+});
+
+return `https://drive.google.com/file/d/${uploaded.id}/view?usp=sharing`;
+}
+
+async function uploadToDriveAndFillLink(fileInputId, linkInputId, btn){
+const fileInput = document.getElementById(fileInputId);
+const file = fileInput.files[0];
+if(!file){ showToast("請先選擇要上傳的檔案"); return; }
+const originalText = btn.textContent;
+btn.disabled = true; btn.textContent = '上傳中…';
+try{
+const link = await uploadFileToDrive(file);
+document.getElementById(linkInputId).value = link;
+fileInput.value = '';
+showToast("已上傳到 Google 雲端硬碟");
+}catch(e){
+showToast("上傳失敗，請確認已授權雲端硬碟權限："+(e.message||e.error||''));
+}finally{
+btn.disabled = false; btn.textContent = originalText;
+}
+}
 
 let CURRENT_USER = null; // {uid, name, store, role}
 let leaveDocsCache = {};
@@ -949,8 +1039,12 @@ let sigCanvas, sigCtx, sigDrawing = false, sigHasDrawn = false, sigCallback = nu
 function initSignatureCanvas(){
 sigCanvas = document.getElementById('signature-canvas');
 const rect = sigCanvas.getBoundingClientRect();
-sigCanvas.width = rect.width * 2;
-sigCanvas.height = rect.height * 2;
+// 平板/手機上有時量到 0（排版還沒跑完），這時用畫布外層卡片的寬度當備援，避免畫布變成 0×0 看不到
+const fallbackWidth = sigCanvas.parentElement ? sigCanvas.parentElement.clientWidth - 40 : 300;
+const w = rect.width > 10 ? rect.width : fallbackWidth;
+const h = rect.height > 10 ? rect.height : 180;
+sigCanvas.width = w * 2;
+sigCanvas.height = h * 2;
 sigCtx = sigCanvas.getContext('2d');
 sigCtx.scale(2,2);
 sigCtx.lineWidth = 2;
@@ -973,7 +1067,9 @@ function openSignaturePad(title, callback){
 document.getElementById('signature-title').textContent = title;
 sigCallback = callback;
 document.getElementById('modal-signature').classList.add('active');
-setTimeout(initSignatureCanvas, 50); // 等 modal 顯示後才量得到正確尺寸
+// 用雙重 requestAnimationFrame 確保瀏覽器真的完成排版、量得到正確尺寸後才初始化畫布，
+// 比固定等待時間更可靠（尤其平板/手機排版時機跟電腦不一樣）
+requestAnimationFrame(()=> requestAnimationFrame(initSignatureCanvas));
 }
 
 function clearSignature(){
@@ -2597,18 +2693,26 @@ field.style.display = 'none';
 }
 }
 
-function sendInternalMail(){
+async function sendInternalMail(){
 const title = document.getElementById('mail-title').value.trim();
 const content = document.getElementById('mail-content').value.trim();
 const category = document.getElementById('mail-category').value;
 const linkUrl = document.getElementById('mail-link').value.trim();
+const photoFile = document.getElementById('mail-photo').files[0];
 if(!title || !content){ showToast("請填寫主旨與內容"); return; }
+
+let photoData = null;
+if(photoFile){
+if(photoFile.size > 700*1024){ showToast("照片檔案太大，請控制在 700KB 以內"); return; }
+photoData = await resizeImageToBase64(photoFile, 800);
+}
 
 const mgr = isManager(CURRENT_USER.role);
 const data = {
 senderUid: CURRENT_USER.uid, senderName: CURRENT_USER.name, senderStore: CURRENT_USER.store,
 direction: mgr ? 'to_employee' : 'to_management',
-category, title, content, status: 'unread', linkUrl: linkUrl || null,
+category, title, content, status: 'unread', linkUrl: linkUrl || null, photoData,
+replyToId: replyContextId || null,
 createdAt: firebase.firestore.FieldValue.serverTimestamp()
 };
 if(mgr){
@@ -2627,6 +2731,8 @@ showToast("信件已送出");
 document.getElementById('mail-title').value = '';
 document.getElementById('mail-content').value = '';
 document.getElementById('mail-link').value = '';
+document.getElementById('mail-photo').value = '';
+cancelReply();
 }).catch(e=> showToast("送出失敗："+e.message));
 }
 
@@ -2696,13 +2802,18 @@ list.innerHTML = unreadMails.map(m=>`
 `).join('');
 }
 
+let currentMailDetailId = null;
 function openMailDetail(id){
 const m = mailCache[id];
 if(!m) return;
+currentMailDetailId = id;
 document.getElementById('mail-detail-title').textContent = `[${m.category}] ${m.title}`;
 const toLabel = m.direction === 'to_employee' ? (m.receiverName||'') : '管理層';
 document.getElementById('mail-detail-meta').textContent = `${m.senderName} → ${toLabel}`;
 document.getElementById('mail-detail-content').textContent = m.content;
+
+const photoEl = document.getElementById('mail-detail-photo');
+photoEl.innerHTML = m.photoData ? `<img src="${m.photoData}" style="max-width:100%;border-radius:8px;margin-top:10px;cursor:pointer;" onclick="openPhoto('${m.photoData}')">` : '';
 
 const linkEl = document.getElementById('mail-detail-link');
 linkEl.innerHTML = m.linkUrl ? `<a href="${escapeAttr(m.linkUrl)}" target="_blank" rel="noopener" style="display:inline-block;margin-top:8px;font-size:13px;color:var(--copper-dark);">🔗 在新分頁開啟附件</a>` : '';
@@ -2715,6 +2826,32 @@ document.getElementById('modal-mail-detail').classList.add('active');
 if(m.status === 'unread' && m.senderUid !== CURRENT_USER.uid){
 db.collection('internal_mails').doc(id).update({ status:'read', readAt: firebase.firestore.FieldValue.serverTimestamp() });
 }
+}
+
+let replyContextId = null;
+function replyToMail(){
+const m = mailCache[currentMailDetailId];
+if(!m) return;
+closeModal('modal-mail-detail');
+switchTab('mail');
+replyContextId = currentMailDetailId;
+document.getElementById('mail-reply-banner').style.display = 'block';
+document.getElementById('mail-reply-banner-text').textContent = `回覆給 ${m.senderName}：[${m.category}] ${m.title}`;
+document.getElementById('mail-compose-title').textContent = '回覆信件';
+document.getElementById('mail-category').value = m.category;
+document.getElementById('mail-title').value = `回覆：${m.title}`;
+document.getElementById('mail-content').value = `\n\n----- 原始訊息（${m.senderName}）-----\n${m.content}`;
+if(isManager(CURRENT_USER.role)){
+const sel = document.getElementById('mail-recipient');
+if([...sel.options].some(o=>o.value===m.senderUid)) sel.value = m.senderUid;
+}
+document.getElementById('mail-content').focus();
+}
+
+function cancelReply(){
+replyContextId = null;
+document.getElementById('mail-reply-banner').style.display = 'none';
+document.getElementById('mail-compose-title').textContent = '寫信';
 }
 
 function submitStaffRequest(){
@@ -3100,4 +3237,4 @@ function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':
 function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"\\'"); }
 </script>
 </body>
-</html>v9.18.1
+</html>v9.18.2
