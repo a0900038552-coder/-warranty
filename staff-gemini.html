@@ -265,6 +265,12 @@ grid-column:1 / -1;
 <!-- LEAVE PANEL -->
 <section id="panel-leave" class="panel">
 <div class="card">
+<h3>Google 帳號連結（日曆同步用）</h3>
+<p style="font-size:12px;color:var(--ink-soft);margin-top:-6px;">第一次使用排休/核准假單的日曆同步前，請先點這顆按鈕完成授權，避免平板/手機瀏覽器把跳出的授權視窗擋掉</p>
+<button class="btn-ghost btn-block" id="google-connect-btn" onclick="connectGoogleAccount()">🔗 連結 Google 帳號</button>
+<div id="google-connect-status" class="item-meta" style="margin-top:6px;"></div>
+</div>
+<div class="card">
 <h3>提出請假申請</h3>
 <div class="field"><label>假別</label>
 <select id="leave-type"><option>事假</option><option>病假</option><option>特休</option><option>排休調整</option><option>其他</option></select>
@@ -735,9 +741,10 @@ firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
 
-/* ---------- Google 雲端硬碟上傳 ---------- */
+/* ---------- Google 雲端硬碟上傳／日曆同步（共用同一組授權） ---------- */
 const DRIVE_CLIENT_ID = '668779704922-bi6hnutrnbsbdgpskjs3aadkf43eakh0.apps.googleusercontent.com';
-const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/calendar.events';
+const LEAVE_CALENDAR_ID = '5d90e06a827dc4daebaf9fa575da3ceb08dd0289568c470184e95d24b0255237@group.calendar.google.com';
 let driveTokenClient = null;
 let driveAccessToken = null;
 
@@ -748,7 +755,7 @@ throw new Error('Google 登入元件尚未載入完成，請稍等一下再試�
 }
 driveTokenClient = google.accounts.oauth2.initTokenClient({
 client_id: DRIVE_CLIENT_ID,
-scope: DRIVE_SCOPE,
+scope: GOOGLE_SCOPE,
 callback: ()=>{} // 個別呼叫時會覆寫
 });
 }
@@ -790,6 +797,22 @@ body: JSON.stringify({ role: 'reader', type: 'anyone' })
 return `https://drive.google.com/file/d/${uploaded.id}/view?usp=sharing`;
 }
 
+async function connectGoogleAccount(){
+const btn = document.getElementById('google-connect-btn');
+const statusEl = document.getElementById('google-connect-status');
+btn.disabled = true;
+try{
+await getDriveAccessToken();
+statusEl.textContent = '✅ 已連結，日曆同步／雲端硬碟上傳現在可以正常運作';
+statusEl.style.color = 'var(--good)';
+}catch(e){
+statusEl.textContent = '連結失敗，請確認已允許授權視窗跳出（' + (e.message||e.error||'') + '）';
+statusEl.style.color = 'var(--bad)';
+}finally{
+btn.disabled = false;
+}
+}
+
 async function uploadToDriveAndFillLink(fileInputId, linkInputId, btn){
 const fileInput = document.getElementById(fileInputId);
 const file = fileInput.files[0];
@@ -806,6 +829,81 @@ showToast("上傳失敗，請確認已授權雲端硬碟權限："+(e.message||e
 }finally{
 btn.disabled = false; btn.textContent = originalText;
 }
+}
+
+/* ---------- Google 日曆同步（排休/請假/公休） ---------- */
+function addOneDay(dateStr){
+const d = new Date(dateStr);
+d.setDate(d.getDate()+1);
+return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+async function createCalendarEvent(summary, startDate, endDate){
+const token = await getDriveAccessToken();
+const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(LEAVE_CALENDAR_ID)}/events`, {
+method: 'POST',
+headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+body: JSON.stringify({
+summary,
+start: { date: startDate },
+end: { date: addOneDay(endDate) } // Google 日曆全天活動的結束日是「隔一天」
+})
+});
+if(!res.ok) throw new Error('建立日曆活動失敗（'+res.status+'）');
+const data = await res.json();
+return data.id;
+}
+
+async function updateCalendarEvent(eventId, summary, startDate, endDate){
+const token = await getDriveAccessToken();
+const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(LEAVE_CALENDAR_ID)}/events/${eventId}`, {
+method: 'PATCH',
+headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+body: JSON.stringify({
+summary,
+start: { date: startDate },
+end: { date: addOneDay(endDate) }
+})
+});
+if(!res.ok) throw new Error('更新日曆活動失敗（'+res.status+'）');
+}
+
+async function deleteCalendarEvent(eventId){
+const token = await getDriveAccessToken();
+await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(LEAVE_CALENDAR_ID)}/events/${eventId}`, {
+method: 'DELETE',
+headers: { Authorization: 'Bearer ' + token }
+}); // 404（活動已不存在）也視為成功，不特別擋錯誤
+}
+
+/* 假單核准／編輯／刪除時，同步寫入或更新 Google 日曆 */
+async function syncLeaveCalendar(leaveId, leaveData){
+try{
+const summary = `${leaveData.name}（${leaveData.type}）`;
+if(leaveData.calendarEventId){
+await updateCalendarEvent(leaveData.calendarEventId, summary, leaveData.start, leaveData.end);
+} else {
+const eventId = await createCalendarEvent(summary, leaveData.start, leaveData.end);
+await db.collection('leave_requests').doc(leaveId).update({ calendarEventId: eventId });
+}
+}catch(e){ showToast("日曆同步失敗（不影響假單本身）："+(e.message||'')); }
+}
+async function removeLeaveFromCalendar(leaveData){
+if(!leaveData || !leaveData.calendarEventId) return;
+try{ await deleteCalendarEvent(leaveData.calendarEventId); }catch(e){ /* 忽略錯誤，不影響刪除假單本身 */ }
+}
+
+/* 公休／颱風假新增、刪除時同步 */
+async function syncTyphoonCalendar(typhoonId, typhoonData){
+try{
+const summary = `公休（${typhoonData.store}）${typhoonData.note ? '：'+typhoonData.note : ''}`;
+const eventId = await createCalendarEvent(summary, typhoonData.date, typhoonData.date);
+await db.collection('typhoon_days').doc(typhoonId).update({ calendarEventId: eventId });
+}catch(e){ showToast("日曆同步失敗（不影響公休設定本身）："+(e.message||'')); }
+}
+async function removeTyphoonFromCalendar(typhoonData){
+if(!typhoonData || !typhoonData.calendarEventId) return;
+try{ await deleteCalendarEvent(typhoonData.calendarEventId); }catch(e){}
 }
 
 let CURRENT_USER = null; // {uid, name, store, role}
@@ -1341,15 +1439,19 @@ try{ photoData = await resizeImageToBase64(photoFile, 800); }
 catch(e){ showToast("照片處理失敗，將略過附件"); }
 }
 
+const isSelfSchedule = type === '排休調整'; // 排休不用經過審核，送出即生效
+const status = isSelfSchedule ? 'approved' : 'pending';
+
 db.collection('leave_requests').add({
 name: CURRENT_USER.name, uid: CURRENT_USER.uid, store: CURRENT_USER.store,
-type, start, end, reason, status: 'pending', seenByRequester: true,
+type, start, end, reason, status, seenByRequester: true,
 photoData: photoData || null,
 createdAt: firebase.firestore.FieldValue.serverTimestamp()
-}).then(()=>{
-showToast("已送出申請");
+}).then((docRef)=>{
+showToast(isSelfSchedule ? "已排休（不需審核）" : "已送出申請");
 document.getElementById('leave-reason').value='';
 document.getElementById('leave-photo').value='';
+if(isSelfSchedule) syncLeaveCalendar(docRef.id, { name: CURRENT_USER.name, type, start, end });
 }).catch(e=>showToast("送出失敗："+e.message));
 }
 
@@ -1520,6 +1622,8 @@ modal.classList.add('active');
 }
 function deleteLeaveRequest(id){
 if(!confirm('確定要刪除這筆假單嗎？此動作無法復原。')) return;
+const prev = leaveDocsCache[id];
+if(prev && prev.calendarEventId) removeLeaveFromCalendar(prev);
 db.collection('leave_requests').doc(id).delete().then(()=>{ showToast("已刪除"); openDayEditor(document.getElementById('day-editor-title').textContent.replace(' 假單','')); });
 }
 
@@ -1534,13 +1638,18 @@ function submitQuickLeave(){
 const date = document.getElementById('quick-leave-date').value;
 const type = document.getElementById('quick-leave-type').value;
 const reason = document.getElementById('quick-leave-reason').value.trim();
+const isSelfSchedule = type === '排休調整';
+const status = isSelfSchedule ? 'approved' : 'pending';
 db.collection('leave_requests').add({
 name: CURRENT_USER.name, uid: CURRENT_USER.uid, store: CURRENT_USER.store,
-type, start: date, end: date, reason, status: 'pending', seenByRequester: true,
+type, start: date, end: date, reason, status, seenByRequester: true,
 photoData: null,
 createdAt: firebase.firestore.FieldValue.serverTimestamp()
-}).then(()=>{ closeModal('modal-quick-leave'); showToast("已送出申請"); })
-.catch(e=>showToast("送出失敗："+e.message));
+}).then((docRef)=>{
+closeModal('modal-quick-leave');
+showToast(isSelfSchedule ? "已排休（不需審核）" : "已送出申請");
+if(isSelfSchedule) syncLeaveCalendar(docRef.id, { name: CURRENT_USER.name, type, start: date, end: date });
+}).catch(e=>showToast("送出失敗："+e.message));
 }
 function openEditLeave(id){
 const d = leaveDocsCache[id];
@@ -1560,11 +1669,29 @@ const end = document.getElementById('edit-leave-end').value;
 const reason = document.getElementById('edit-leave-reason').value.trim();
 if(!start || !end){ showToast("請選擇起訖日期"); return; }
 if(end < start){ showToast("結束日期不能早於起始日期"); return; }
+const prev = leaveDocsCache[id];
 db.collection('leave_requests').doc(id).update({ type, start, end, reason, seenByRequester:false })
-.then(()=>{ closeModal('modal-edit-leave'); showToast("已修改假單內容"); });
+.then(()=>{
+closeModal('modal-edit-leave');
+showToast("已修改假單內容");
+if(prev && (prev.status === 'approved' || prev.calendarEventId)){
+syncLeaveCalendar(id, { name: prev.name, type, start, end, calendarEventId: prev.calendarEventId });
+}
+});
 }
 
-function setLeaveStatus(id, status){ db.collection('leave_requests').doc(id).update({status, seenByRequester:false}).then(()=>showToast("已更新狀態")); }
+function setLeaveStatus(id, status){
+const prev = leaveDocsCache[id];
+db.collection('leave_requests').doc(id).update({status, seenByRequester:false}).then(()=>{
+showToast("已更新狀態");
+if(status === 'approved'){
+syncLeaveCalendar(id, { name: prev?.name, type: prev?.type, start: prev?.start, end: prev?.end, calendarEventId: prev?.calendarEventId });
+} else if(prev && prev.calendarEventId){
+removeLeaveFromCalendar(prev);
+db.collection('leave_requests').doc(id).update({ calendarEventId: firebase.firestore.FieldValue.delete() });
+}
+});
+}
 
 /* ---------- 庫存管理（點擊式 +/-） ---------- */
 const CATS = ["全部","螢幕總成","電池","尾插排線","主機板料件","其他"];
@@ -1884,7 +2011,11 @@ if(!date){ showToast("請選擇日期"); return; }
 db.collection('typhoon_days').add({
 date, note, store,
 createdAt: firebase.firestore.FieldValue.serverTimestamp()
-}).then(()=>{ showToast(`已新增 ${store} 公休日`); document.getElementById('typhoon-note').value=''; });
+}).then((docRef)=>{
+showToast(`已新增 ${store} 公休日`);
+document.getElementById('typhoon-note').value='';
+syncTyphoonCalendar(docRef.id, { date, note, store });
+});
 }
 function loadTyphoonDays(){
 let q = db.collection('typhoon_days').orderBy('date','desc');
@@ -1906,7 +2037,11 @@ list.appendChild(div);
 });
 }, ()=>{ document.getElementById('typhoon-list').innerHTML = '<div class="empty">讀取失敗，可能需要建立索引</div>'; });
 }
-function deleteTyphoonDay(id){ db.collection('typhoon_days').doc(id).delete().then(()=>showToast("已刪除")); }
+function deleteTyphoonDay(id){
+const prev = typhoonCache.find(t=>t.id===id);
+if(prev && prev.calendarEventId) removeTyphoonFromCalendar(prev);
+db.collection('typhoon_days').doc(id).delete().then(()=>showToast("已刪除"));
+}
 
 /* 月薪試算 */
 let prBaseSalary = 0, prTyphoonDeduction = 0, prLeaveDeduction = 0, prLaborIns = 0, prHealthIns = 0;
@@ -3237,4 +3372,4 @@ function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':
 function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"\\'"); }
 </script>
 </body>
-</html>v9.18.2
+</html>v9.19.1
