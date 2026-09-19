@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>復原者 內部系統v2</title>
+<title>復原者 內部系統V2</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
@@ -787,9 +787,40 @@ function getDriveAccessToken(){
   return Promise.reject(new Error('尚未連結 Google 帳號，請先點「🔗 連結 Google 帳號」完成授權'));
 }
 
+const DRIVE_UPLOAD_FOLDER_NAME = '復原者內部系統上傳';
+let driveUploadFolderId = null;
+
+async function getOrCreateUploadFolder(token){
+  if(driveUploadFolderId) return driveUploadFolderId;
+
+  const query = encodeURIComponent(`mimeType='application/vnd.google-apps.folder' and name='${DRIVE_UPLOAD_FOLDER_NAME}' and trashed=false`);
+  const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)`, {
+    headers: { Authorization: 'Bearer ' + token }
+  });
+  if(searchRes.ok){
+    const searchData = await searchRes.json();
+    if(searchData.files && searchData.files.length > 0){
+      driveUploadFolderId = searchData.files[0].id;
+      return driveUploadFolderId;
+    }
+  }
+
+  // 找不到就新建一個
+  const createRes = await fetch('https://www.googleapis.com/drive/v3/files?fields=id', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: DRIVE_UPLOAD_FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' })
+  });
+  if(!createRes.ok) throw new Error('建立雲端硬碟資料夾失敗（'+createRes.status+'）');
+  const created = await createRes.json();
+  driveUploadFolderId = created.id;
+  return driveUploadFolderId;
+}
+
 async function uploadFileToDrive(file){
   const token = await getDriveAccessToken();
-  const metadata = { name: file.name, mimeType: file.type };
+  const folderId = await getOrCreateUploadFolder(token);
+  const metadata = { name: file.name, mimeType: file.type, parents: [folderId] };
   const form = new FormData();
   form.append('metadata', new Blob([JSON.stringify(metadata)], { type:'application/json' }));
   form.append('file', file);
@@ -1375,29 +1406,28 @@ function openAnnouncement(id){
     : '';
 
   const readersEl = document.getElementById('ann-detail-readers');
+  const readNames = d.reads ? Object.values(d.reads).map(r=>r.name) : [];
+  const confirmEntries = d.confirms ? Object.values(d.confirms) : [];
+  let readersHtml = `
+    已讀（${readNames.length}）：${readNames.join('、') || '無'}<br>
+    已確認簽名（${confirmEntries.length}）：
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;">
+      ${confirmEntries.map(c=>`
+        <div style="text-align:center;">
+          ${c.signature
+            ? `<img src="${c.signature}" style="width:70px;height:40px;object-fit:contain;border:1px solid var(--line);border-radius:4px;background:#fff;">`
+            : `<div style="width:70px;height:40px;border:1px dashed var(--bad);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--bad);">缺簽名</div>`}
+          <div style="font-size:11px;">${escapeHtml(c.name)}</div>
+        </div>
+      `).join('') || '無'}
+    </div>
+  `;
   if(isManager(CURRENT_USER.role)){
-    const readNames = d.reads ? Object.values(d.reads).map(r=>r.name) : [];
-    const confirmEntries = d.confirms ? Object.values(d.confirms) : [];
-    const scopeEmployees = employeesCache.filter(e => d.target==='全部' || e.store===d.target);
+    const scopeEmployees = employeesCache.filter(e => (d.target==='全部' || e.store===d.target) && (e.status||'在職')==='在職');
     const unconfirmed = scopeEmployees.filter(e => !(d.confirms && d.confirms[e.id])).map(e=>e.name);
-    readersEl.innerHTML = `
-      已讀（${readNames.length}）：${readNames.join('、') || '無'}<br>
-      已確認簽名（${confirmEntries.length}）：
-      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;">
-        ${confirmEntries.map(c=>`
-          <div style="text-align:center;">
-            ${c.signature
-              ? `<img src="${c.signature}" style="width:70px;height:40px;object-fit:contain;border:1px solid var(--line);border-radius:4px;background:#fff;">`
-              : `<div style="width:70px;height:40px;border:1px dashed var(--bad);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--bad);">缺簽名</div>`}
-            <div style="font-size:11px;">${escapeHtml(c.name)}</div>
-          </div>
-        `).join('') || '無'}
-      </div>
-      ${unconfirmed.length ? `<div style="margin-top:8px;color:var(--bad);">尚未確認：${unconfirmed.join('、')}</div>` : ''}
-    `;
-  } else {
-    readersEl.textContent = '';
+    readersHtml += unconfirmed.length ? `<div style="margin-top:8px;color:var(--bad);">尚未確認：${unconfirmed.join('、')}</div>` : '';
   }
+  readersEl.innerHTML = readersHtml;
 
   const confirmEntry = d.confirms && d.confirms[CURRENT_USER.uid];
   const confirmBtn = document.getElementById('ann-confirm-btn');
@@ -3405,4 +3435,4 @@ function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':
 function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"\\'"); }
 </script>
 </body>
-</html>v9.19.6
+</html>V9.19.7
