@@ -804,6 +804,27 @@ async function uploadFileToDrive(file){
   return `https://drive.google.com/file/d/${uploaded.id}/view?usp=sharing`;
 }
 
+async function checkGrantedScopes(){
+  try{
+    const res = await fetch(`https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${driveAccessToken}`);
+    const data = await res.json();
+    console.log('目前通行證實際擁有的權限範圍', data);
+    const scopes = data.scope || '';
+    const hasCalendar = scopes.includes('calendar');
+    const hasDrive = scopes.includes('drive');
+    alert(
+      '✅ Google 帳號已連結成功！\n\n' +
+      '這組通行證實際擁有的權限：\n' +
+      (hasCalendar ? '✅ 日曆權限：有\n' : '❌ 日曆權限：沒有拿到！這就是 403 的原因\n') +
+      (hasDrive ? '✅ 雲端硬碟權限：有\n' : '❌ 雲端硬碟權限：沒有拿到\n') +
+      '\n完整範圍：' + scopes
+    );
+  }catch(e){
+    console.error('查詢權限範圍失敗', e);
+    alert('✅ 已連結，但查詢實際權限範圍時發生錯誤：' + e.message);
+  }
+}
+
 function connectGoogleAccount(){
   // 直接整頁導向 Google 授權頁面，完成後會自動帶著通行證跳轉回這一頁
   // （enterApp 裡已經有偵測邏輯，回來後會自動顯示「已連結」）
@@ -1041,7 +1062,7 @@ function enterApp(){
     window.__googleConnectAlertShown = true;
     const statusEl = document.getElementById('google-connect-status');
     if(statusEl){ statusEl.textContent = '✅ 已連結（從剛才的授權自動偵測到）'; statusEl.style.color = 'var(--good)'; }
-    alert('✅ Google 帳號已連結成功！日曆同步／雲端硬碟上傳現在可以使用了。');
+    checkGrantedScopes();
   }
   document.getElementById('ann-publish-card').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
   document.getElementById('tab-staff').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
@@ -3375,4 +3396,4 @@ function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':
 function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"\\'"); }
 </script>
 </body>
-</html>v9.19.33
+</html>v9.19.4
