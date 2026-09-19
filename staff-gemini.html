@@ -88,6 +88,14 @@
   .modal h3{margin-top:0;}
   .modal-close{float:right;background:none;color:var(--ink-soft);font-size:20px;padding:0;}
 
+  /* 平板/桌機螢幕：彈出視窗加大加寬，並置中顯示（不貼齊底部），比較好操作 */
+  @media (min-width:760px){
+    .modal-bg{align-items:center;}
+    .modal{max-width:640px;max-height:80vh;border-radius:16px;}
+    #modal-ann .modal{max-width:720px;}
+    #modal-signature .modal{max-width:640px;}
+  }
+
   .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:20px;font-size:13px;z-index:30;opacity:0;transition:opacity .25s;pointer-events:none;}
   .toast.show{opacity:1;}
   .who-bar{font-size:12px;color:var(--ink-soft);display:flex;justify-content:space-between;align-items:center;padding:10px 16px;font-family:'IBM Plex Mono',monospace;}
@@ -600,7 +608,7 @@
 </div>
 
 <!-- MODAL: signature pad -->
-<div class="modal-bg" id="modal-signature">
+<div class="modal-bg" id="modal-signature" style="z-index:40;">
   <div class="modal">
     <button class="modal-close" onclick="closeModal('modal-signature')">&times;</button>
     <h3 id="signature-title">請簽名確認</h3>
@@ -3396,4 +3404,4 @@ function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':
 function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"\\'"); }
 </script>
 </body>
-</html>v9.19.4
+</html>v9.19.5
