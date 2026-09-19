@@ -745,31 +745,38 @@ const db = firebase.firestore();
 const DRIVE_CLIENT_ID = '668779704922-bi6hnutrnbsbdgpskjs3aadkf43eakh0.apps.googleusercontent.com';
 const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/calendar.events';
 const LEAVE_CALENDAR_ID = '5d90e06a827dc4daebaf9fa575da3ceb08dd0289568c470184e95d24b0255237@group.calendar.google.com';
-let driveTokenClient = null;
+const GOOGLE_REDIRECT_URI = window.location.origin + window.location.pathname; // 一定要跟這個網址完全一致地登記在「已授權的重新導向URI」
 let driveAccessToken = null;
 
-function ensureDriveTokenClient(){
-  if(driveTokenClient) return;
-  if(typeof google === 'undefined' || !google.accounts){
-    throw new Error('Google 登入元件尚未載入完成，請稍等一下再試一次');
+/* 改成「整頁跳轉」做 Google 授權，不再用彈出視窗——
+   手機／平板瀏覽器對彈出視窗的處理方式差異很大，整頁跳轉是唯一在所有裝置上都可靠的做法 */
+(function captureTokenFromUrlHash(){
+  if(window.location.hash && window.location.hash.includes('access_token')){
+    const params = new URLSearchParams(window.location.hash.slice(1));
+    const token = params.get('access_token');
+    if(token){
+      driveAccessToken = token;
+      console.log('已從網址列自動撈到 Google 授權通行證');
+    }
+    history.replaceState(null, '', window.location.pathname + window.location.search);
   }
-  driveTokenClient = google.accounts.oauth2.initTokenClient({
+})();
+
+function redirectToGoogleAuth(){
+  const params = new URLSearchParams({
     client_id: DRIVE_CLIENT_ID,
+    redirect_uri: GOOGLE_REDIRECT_URI,
+    response_type: 'token',
     scope: GOOGLE_SCOPE,
-    callback: ()=>{} // 個別呼叫時會覆寫
+    include_granted_scopes: 'true',
+    prompt: 'consent'
   });
+  window.location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + params.toString();
 }
 
 function getDriveAccessToken(){
-  return new Promise((resolve, reject)=>{
-    ensureDriveTokenClient();
-    driveTokenClient.callback = (resp)=>{
-      if(resp.error){ reject(resp); return; }
-      driveAccessToken = resp.access_token;
-      resolve(driveAccessToken);
-    };
-    driveTokenClient.requestAccessToken({ prompt: driveAccessToken ? '' : 'consent' });
-  });
+  if(driveAccessToken) return Promise.resolve(driveAccessToken);
+  return Promise.reject(new Error('尚未連結 Google 帳號，請先點「🔗 連結 Google 帳號」完成授權'));
 }
 
 async function uploadFileToDrive(file){
@@ -797,27 +804,10 @@ async function uploadFileToDrive(file){
   return `https://drive.google.com/file/d/${uploaded.id}/view?usp=sharing`;
 }
 
-async function connectGoogleAccount(){
-  const btn = document.getElementById('google-connect-btn');
-  const statusEl = document.getElementById('google-connect-status');
-  btn.disabled = true;
-  btn.textContent = '連結中，請完成跳出的 Google 授權視窗…';
-  try{
-    const token = await getDriveAccessToken();
-    console.log('Google token 取得成功', token ? token.slice(0,10)+'...' : token);
-    statusEl.textContent = '✅ 已連結，日曆同步／雲端硬碟上傳現在可以正常運作';
-    statusEl.style.color = 'var(--good)';
-    alert('✅ 連結成功！日曆同步跟雲端硬碟上傳現在可以正常運作了。');
-  }catch(e){
-    console.error('Google 授權失敗', e);
-    const msg = '連結失敗：' + (e.message || e.error || JSON.stringify(e) || '未知錯誤');
-    statusEl.textContent = msg;
-    statusEl.style.color = 'var(--bad)';
-    alert('❌ ' + msg + '\n\n請確認：1) 有沒有跳出 Google 授權視窗並點了繼續 2) 這個帳號是否已加入測試使用者名單');
-  }finally{
-    btn.disabled = false;
-    btn.textContent = '🔗 連結 Google 帳號';
-  }
+function connectGoogleAccount(){
+  // 直接整頁導向 Google 授權頁面，完成後會自動帶著通行證跳轉回這一頁
+  // （enterApp 裡已經有偵測邏輯，回來後會自動顯示「已連結」）
+  redirectToGoogleAuth();
 }
 
 async function uploadToDriveAndFillLink(fileInputId, linkInputId, btn){
@@ -1047,6 +1037,12 @@ function enterApp(){
   document.getElementById('app').style.display = 'block';
   document.getElementById('who-label').textContent = `${CURRENT_USER.name} · ${CURRENT_USER.store} · ${roleLabel(CURRENT_USER.role)}${CURRENT_USER.level ? ' · '+CURRENT_USER.level : ''}`;
   document.getElementById('clock-store-select').value = CURRENT_USER.store;
+  if(driveAccessToken && !window.__googleConnectAlertShown){
+    window.__googleConnectAlertShown = true;
+    const statusEl = document.getElementById('google-connect-status');
+    if(statusEl){ statusEl.textContent = '✅ 已連結（從剛才的授權自動偵測到）'; statusEl.style.color = 'var(--good)'; }
+    alert('✅ Google 帳號已連結成功！日曆同步／雲端硬碟上傳現在可以使用了。');
+  }
   document.getElementById('ann-publish-card').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
   document.getElementById('tab-staff').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
   document.getElementById('tab-payroll').style.display = isManager(CURRENT_USER.role) ? 'block' : 'none';
@@ -3379,4 +3375,4 @@ function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':
 function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"\\'"); }
 </script>
 </body>
-</html>v9.19.2
+</html>v9.19.33
