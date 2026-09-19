@@ -1690,6 +1690,7 @@ function openEditLeave(id){
   document.getElementById('edit-leave-type').value = d.type;
   document.getElementById('edit-leave-start').value = d.start;
   document.getElementById('edit-leave-end').value = d.end;
+  document.getElementById('edit-leave-end').min = d.start; // 重設限制，避免沿用上一次編輯留下的舊限制
   document.getElementById('edit-leave-reason').value = d.reason || '';
   document.getElementById('modal-edit-leave').classList.add('active');
 }
@@ -3404,4 +3405,4 @@ function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':
 function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"\\'"); }
 </script>
 </body>
-</html>v9.19.5
+</html>v9.19.6
