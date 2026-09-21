@@ -548,7 +548,8 @@
               <div class="field" style="margin-bottom:4px;"><label>平日前2小時（1.34倍）時數</label><input type="number" min="0" value="0" id="ot-h1" oninput="updatePayrollTotals()"></div>
               <div class="field" style="margin-bottom:4px;"><label>平日超過2小時（1.67倍）時數</label><input type="number" min="0" value="0" id="ot-h2" oninput="updatePayrollTotals()"></div>
             </div>
-            <div class="field" style="margin-bottom:0;"><label>休息日／例假日加班（2倍）時數</label><input type="number" min="0" value="0" id="ot-h3" oninput="updatePayrollTotals()"></div>
+            <div class="field" style="margin-bottom:4px;"><label>休息日出勤時數（累進：前2hr×1.34、3~8hr×1.67、超過8hr更高）</label><input type="number" min="0" value="0" id="ot-h3" oninput="updatePayrollTotals()"></div>
+            <div class="field" style="margin-bottom:0;"><label>例假日／國定假日出勤天數（加發一日工資，底薪÷30）</label><input type="number" min="0" value="0" id="ot-holiday-days" oninput="updatePayrollTotals()"></div>
           </div>
 
           <div class="item">
@@ -2237,7 +2238,7 @@ async function calcPayroll(){
     : '本月無遲到紀錄';
 
   document.getElementById('pr-hourly-rate').textContent = isPT ? (emp.hourlyRate||190) : Math.round(prBaseSalary/30/8);
-  document.getElementById('ot-h1').value = 0; document.getElementById('ot-h2').value = 0; document.getElementById('ot-h3').value = 0;
+  document.getElementById('ot-h1').value = 0; document.getElementById('ot-h2').value = 0; document.getElementById('ot-h3').value = 0; document.getElementById('ot-holiday-days').value = 0;
   document.getElementById('pr-extra-list').innerHTML = '';
   extraItemSeq = 0;
   addExtraItemRow();
@@ -2303,10 +2304,22 @@ function updatePayrollTotals(){
     : '毛利未達11萬門檻，不發放此項分紅';
 
   const hourly = prBaseSalary/30/8;
+  const dayRate = prBaseSalary/30;
   const h1 = Number(document.getElementById('ot-h1').value) || 0;
   const h2 = Number(document.getElementById('ot-h2').value) || 0;
-  const h3 = Number(document.getElementById('ot-h3').value) || 0;
-  const overtimePay = Math.round(hourly*1.34*h1 + hourly*1.67*h2 + hourly*2*h3);
+  const h3 = Number(document.getElementById('ot-h3').value) || 0; // 休息日出勤時數，累進計算
+  const holidayDays = Number(document.getElementById('ot-holiday-days').value) || 0; // 例假日/國定假日出勤天數，加發一日工資
+
+  // 休息日出勤：前2小時1.34倍、第3~8小時1.67倍、第9~10小時2.67倍、第11~12小時3.33倍
+  const restTier1 = Math.min(h3, 2);
+  const restTier2 = Math.min(Math.max(h3-2, 0), 6);
+  const restTier3 = Math.min(Math.max(h3-8, 0), 2);
+  const restTier4 = Math.max(h3-10, 0);
+  const restDayPay = hourly*(4/3)*restTier1 + hourly*(5/3)*restTier2 + hourly*(8/3)*restTier3 + hourly*(10/3)*restTier4;
+
+  const holidayPay = dayRate * holidayDays;
+
+  const overtimePay = Math.round(hourly*1.34*h1 + hourly*1.67*h2 + restDayPay + holidayPay);
   document.getElementById('pr-overtime').textContent = '+' + overtimePay.toLocaleString();
 
   const extra = collectExtraItems().reduce((sum,it)=> sum + it.amount, 0);
@@ -2328,7 +2341,7 @@ function collectPayrollData(){
     bonusAmount: Number(document.getElementById('pr-bonus').textContent.replace(/[^0-9-]/g,'')) || 0,
     grossProfit: Number(document.getElementById('pr-gross-profit').value) || 0,
     profitBonus: Number(document.getElementById('pr-profit-bonus').textContent.replace(/[^0-9-]/g,'')) || 0,
-    overtimeHours: { h1: Number(document.getElementById('ot-h1').value)||0, h2: Number(document.getElementById('ot-h2').value)||0, h3: Number(document.getElementById('ot-h3').value)||0 },
+    overtimeHours: { h1: Number(document.getElementById('ot-h1').value)||0, h2: Number(document.getElementById('ot-h2').value)||0, h3: Number(document.getElementById('ot-h3').value)||0, holidayDays: Number(document.getElementById('ot-holiday-days').value)||0 },
     overtimePay: Number(document.getElementById('pr-overtime').textContent.replace(/[^0-9-]/g,'')) || 0,
     extraItems: collectExtraItems(),
     extra: collectExtraItems().reduce((sum,it)=> sum + it.amount, 0),
@@ -2395,7 +2408,7 @@ function printPayslip(){
         <tr><td>績效總分</td><td>${data.totalScore} 分</td></tr>
         <tr><td>績效獎金</td><td>+${data.bonusAmount.toLocaleString()}</td></tr>
         <tr><td>業績分紅（毛利 ${data.grossProfit.toLocaleString()}）</td><td>+${data.profitBonus.toLocaleString()}</td></tr>
-        <tr><td>加班費（1.34倍${data.overtimeHours.h1}h／1.67倍${data.overtimeHours.h2}h／2倍${data.overtimeHours.h3}h）</td><td>+${data.overtimePay.toLocaleString()}</td></tr>
+        <tr><td>加班費（平日1.34倍${data.overtimeHours.h1}h／1.67倍${data.overtimeHours.h2}h／休息日${data.overtimeHours.h3}h／例假國定假日${data.overtimeHours.holidayDays}天）</td><td>+${data.overtimePay.toLocaleString()}</td></tr>
         <tr><td>其他加項${data.extraItems.length ? '（'+data.extraItems.map(it=>it.label+' +'+it.amount.toLocaleString()).join('、')+'）' : ''}</td><td>+${data.extra.toLocaleString()}</td></tr>
         <tr><td>其他調整</td><td>${data.adjust.toLocaleString()}</td></tr>
         <tr class="total"><td>建議薪資合計</td><td>${data.suggestedTotal.toLocaleString()}</td></tr>
@@ -2448,7 +2461,7 @@ ${data.isPT ? '本月工資（時薪制）' : '底薪'}：${data.baseSalary.toLo
 績效總分：${data.totalScore} 分
 績效獎金：+${data.bonusAmount.toLocaleString()}
 業績分紅（毛利 ${data.grossProfit.toLocaleString()}）：+${data.profitBonus.toLocaleString()}
-加班費（1.34倍${data.overtimeHours.h1}h／1.67倍${data.overtimeHours.h2}h／2倍${data.overtimeHours.h3}h）：+${data.overtimePay.toLocaleString()}
+加班費（平日1.34倍${data.overtimeHours.h1}h／1.67倍${data.overtimeHours.h2}h／休息日${data.overtimeHours.h3}h／例假國定假日${data.overtimeHours.holidayDays}天）：+${data.overtimePay.toLocaleString()}
 其他加項：+${data.extra.toLocaleString()}${data.extraItems.length ? '（'+data.extraItems.map(it=>it.label+' +'+it.amount.toLocaleString()).join('、')+'）' : ''}
 其他調整：${data.adjust.toLocaleString()}
 建議薪資合計：${data.suggestedTotal.toLocaleString()} 元
@@ -3448,4 +3461,4 @@ function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':
 function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"\\'"); }
 </script>
 </body>
-</html>V9.21.1
+</html>V9*21.2
