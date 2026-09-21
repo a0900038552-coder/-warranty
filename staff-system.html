@@ -33,7 +33,9 @@
   .field label{display:block;font-size:12px;color:var(--ink-soft);margin-bottom:5px;font-family:'IBM Plex Mono',monospace;}
   input,select,textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--card);font-size:15px;font-family:inherit;color:var(--ink);}
   input:focus,select:focus,textarea:focus{outline:2px solid var(--copper);outline-offset:1px;}
-  button{cursor:pointer;border:none;border-radius:8px;padding:11px 16px;font-size:14px;font-weight:700;font-family:'Noto Sans TC',sans-serif;}
+  button{cursor:pointer;border:none;border-radius:8px;padding:11px 16px;font-size:14px;font-weight:700;font-family:'Noto Sans TC',sans-serif;transition:transform .12s ease,opacity .12s ease,background-color .15s ease;}
+  button:active{transform:scale(.96);}
+  button:disabled{opacity:.55;transform:none;cursor:default;}
   .btn-primary{background:var(--copper);color:#fff;} .btn-primary:hover{background:var(--copper-dark);}
   .btn-ghost{background:transparent;color:var(--ink-soft);border:1px solid var(--line);}
   .btn-good{background:var(--good);color:#fff;} .btn-bad{background:var(--bad);color:#fff;}
@@ -45,8 +47,10 @@
   nav.tabs button.active{color:var(--copper-dark);border-bottom:3px solid var(--copper);}
 
   main{padding:16px 16px 60px;max-width:640px;margin:0 auto;}
-  .panel{display:none;} .panel.active{display:block;}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px;}
+  .panel{display:none;} .panel.active{display:block;animation:panelFadeIn .28s ease;}
+  @keyframes panelFadeIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px;transition:box-shadow .2s ease,transform .2s ease;}
+  @media (hover:hover){ .card:hover{box-shadow:0 4px 16px rgba(28,31,38,.08);transform:translateY(-1px);} }
   .card h3{margin:0 0 12px;font-size:15px;}
   .rowline{display:flex;gap:10px;} .rowline>*{flex:1;}
 
@@ -57,7 +61,8 @@
   .badge.unread{background:#f3dbd3;color:var(--bad);}
   .badge.read{background:#e9e6df;color:var(--ink-soft);}
 
-  .item{border-top:1px solid var(--line);padding:12px 0;cursor:pointer;}
+  .item{border-top:1px solid var(--line);padding:12px 0;cursor:pointer;transition:background-color .15s ease,padding-left .15s ease;}
+  @media (hover:hover){ .item:hover{background-color:rgba(184,110,58,.05);padding-left:6px;} }
   .item:first-child{border-top:none;padding-top:0;}
   .item-head{display:flex;justify-content:space-between;align-items:center;gap:8px;}
   .item-head strong{font-size:14px;}
@@ -83,7 +88,14 @@
   .pin-star{background:#fff8ee;}
 
   .modal-bg{display:none;position:fixed;inset:0;background:rgba(28,31,38,.5);z-index:20;align-items:flex-end;justify-content:center;}
-  .modal-bg.active{display:flex;}
+  .modal-bg.active{display:flex;animation:modalBgFade .2s ease;}
+  .modal-bg.active .modal{animation:modalSlideUp .28s cubic-bezier(.2,.8,.3,1);}
+  @keyframes modalBgFade{from{opacity:0;}to{opacity:1;}}
+  @keyframes modalSlideUp{from{opacity:0;transform:translateY(24px);}to{opacity:1;transform:translateY(0);}}
+  @media (min-width:760px){
+    .modal-bg.active .modal{animation:modalPopIn .22s cubic-bezier(.2,.8,.3,1);}
+    @keyframes modalPopIn{from{opacity:0;transform:scale(.96);}to{opacity:1;transform:scale(1);}}
+  }
   .modal{background:#fff;border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:480px;max-height:85vh;overflow-y:auto;}
   .modal h3{margin-top:0;}
   .modal-close{float:right;background:none;color:var(--ink-soft);font-size:20px;padding:0;}
@@ -96,14 +108,15 @@
     #modal-signature .modal{max-width:640px;}
   }
 
-  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:20px;font-size:13px;z-index:30;opacity:0;transition:opacity .25s;pointer-events:none;}
-  .toast.show{opacity:1;}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--ink);color:#fff;padding:10px 18px;border-radius:20px;font-size:13px;z-index:30;opacity:0;transition:opacity .25s ease,transform .25s ease;pointer-events:none;}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
   .who-bar{font-size:12px;color:var(--ink-soft);display:flex;justify-content:space-between;align-items:center;padding:10px 16px;font-family:'IBM Plex Mono',monospace;}
   .who-bar button{background:none;color:var(--copper-dark);font-size:12px;padding:2px;font-weight:700;}
   .readers{font-size:11px;color:var(--ink-soft);margin-top:8px;font-family:'IBM Plex Mono',monospace;}
   .tab-dot{position:relative;}
   .tab-dot::after{content:'';position:absolute;top:8px;right:16px;width:8px;height:8px;border-radius:50%;background:var(--bad);}
-  .tab-badge{position:absolute;top:8px;right:14px;background:var(--bad);color:#fff;font-size:10px;font-weight:700;min-width:16px;height:16px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 4px;line-height:1;}
+  .tab-badge{position:absolute;top:8px;right:14px;background:var(--bad);color:#fff;font-size:10px;font-weight:700;min-width:16px;height:16px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 4px;line-height:1;animation:badgePop .3s cubic-bezier(.34,1.56,.64,1);}
+  @keyframes badgePop{from{transform:scale(0);}to{transform:scale(1);}}
   .leave-photo-thumb{width:56px;height:56px;object-fit:cover;border-radius:8px;margin-top:8px;cursor:pointer;border:1px solid var(--line);}
   .item.unseen{background:#fff8ee;margin:0 -16px;padding:12px 16px;border-radius:8px;}
 
@@ -124,7 +137,9 @@
     display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;
     border-radius:0;padding:14px 18px;color:var(--ink-soft);font-weight:700;font-size:14px;
     border-left:3px solid transparent;position:relative;
+    transition:color .18s ease,border-left-color .18s ease,background-color .18s ease;
   }
+  aside.sidebar button:active{transform:none;}
   aside.sidebar button.active{color:var(--copper-dark);border-left:3px solid var(--copper);background:#fdf6ef;}
   aside.sidebar .tab-dot::after{top:14px;right:14px;}
   .menu-toggle{display:none;background:none;color:#fff;font-size:20px;padding:2px 6px;}
@@ -171,7 +186,7 @@
 <body>
 
 <header class="top">
-  <h1>復原者 · 內部系統</h1>
+  <h1>復原者 · 內部系統V2</h1>
   <p>STAFF OPS / 楠梓店 · 德賢店</p>
 </header>
 <div class="trace"></div>
@@ -3461,4 +3476,4 @@ function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':
 function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"\\'"); }
 </script>
 </body>
-</html>V9*21.2
+</html>V9.21.3
