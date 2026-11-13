@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>復原者 保固管理｜Repair CARE+</title>
+<style>
+:root{--ink:#16181d;--mute:#6b7280;--line:#e5e7eb;--bg:#f4f5f7;--card:#fff;--red:#d71920;--green:#15803d;--orange:#c2410c;--blue:#1d4ed8}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;background:var(--bg);color:var(--ink);font-size:15px;line-height:1.5}
+button,input,select,textarea{font:inherit}
+.hidden{display:none!important}
+
+/* login */
+#login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.login-box{background:var(--card);border-radius:14px;padding:28px 24px;width:100%;max-width:360px;box-shadow:0 8px 30px rgba(0,0,0,.08)}
+.login-box h1{font-size:20px;margin-bottom:4px}
+.login-box p{color:var(--mute);font-size:13px;margin-bottom:18px}
+
+/* header */
+header{background:var(--ink);color:#fff;padding:12px 16px;border-bottom:4px solid var(--red);position:sticky;top:0;z-index:20}
+.hd-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;max-width:980px;margin:0 auto}
+.logo{font-weight:900;font-size:17px;letter-spacing:1px}
+.logo small{display:block;font-weight:400;font-size:11px;color:#a1a6b0;letter-spacing:2px}
+.hd-right{display:flex;align-items:center;gap:8px;font-size:12px;color:#c9ccd3}
+.hd-right select{background:#2a2d35;color:#fff;border:1px solid #444;border-radius:8px;padding:5px 8px}
+.btn-link{white-space:nowrap;background:none;border:1px solid #555;color:#ddd;border-radius:8px;padding:4px 10px;cursor:pointer}
+
+nav{max-width:980px;margin:12px auto 0;padding:0 16px;display:flex;gap:6px;flex-wrap:wrap}
+nav button{border:1px solid var(--line);background:#fff;border-radius:99px;padding:7px 16px;cursor:pointer;font-weight:600}
+nav button.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+main{max-width:980px;margin:0 auto;padding:14px 16px 60px}
+
+/* common */
+.panel{background:var(--card);border-radius:12px;padding:16px;margin-bottom:12px;border:1px solid var(--line)}
+.panel h2{font-size:16px;margin-bottom:10px}
+label{display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:4px}
+input,select,textarea{width:100%;border:1px solid #d1d5db;border-radius:8px;padding:9px 10px;background:#fff}
+textarea{min-height:60px;resize:vertical}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.btn{border:none;border-radius:8px;padding:10px 16px;font-weight:700;cursor:pointer}
+.btn-primary{background:var(--red);color:#fff}
+.btn-dark{background:var(--ink);color:#fff}
+.btn-ghost{background:#fff;border:1px solid #d1d5db;color:var(--ink)}
+.btn-danger{background:#fff;border:1px solid #fca5a5;color:#b91c1c}
+.btn-sm{padding:5px 12px;font-size:13px}
+.hint{font-size:12px;color:var(--mute);margin-top:4px}
+.row-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.check{display:flex;gap:8px;align-items:flex-start;font-weight:600}
+.check input{width:auto;margin-top:4px}
+
+/* stats */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+.stat{background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px;text-align:center}
+.stat b{display:block;font-size:24px;font-family:Arial,sans-serif}
+.stat span{font-size:12px;color:var(--mute)}
+@media(max-width:560px){.stats{grid-template-columns:repeat(2,1fr)}}
+
+/* cards */
+.search{position:relative;margin-bottom:12px}
+.search input{padding-left:36px;font-size:16px}
+.search::before{content:"🔍";position:absolute;left:11px;top:9px}
+.card{background:#fff;border:1px solid var(--line);border-left:5px solid var(--green);border-radius:12px;padding:12px 14px;margin-bottom:10px}
+.card.expiring{border-left-color:var(--orange)}
+.card.expired{border-left-color:#9ca3af}
+.card-top{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+.name{font-weight:800;font-size:16px}
+.chip{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;margin-left:4px;vertical-align:middle}
+.chip-branch{background:#eef2ff;color:var(--blue)}
+.chip-care{background:#fee2e2;color:var(--red)}
+.chip-blocked{background:#374151;color:#fff}
+.chip-manual{background:#fef3c7;color:#92400e}
+.chip-legacy{background:#f3f4f6;color:#6b7280}
+.badge{font-size:12px;font-weight:800;padding:3px 10px;border-radius:99px;white-space:nowrap}
+.b-valid{background:#dcfce7;color:var(--green)}
+.b-expiring{background:#ffedd5;color:var(--orange)}
+.b-expired{background:#f3f4f6;color:#6b7280}
+.phone{color:var(--mute);font-size:13px}
+.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:6px 14px;margin-top:8px;font-size:13px}
+.kv div span{display:block;color:var(--mute);font-size:11px}
+.kv div b{font-weight:700}
+.care-off{color:var(--mute)}
+.note{margin-top:8px;font-size:13px;background:#f9fafb;border-radius:8px;padding:6px 10px}
+.warn{margin-top:8px;font-size:13px;background:#fff1f2;color:#9f1239;border-radius:8px;padding:6px 10px}
+.card .row-actions{margin-top:10px}
+.empty{text-align:center;color:var(--mute);padding:40px 0}
+.more{text-align:center;margin:8px 0}
+
+/* table */
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:6px;border-bottom:1px solid var(--line);text-align:left}
+th{color:var(--mute);font-weight:600}
+
+/* modal */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:flex-start;justify-content:center;padding:30px 12px;overflow:auto;z-index:50}
+.modal .panel{width:100%;max-width:640px}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:99px;font-size:14px;opacity:0;transition:.25s;pointer-events:none;z-index:99}
+.toast.show{opacity:1}
+.drop{border:2px dashed #cbd5e1;border-radius:12px;padding:28px;text-align:center;color:var(--mute);cursor:pointer}
+.drop:hover{border-color:var(--red);color:var(--red)}
+</style>
+</head>
+<body>
+
+<!-- ── 登入 ── -->
+<section id="login" class="hidden">
+  <form class="login-box" id="loginForm">
+    <h1>復原者 保固管理</h1>
+    <p>Repair CARE+｜員工登入</p>
+    <label>電子郵件</label>
+    <input id="lg-email" type="email" autocomplete="username" required>
+    <label style="margin-top:10px">密碼</label>
+    <input id="lg-pass" type="password" autocomplete="current-password" required>
+    <button class="btn btn-primary" style="width:100%;margin-top:16px" type="submit">登入</button>
+    <div id="lg-err" class="hint" style="color:#b91c1c"></div>
+  </form>
+</section>
+
+<!-- ── 主畫面 ── -->
+<section id="app" class="hidden">
+<header>
+  <div class="hd-row">
+    <div class="logo">復原者 保固管理<small>REPAIR CARE+ SYSTEM</small></div>
+    <div class="hd-right">
+      <select id="branchFilter">
+        <option value="">全部分店</option>
+        <option>楠梓店</option>
+        <option>德賢店</option>
+      </select>
+      <span id="who"></span>
+      <button class="btn-link" id="logoutBtn">登出</button>
+    </div>
+  </div>
+</header>
+
+<nav>
+  <button data-tab="search" class="active">🔍 查詢</button>
+  <button data-tab="add">＋ 新增</button>
+  <button data-tab="import">📊 匯入報表</button>
+  <button data-tab="manage">⚙️ 管理</button>
+</nav>
+
+<main>
+  <!-- 查詢 -->
+  <div id="tab-search">
+    <div class="stats" id="stats"></div>
+    <div class="search"><input id="q" type="search" placeholder="輸入電話、姓名或品項…"></div>
+    <div id="list"></div>
+  </div>
+
+  <!-- 新增 -->
+  <div id="tab-add" class="hidden">
+    <div class="panel">
+      <h2>新增保固紀錄</h2>
+      <form id="addForm"></form>
+    </div>
+  </div>
+
+  <!-- 匯入 -->
+  <div id="tab-import" class="hidden">
+    <div class="panel">
+      <h2>匯入每月 Excel 報表</h2>
+      <div class="drop" id="drop">把 xlsx 檔拖到這裡，或點一下選擇檔案</div>
+      <input id="xlsxFile" type="file" accept=".xlsx,.xls" class="hidden">
+      <p class="hint">系統會從報表上的「單位：復原者OO店」自動判斷分店；品項會自動判斷保固類別，匯入前可預覽。已存在的紀錄（同電話＋同日期＋同品項）會自動跳過。</p>
+    </div>
+    <div class="panel hidden" id="preview">
+      <h2 id="pv-title"></h2>
+      <div class="grid" style="margin-bottom:10px">
+        <div><label>偵測不到分店時，歸到</label>
+          <select id="pv-branch"><option>楠梓店</option><option>德賢店</option></select></div>
+      </div>
+      <div style="overflow-x:auto" id="pv-table"></div>
+      <div class="row-actions">
+        <button class="btn btn-primary" id="pv-ok">確認匯入</button>
+        <button class="btn btn-ghost" id="pv-cancel">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 管理 -->
+  <div id="tab-manage" class="hidden">
+    <div class="panel">
+      <h2>匯出／備份</h2>
+      <div class="row-actions" style="margin-top:0">
+        <button class="btn btn-dark" id="exCsv">匯出 CSV（Excel 可開）</button>
+        <button class="btn btn-ghost" id="exJson">下載完整備份（JSON）</button>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>從舊保固系統搬資料</h2>
+      <p class="hint" style="margin-bottom:10px">在舊系統「管理」頁按「匯出 JSON」，再把檔案選到這裡。舊紀錄會保留當時的保固月數（換算成到期日），不會套用新規則，也不會有 CARE+。舊系統的資料完全不會被改動。</p>
+      <button class="btn btn-ghost" id="legacyBtn">選擇舊系統 JSON 檔</button>
+      <input id="legacyFile" type="file" accept=".json" class="hidden">
+    </div>
+    <div class="panel">
+      <h2>保固規則（目前設定）</h2>
+      <div id="rulesTable"></div>
+      <p class="hint">CARE+：維修日起 14 天內，客人用 LINE 傳送電話完成登錄即啟用；客人封鎖 LINE 期間 CARE+ 不適用，重新加回好友即恢復。</p>
+    </div>
+  </div>
+</main>
+</section>
+
+<!-- 編輯視窗 -->
+<div class="modal hidden" id="editModal">
+  <div class="panel">
+    <h2>編輯保固紀錄</h2>
+    <form id="editForm"></form>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+/* ════════ 1. Firebase 設定（新專案，與舊系統完全分開）════════ */
+const firebaseConfig = {
+  apiKey: "PASTE_API_KEY",
+  authDomain: "PASTE_PROJECT_ID.firebaseapp.com",
+  projectId: "PASTE_PROJECT_ID",
+  storageBucket: "PASTE_PROJECT_ID.firebasestorage.app",
+  messagingSenderId: "PASTE_SENDER_ID",
+  appId: "PASTE_APP_ID"
+};
+
+/* ════════ 2. 保固規則（對應官網 /123 與 Repair CARE+）════════ */
+const BRANCHES = ['楠梓店', '德賢店'];
+const CARE_BIND_WINDOW_DAYS = 14;   // 維修日後幾天內可用 LINE 登錄 CARE+
+const CATS = {
+  screen:  { label: '液晶／螢幕', base: 30, care: 60 },
+  battery: { label: '電池',       base: 90, care: 90 },
+  port:    { label: '尾插排／板', base: 30, care: 60 },
+  camera:  { label: '前後鏡頭',   base: 30, care: 30 },
+  board:   { label: '主機板 IC',  base: 30, care: 30 },
+  other:   { label: '其他（依店家告知）', base: null, care: 0 },
+  none:    { label: '無保固項目', base: 0,  care: 0 },
+};
+function autoCategory(type) {
+  const t = String(type || '').replace(/\s+/g, '');
+  if (/保護貼|玻璃貼|保護殼|手機殼|傳輸線|充電線|充電頭|旅充|軟體|刷機|升級|系統|外殼|中框|按鍵/.test(t)) return 'none';
+  if (/電池/.test(t)) return 'battery';
+  if (/液晶|螢幕|面板|總成|觸控/.test(t)) return 'screen';
+  if (/尾插|充電孔|充電口|充電座|充電板|小板/.test(t)) return 'port';
+  if (/鏡頭|相機|視訊/.test(t)) return 'camera';
+  if (/主機板|主板|IC|機板/i.test(t)) return 'board';
+  return 'other';
+}
+
+/* ════════ 3. 初始化 ════════ */
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = id => document.getElementById(id);
+
+let records = [], bindings = [], lineUsers = {};
+let unsubs = [];
+let pendingRows = [], pendingFile = '';
+let editingId = null;
+let showLimit = 50;
+
+onAuthStateChanged(auth, user => {
+  unsubs.forEach(u => u()); unsubs = [];
+  if (!user) {
+    $('login').classList.remove('hidden'); $('app').classList.add('hidden');
+    return;
+  }
+  $('login').classList.add('hidden'); $('app').classList.remove('hidden');
+  $('who').textContent = user.email;
+  const saved = localStorageGet('care.branch');
+  if (saved !== null) $('branchFilter').value = saved;
+  const err = e => toast('⚠️ 讀取失敗：' + e.message);
+  unsubs.push(onSnapshot(collection(db, 'records'), s => {
+    records = s.docs.map(d => ({ id: d.id, ...d.data() })); render();
+  }, err));
+  unsubs.push(onSnapshot(collection(db, 'care_bindings'), s => {
+    bindings = s.docs.map(d => ({ id: d.id, ...d.data() })); render();
+  }, err));
+  unsubs.push(onSnapshot(collection(db, 'line_users'), s => {
+    lineUsers = {}; s.docs.forEach(d => lineUsers[d.id] = d.data()); render();
+  }, err));
+});
+
+$('loginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  $('lg-err').textContent = '';
+  try { await signInWithEmailAndPassword(auth, $('lg-email').value.trim(), $('lg-pass').value); }
+  catch (er) { $('lg-err').textContent = '登入失敗，請確認帳號密碼。'; }
+});
+$('logoutBtn').onclick = () => signOut(auth);
+
+/* ════════ 4. 日期與保固計算 ════════ */
+function parseD(s) { const [y, m, d] = String(s).slice(0, 10).split('-').map(Number); return new Date(y, m - 1, d); }
+function addDays(s, n) { const d = parseD(s); d.setDate(d.getDate() + n); return d; }
+function ymd(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+function show(d) { return d ? ymd(d).replace(/-/g, '/') : '—'; }
+function today() { const t = new Date(); t.setHours(0, 0, 0, 0); return t; }
+function diffDays(a, b) { return Math.round((b - a) / 86400000); }
+function normPhone(p) { let s = String(p || '').replace(/\D/g, ''); if (s.length === 9 && s[0] === '9') s = '0' + s; return s; }
+
+function careInfo(r) {
+  const eligible = Number(r.careDays) > 0;
+  const binding = eligible ? bindings.find(b =>
+    b.phone === r.phone && b.branch === r.branch &&
+    (() => { const k = diffDays(parseD(r.repairDate), new Date(b.boundAt)); return k >= -1 && k <= CARE_BIND_WINDOW_DAYS; })()
+  ) : null;
+  let state = 'none';
+  if (binding) state = (lineUsers[binding.lineUserId]?.status === 'blocked') ? 'blocked' : 'line';
+  else if (eligible && r.careManual) state = 'manual';
+  return { eligible, binding, state, active: state === 'line' || state === 'manual' };
+}
+
+function status(r) {
+  const base = Number(r.baseDays) || 0;
+  const ci = careInfo(r);
+  const baseExp = base > 0 ? addDays(r.repairDate, base) : null;
+  const careExp = ci.eligible && baseExp ? addDays(r.repairDate, base + Number(r.careDays)) : null;
+  const effExp = ci.active ? careExp : baseExp;
+  if (!effExp) return { ci, baseExp, careExp, effExp, cls: 'expired', label: '無保固' };
+  const left = diffDays(today(), effExp);
+  if (left < 0) return { ci, baseExp, careExp, effExp, cls: 'expired', label: '已過保' };
+  return { ci, baseExp, careExp, effExp, cls: left <= 7 ? 'expiring' : 'valid', label: `剩 ${left} 天`, left };
+}
+
+/* ════════ 5. 畫面 ════════ */
+function visible() {
+  const br = $('branchFilter').value;
+  return records.filter(r => !br || r.branch === br);
+}
+
+function render() {
+  const list = visible();
+  const st = list.map(status);
+  $('stats').innerHTML = `
+    <div class="stat"><b>${list.length}</b><span>總紀錄</span></div>
+    <div class="stat"><b style="color:var(--green)">${st.filter(s => s.cls !== 'expired').length}</b><span>保固中</span></div>
+    <div class="stat"><b style="color:var(--orange)">${st.filter(s => s.cls === 'expiring').length}</b><span>7 天內到期</span></div>
+    <div class="stat"><b style="color:var(--red)">${st.filter(s => s.ci.active).length}</b><span>CARE+ 啟用</span></div>`;
+
+  const q = $('q').value.trim().toLowerCase();
+  let rows = list.filter(r => !q ||
+    (r.phone || '').includes(q.replace(/\D/g, '') || '\u0000') ||
+    (r.name || '').toLowerCase().includes(q) ||
+    (r.type || '').toLowerCase().includes(q));
+  rows.sort((a, b) => (b.repairDate || '').localeCompare(a.repairDate || ''));
+  const total = rows.length;
+  rows = rows.slice(0, showLimit);
+
+  if (!total) {
+    $('list').innerHTML = `<div class="empty">${records.length ? '找不到符合的紀錄' : '還沒有任何紀錄，可到「新增」或「匯入報表」建立'}</div>`;
+    return;
+  }
+  $('list').innerHTML = rows.map(card).join('') +
+    (total > rows.length ? `<div class="more"><button class="btn btn-ghost btn-sm" data-act="more">顯示更多（共 ${total} 筆）</button></div>` : '');
+}
+
+function card(r) {
+  const s = status(r), ci = s.ci;
+  const cat = CATS[r.category] || CATS.other;
+  let careCell, chips = '';
+  if (!ci.eligible) careCell = `<b class="care-off">不適用</b>`;
+  else if (ci.state === 'line') { careCell = `<b style="color:var(--red)">${show(s.careExp)}</b>`; chips += `<span class="chip chip-care">CARE+ LINE 已綁定</span>`; }
+  else if (ci.state === 'manual') { careCell = `<b style="color:var(--red)">${show(s.careExp)}</b>`; chips += `<span class="chip chip-manual">CARE+ 人工啟用</span>`; }
+  else if (ci.state === 'blocked') { careCell = `<b class="care-off">暫停（${show(s.careExp)}）</b>`; chips += `<span class="chip chip-blocked">LINE 已封鎖</span>`; }
+  else careCell = `<b class="care-off">未啟用</b>`;
+  if (r.source === 'legacy') chips += `<span class="chip chip-legacy">舊系統</span>`;
+
+  return `<div class="card ${s.cls}">
+    <div class="card-top">
+      <div><span class="name">${esc(r.name || '（未填）')}</span>
+        ${r.branch ? `<span class="chip chip-branch">${esc(r.branch)}</span>` : ''}${chips}
+        <div class="phone">📞 ${esc(r.phone)}</div></div>
+      <span class="badge b-${s.cls}">${s.label}</span>
+    </div>
+    <div class="kv">
+      <div><span>品項</span><b>${esc(r.type)}</b></div>
+      <div><span>保固類別</span><b>${cat.label}</b></div>
+      <div><span>維修日期</span><b>${show(parseD(r.repairDate))}</b></div>
+      <div><span>一般保固到期</span><b>${s.baseExp ? show(s.baseExp) : '無保固'}</b></div>
+      <div><span>CARE+ 到期</span>${careCell}</div>
+      <div><span>金額</span><b>${r.price ? 'NT$ ' + Number(String(r.price).replace(/[^\d.]/g, '') || 0).toLocaleString() : '—'}</b></div>
+    </div>
+    ${ci.state === 'blocked' ? `<div class="warn">客人目前封鎖了 ${esc(r.branch)} LINE，CARE+ 延長部分暫不適用；客人重新加入好友後自動恢復。一般保固不受影響。</div>` : ''}
+    ${r.note ? `<div class="note">📝 ${esc(r.note)}</div>` : ''}
+    ${r.followup ? `<div class="note">📌 後續：${esc(r.followup)}</div>` : ''}
+    <div class="row-actions">
+      <button class="btn btn-ghost btn-sm" data-act="edit" data-id="${r.id}">編輯</button>
+      <button class="btn btn-danger btn-sm" data-act="del" data-id="${r.id}">刪除</button>
+    </div>
+  </div>`;
+}
+
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+$('q').addEventListener('input', () => { showLimit = 50; render(); });
+$('branchFilter').addEventListener('change', () => { localStorageSet('care.branch', $('branchFilter').value); render(); });
+$('list').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.act === 'more') { showLimit += 100; render(); }
+  if (b.dataset.act === 'edit') openEdit(b.dataset.id);
+  if (b.dataset.act === 'del') delRecord(b.dataset.id);
+});
+
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('active', x === b));
+  ['search', 'add', 'import', 'manage'].forEach(t => $('tab-' + t).classList.toggle('hidden', t !== b.dataset.tab));
+});
+
+/* ════════ 6. 新增／編輯表單 ════════ */
+function formHTML(p) {
+  const catOpts = Object.entries(CATS).map(([k, c]) => `<option value="${k}">${c.label}${c.base ? `（${c.base} 天${c.care ? `，CARE+ ＋${c.care}` : ''}）` : ''}</option>`).join('');
+  return `
+  <div class="grid">
+    <div><label>分店 *</label><select name="branch">${BRANCHES.map(b => `<option>${b}</option>`).join('')}</select></div>
+    <div><label>維修／取件日期 *</label><input name="repairDate" type="date" required></div>
+    <div><label>客人姓名 *</label><input name="name" required></div>
+    <div><label>電話 *</label><input name="phone" type="tel" inputmode="numeric" placeholder="09xxxxxxxx" required></div>
+    <div><label>品項 *</label><input name="type" placeholder="例：iPhone 13 電池" required></div>
+    <div><label>保固類別</label><select name="category">${catOpts}</select><div class="hint">輸入品項後會自動判斷，可手動修改</div></div>
+    <div data-other class="hidden"><label>保固天數（依店家告知）</label><input name="otherDays" type="number" min="0" value="0"></div>
+    <div><label>金額</label><input name="price" inputmode="numeric"></div>
+  </div>
+  <div style="margin-top:12px"><label>備註</label><textarea name="note"></textarea></div>
+  ${p === 'e' ? `<div style="margin-top:12px"><label>後續服務</label><textarea name="followup" placeholder="例：已回修一次、客訴處理中…"></textarea></div>` : ''}
+  <div style="margin-top:12px">
+    <label class="check"><input type="checkbox" name="careManual">
+      <span>CARE+ 人工啟用<br><span class="hint" style="font-weight:400">只在客人無法用 LINE 登錄時使用（例如長輩沒有 LINE）。一般請客人掃 QR 後傳電話給 LINE，系統會自動啟用。</span></span></label>
+  </div>
+  <div class="row-actions">
+    <button class="btn btn-primary" type="submit">${p === 'e' ? '儲存修改' : '儲存'}</button>
+    ${p === 'e' ? `<button class="btn btn-ghost" type="button" data-close>取消</button>` : `<button class="btn btn-ghost" type="reset">清空</button>`}
+  </div>`;
+}
+
+function wireForm(form) {
+  const cat = form.category, type = form.type, other = form.querySelector('[data-other]');
+  const sync = () => other.classList.toggle('hidden', cat.value !== 'other');
+  type.addEventListener('input', () => { if (!form.dataset.catTouched) { cat.value = autoCategory(type.value); sync(); } });
+  cat.addEventListener('change', () => { form.dataset.catTouched = '1'; sync(); });
+  sync();
+}
+
+function readForm(form) {
+  const f = Object.fromEntries(new FormData(form).entries());
+  const phone = normPhone(f.phone);
+  if (!/^09\d{8}$/.test(phone)) { toast('⚠️ 電話格式應為 09 開頭 10 碼'); return null; }
+  const c = CATS[f.category];
+  return {
+    branch: f.branch, repairDate: f.repairDate, name: f.name.trim(), phone,
+    type: f.type.trim(), category: f.category,
+    baseDays: c.base === null ? Number(f.otherDays || 0) : c.base,
+    careDays: c.care,
+    price: (f.price || '').trim(), note: (f.note || '').trim(),
+    ...(f.followup !== undefined ? { followup: f.followup.trim() } : {}),
+    careManual: form.careManual.checked,
+  };
+}
+
+const addForm = $('addForm');
+addForm.innerHTML = formHTML('a'); wireForm(addForm);
+const resetAdd = () => {
+  addForm.reset(); delete addForm.dataset.catTouched;
+  addForm.repairDate.value = ymd(new Date());
+  const br = $('branchFilter').value; if (br) addForm.branch.value = br;
+  addForm.category.value = 'other'; addForm.category.dispatchEvent(new Event('change')); delete addForm.dataset.catTouched;
+};
+addForm.addEventListener('reset', () => setTimeout(resetAdd));
+resetAdd();
+addForm.addEventListener('submit', async e => {
+  e.preventDefault();
+  const r = readForm(addForm); if (!r) return;
+  const id = newId();
+  try {
+    await setDoc(doc(db, 'records', id), { ...r, source: 'manual', createdAt: new Date().toISOString(), createdBy: auth.currentUser.email });
+    toast('✅ 已儲存'); resetAdd();
+  } catch (er) { toast('⚠️ 儲存失敗：' + er.message); }
+});
+
+const editForm = $('editForm');
+function openEdit(id) {
+  const r = records.find(x => x.id === id); if (!r) return;
+  editingId = id;
+  editForm.innerHTML = formHTML('e'); wireForm(editForm);
+  editForm.dataset.catTouched = '1';
+  ['branch', 'repairDate', 'name', 'phone', 'type', 'price', 'note', 'followup'].forEach(k => { if (editForm[k]) editForm[k].value = r[k] ?? ''; });
+  editForm.category.value = r.category || 'other';
+  if (editForm.category.value === 'other') editForm.otherDays.value = r.baseDays || 0;
+  editForm.careManual.checked = !!r.careManual;
+  editForm.category.dispatchEvent(new Event('change'));
+  if (r.source === 'legacy') {
+    editForm.insertAdjacentHTML('afterbegin', `<p class="warn" style="margin:0 0 12px">這是舊系統搬過來的紀錄，儲存後會改用新規則計算保固天數。</p>`);
+  }
+  editForm.querySelector('[data-close]').onclick = closeEdit;
+  $('editModal').classList.remove('hidden');
+}
+function closeEdit() { $('editModal').classList.add('hidden'); editingId = null; }
+$('editModal').addEventListener('click', e => { if (e.target.id === 'editModal') closeEdit(); });
+editForm.addEventListener('submit', async e => {
+  e.preventDefault();
+  const r = readForm(editForm); if (!r) return;
+  try {
+    await updateDoc(doc(db, 'records', editingId), { ...r, source: 'manual', updatedAt: new Date().toISOString(), updatedBy: auth.currentUser.email });
+    toast('✅ 已儲存修改'); closeEdit();
+  } catch (er) { toast('⚠️ 儲存失敗：' + er.message); }
+});
+
+async function delRecord(id) {
+  const r = records.find(x => x.id === id); if (!r) return;
+  if (!confirm(`確定刪除「${r.name}／${r.type}」這筆紀錄？刪除後無法復原。`)) return;
+  try { await deleteDoc(doc(db, 'records', id)); toast('已刪除'); }
+  catch (er) { toast('⚠️ 刪除失敗：' + er.message); }
+}
+
+/* ════════ 7. Excel 匯入 ════════ */
+$('drop').onclick = () => $('xlsxFile').click();
+$('drop').ondragover = e => e.preventDefault();
+$('drop').ondrop = e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) readXlsx(f); };
+$('xlsxFile').onchange = e => { const f = e.target.files[0]; if (f) readXlsx(f); e.target.value = ''; };
+
+function readXlsx(file) {
+  if (!/\.xlsx?$/i.test(file.name)) return toast('⚠️ 請選擇 xlsx 檔');
+  if (!window.XLSX) return toast('⚠️ 函式庫載入中，請稍候再試');
+  const rd = new FileReader();
+  rd.onload = e => parseXlsx(e.target.result, file.name);
+  rd.readAsArrayBuffer(file);
+}
+
+function fmtDate(v) {
+  if (!v) return '';
+  if (v instanceof Date) return ymd(v);
+  const s = String(v).trim();
+  const roc = s.match(/^(\d{2,3})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);
+  if (roc && Number(roc[1]) < 1000) return `${Number(roc[1]) + 1911}-${roc[2].padStart(2, '0')}-${roc[3].padStart(2, '0')}`;
+  const ad = s.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);
+  if (ad) return `${ad[1]}-${ad[2].padStart(2, '0')}-${ad[3].padStart(2, '0')}`;
+  return '';
+}
+
+function parseXlsx(buf, fileName) {
+  const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+  const SKIP = ['交接', '報價', '退貨', 'LINE PAY', 'LINEPAY', '廢'];
+  pendingRows = [];
+  wb.SheetNames.forEach(sn => {
+    if (SKIP.some(s => sn.toUpperCase().includes(s))) return;
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, defval: '', raw: true, cellDates: true });
+    const hIdx = rows.findIndex(r => r.some(c => /[連聯]絡電話/.test(String(c).replace(/\s/g, ''))));
+    if (hIdx < 0) return;
+    const H = rows[hIdx].map(c => String(c).replace(/\s+/g, ''));
+    const col = ks => { for (const k of ks) { const i = H.findIndex(h => h.includes(k)); if (i >= 0) return i; } return -1; };
+    const C = { date: col(['日期']), type: col(['售出品項', '維修品項', '品項']), phone: col(['連絡電話', '聯絡電話']),
+                name: col(['姓名', '名字', '單號']), note: col(['備注', '備註']), amt: col(['金額']) };
+    let branch = '';
+    for (const r of rows.slice(0, hIdx + 1)) {
+      for (const c of r) {
+        const s = String(c);
+        if (s.includes('復原者') || s.includes('單位')) {
+          if (s.includes('楠梓')) branch = '楠梓店';
+          else if (s.includes('德賢')) branch = '德賢店';
+        }
+        if (branch) break;
+      }
+      if (branch) break;
+    }
+    let cur = '';
+    rows.slice(hIdx + 1).forEach(r => {
+      if (C.date >= 0 && r[C.date] !== '') { const d = fmtDate(r[C.date]); if (d) cur = d; }
+      const phone = normPhone(C.phone >= 0 ? r[C.phone] : '');
+      if (!/^09\d{8}$/.test(phone)) return;
+      const type = C.type >= 0 ? String(r[C.type]).trim() : '';
+      if (!type) return;
+      pendingRows.push({
+        repairDate: cur, type, phone,
+        name: C.name >= 0 ? String(r[C.name]).trim().replace(/[RS]$/, '') : '',
+        note: C.note >= 0 ? String(r[C.note]).trim() : '',
+        price: C.amt >= 0 ? String(r[C.amt]).trim() : '',
+        branch, category: autoCategory(type), sheet: sn,
+      });
+    });
+  });
+  pendingFile = fileName;
+  showPreview();
+}
+
+function showPreview() {
+  const noBranch = pendingRows.filter(r => !r.branch).length;
+  const noDate = pendingRows.filter(r => !r.repairDate).length;
+  $('pv-title').textContent = `📊 ${pendingFile}：找到 ${pendingRows.length} 筆` + (noBranch ? `（${noBranch} 筆偵測不到分店）` : '') + (noDate ? `（${noDate} 筆沒有日期，會跳過）` : '');
+  $('pv-table').innerHTML = `<table><tr><th>日期</th><th>分店</th><th>姓名</th><th>電話</th><th>品項</th><th>保固類別</th></tr>` +
+    pendingRows.slice(0, 30).map(r => `<tr><td>${r.repairDate || '—'}</td><td>${r.branch || '—'}</td><td>${esc(r.name)}</td><td>${r.phone}</td><td>${esc(r.type)}</td><td>${CATS[r.category].label}</td></tr>`).join('') +
+    `</table>` + (pendingRows.length > 30 ? `<p class="hint">…還有 ${pendingRows.length - 30} 筆</p>` : '');
+  $('preview').classList.remove('hidden');
+  $('preview').scrollIntoView({ behavior: 'smooth' });
+}
+$('pv-cancel').onclick = () => { pendingRows = []; $('preview').classList.add('hidden'); };
+$('pv-ok').onclick = async () => {
+  const fallback = $('pv-branch').value;
+  const key = r => `${r.phone}_${r.repairDate}_${r.type}`;
+  const exist = new Set(records.map(key));
+  const toAdd = [];
+  pendingRows.forEach(p => {
+    if (!p.repairDate) return;
+    const c = CATS[p.category];
+    const r = { branch: p.branch || fallback, repairDate: p.repairDate, name: p.name || '（未填）', phone: p.phone,
+      type: p.type, category: p.category, baseDays: c.base ?? 0, careDays: c.care, price: p.price, note: p.note,
+      careManual: false, source: 'excel', importFile: pendingFile, createdAt: new Date().toISOString(), createdBy: auth.currentUser.email };
+    if (exist.has(key(r))) return;
+    exist.add(key(r)); toAdd.push(r);
+  });
+  try {
+    await batchWrite(toAdd);
+    toast(`✅ 匯入 ${toAdd.length} 筆（略過 ${pendingRows.length - toAdd.length} 筆重複或無日期）`);
+    $('pv-cancel').onclick();
+  } catch (er) { toast('⚠️ 匯入失敗：' + er.message); }
+};
+
+async function batchWrite(list) {
+  for (let i = 0; i < list.length; i += 400) {
+    const b = writeBatch(db);
+    list.slice(i, i + 400).forEach(r => b.set(doc(db, 'records', newId()), r));
+    await b.commit();
+  }
+}
+
+/* ════════ 8. 舊系統 JSON 搬移 ════════ */
+$('legacyBtn').onclick = () => $('legacyFile').click();
+$('legacyFile').onchange = e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  const rd = new FileReader();
+  rd.onload = async ev => {
+    let data;
+    try { data = JSON.parse(ev.target.result); if (!Array.isArray(data)) throw 0; }
+    catch { return toast('⚠️ 檔案格式不對，請用舊系統「匯出 JSON」的檔案'); }
+    const exist = new Set(records.map(r => r.legacyId).filter(Boolean));
+    const toAdd = [];
+    data.forEach(o => {
+      if (!o || exist.has(o.id)) return;
+      const date = fmtDate(o.repairDate); if (!date) return;
+      const months = Number(o.warrantyMonths) || 0;
+      let baseDays = 0;
+      if (months > 0) { const d = parseD(date); d.setMonth(d.getMonth() + months); baseDays = diffDays(parseD(date), d); }
+      const type = o.type || o.model || '';
+      toAdd.push({
+        branch: BRANCHES.includes(o.branch) ? o.branch : '楠梓店',
+        repairDate: date, name: o.name || '（未填）', phone: normPhone(o.phone) || String(o.phone || ''),
+        type, category: autoCategory(type), baseDays, careDays: 0,
+        price: o.price || '', note: [o.note, o.parts ? `零件：${o.parts}` : ''].filter(Boolean).join('｜'),
+        followup: o.followup || '', careManual: false,
+        source: 'legacy', legacyId: o.id, legacyMonths: months,
+        createdAt: o.createdAt || new Date().toISOString(), createdBy: auth.currentUser.email,
+      });
+    });
+    if (!toAdd.length) return toast('沒有新的資料需要搬移');
+    if (!confirm(`要從舊系統搬入 ${toAdd.length} 筆紀錄嗎？（沒有分店標記的會歸到楠梓店）`)) return;
+    try { await batchWrite(toAdd); toast(`✅ 已搬入 ${toAdd.length} 筆`); }
+    catch (er) { toast('⚠️ 搬移失敗：' + er.message); }
+  };
+  rd.readAsText(f);
+};
+
+/* ════════ 9. 匯出 ════════ */
+function download(name, blob) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); }
+$('exJson').onclick = () => download(`保固備份_${ymd(new Date())}.json`,
+  new Blob([JSON.stringify({ records, care_bindings: bindings, line_users: lineUsers }, null, 2)], { type: 'application/json' }));
+$('exCsv').onclick = () => {
+  const head = ['分店', '姓名', '電話', '品項', '保固類別', '維修日期', '一般保固到期', 'CARE+狀態', 'CARE+到期', '目前狀態', '金額', '備註', '後續服務'];
+  const careTxt = { line: 'LINE 已綁定', manual: '人工啟用', blocked: 'LINE 已封鎖', none: '未啟用' };
+  const rows = visible().map(r => {
+    const s = status(r);
+    return [r.branch, r.name, r.phone, r.type, (CATS[r.category] || CATS.other).label, r.repairDate,
+      s.baseExp ? ymd(s.baseExp) : '無保固', s.ci.eligible ? careTxt[s.ci.state] : '不適用',
+      s.ci.eligible && s.careExp ? ymd(s.careExp) : '', s.label, r.price || '', r.note || '', r.followup || ''];
+  });
+  const csv = '﻿' + [head, ...rows].map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+  download(`保固紀錄_${ymd(new Date())}.csv`, new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+};
+
+$('rulesTable').innerHTML = `<table><tr><th>類別</th><th>一般保固</th><th>CARE+ 加碼</th><th>合計</th></tr>` +
+  Object.values(CATS).map(c => `<tr><td>${c.label}</td><td>${c.base === null ? '依店家告知' : c.base ? c.base + ' 天' : '無'}</td><td>${c.care ? '＋' + c.care + ' 天' : '—'}</td><td>${c.base && c.care ? (c.base + c.care) + ' 天' : '—'}</td></tr>`).join('') + `</table>`;
+
+/* ════════ 10. 小工具 ════════ */
+function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+function toast(m) { const t = $('toast'); t.textContent = m; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2800); }
+function localStorageGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
+function localStorageSet(k, v) { try { localStorage.setItem(k, v); } catch {} }
+</script>
+</body>
+</html>

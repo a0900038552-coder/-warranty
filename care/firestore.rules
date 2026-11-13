@@ -1,0 +1,9 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 只有登入的員工（及 LINE 機器人帳號）可以讀寫；未登入一律拒絕
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
