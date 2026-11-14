@@ -7,18 +7,17 @@
  *
  * 只使用 Reply（回覆）與接收事件，不使用 Push，不會扣 LINE 每月訊息額度。
  *
- * 需要在「專案設定 → 指令碼屬性」填入以下設定（不要寫在程式碼裡）：
- *   FIREBASE_API_KEY        新 Firebase 專案的 apiKey
- *   FIREBASE_PROJECT_ID     新 Firebase 專案的 projectId
- *   BOT_EMAIL               Firebase 裡建立的機器人帳號 email
- *   BOT_PASSWORD            機器人帳號密碼
- *   WEBHOOK_KEY             自訂一組亂碼（網址驗證用）
+ * 需要在「專案設定 → 指令碼屬性」填入以下 3 項（機密資料，不寫在程式碼裡）：
+ *   BOT_PASSWORD            Firebase 機器人帳號（linebot@grandmasterfix.com.tw）的密碼
  *   NANZI_TOKEN             楠梓店 LINE Messaging API 的 Channel access token
  *   DEXIAN_TOKEN            德賢店 LINE Messaging API 的 Channel access token
  *
  * LINE 後台 Webhook 網址填：
- *   楠梓店：<部署網址>?store=nanzi&key=<WEBHOOK_KEY>
- *   德賢店：<部署網址>?store=dexian&key=<WEBHOOK_KEY>
+ *   楠梓店：<部署網址>?store=nanzi
+ *   德賢店：<部署網址>?store=dexian
+ *
+ * 安全性：所有寫入都會先向 LINE 驗證（回覆成功才登錄、查無個人資料才標記封鎖），
+ * 偽造的請求無法寫入資料。
  */
 
 var STORES = {
@@ -26,6 +25,10 @@ var STORES = {
   dexian: { branch: '德賢店', tokenProp: 'DEXIAN_TOKEN' }
 };
 var BIND_WINDOW_DAYS = 14;
+// 公開設定（與保固系統網頁相同，非機密）
+var FIREBASE_API_KEY = 'AIzaSyD04ZMXIt8Oo3hjm5qsMaKiLXYzp_9YKwA';
+var FIREBASE_PROJECT_ID = 'care-warranty';
+var BOT_EMAIL = 'linebot@grandmasterfix.com.tw';
 var CAT_LABEL = { screen: '液晶／螢幕', battery: '電池', port: '尾插排／板', camera: '前後鏡頭', board: '主機板 IC', flex: '排線類', used: '中古機' };
 
 function prop_(k) {
@@ -38,7 +41,6 @@ function prop_(k) {
 function doPost(e) {
   try {
     var p = (e && e.parameter) || {};
-    if (p.key !== prop_('WEBHOOK_KEY')) return ok_();
     var store = STORES[p.store];
     if (!store) return ok_();
     var token = prop_(store.tokenProp);
@@ -69,7 +71,7 @@ function handleEvent_(ev, store, token) {
 
   if (ev.type === 'follow') {
     var existing = getDoc_('line_users/' + userId);
-    if (existing) {
+    if (existing && lineProfileExists_(userId, token)) {
       patchDoc_('line_users/' + userId, { status: 'friend', updatedAt: new Date().toISOString() });
       reply_(ev.replyToken, token, '歡迎回來！您的 Repair CARE+ 延長保固已恢復 ✅');
     }
@@ -146,9 +148,9 @@ function idToken_() {
   var cache = CacheService.getScriptCache();
   var t = cache.get('fb_id_token');
   if (t) return t;
-  var res = UrlFetchApp.fetch('https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=' + prop_('FIREBASE_API_KEY'), {
+  var res = UrlFetchApp.fetch('https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=' + FIREBASE_API_KEY, {
     method: 'post', contentType: 'application/json', muteHttpExceptions: true,
-    payload: JSON.stringify({ email: prop_('BOT_EMAIL'), password: prop_('BOT_PASSWORD'), returnSecureToken: true })
+    payload: JSON.stringify({ email: BOT_EMAIL, password: prop_('BOT_PASSWORD'), returnSecureToken: true })
   });
   if (res.getResponseCode() !== 200) throw new Error('Firebase 登入失敗：' + res.getContentText());
   t = JSON.parse(res.getContentText()).idToken;
@@ -156,7 +158,7 @@ function idToken_() {
   return t;
 }
 
-function fsBase_() { return 'https://firestore.googleapis.com/v1/projects/' + prop_('FIREBASE_PROJECT_ID') + '/databases/(default)/documents'; }
+function fsBase_() { return 'https://firestore.googleapis.com/v1/projects/' + FIREBASE_PROJECT_ID + '/databases/(default)/documents'; }
 
 function fsFetch_(url, opt) {
   opt = opt || {};
