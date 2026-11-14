@@ -123,11 +123,15 @@ function markDates() {
   });
 }
 
-function readStore() {
+// 讀網址參數（LIFF 會把 liff.line.me/{id}?a=b 的參數放在 liff.state 傳進來）
+function params() {
   const p = new URLSearchParams(location.search);
-  let s = p.get('store');
-  // LIFF 會把 liff.line.me/{id}?store=xx 的參數放在 liff.state 傳進來
-  if (!s && p.get('liff.state')) s = new URLSearchParams(p.get('liff.state').replace(/^[^?]*\?/, '')).get('store');
+  const out = new URLSearchParams(p.get('liff.state') ? p.get('liff.state').replace(/^[^?]*\?/, '') : '');
+  p.forEach((v, k) => { if (k !== 'liff.state') out.set(k, v); });
+  return out;
+}
+function readStore() {
+  const s = params().get('store');
   if (STORES[s]) storeKey = s;
   $('storeTag').textContent = STORES[storeKey];
 }
@@ -171,6 +175,40 @@ function renderSlots() {
   };
 }
 
+// 預填：LINE 聊天室判讀客人訊息後帶入 ?date=YYYY-MM-DD&issue=battery,screen&model=...
+const ISSUE_CODE = { battery: '換電池', screen: '螢幕維修', port: '尾插／充電', water: '泡水', board: '不開機／主機板', camera: '鏡頭', other: '其他' };
+let prefilled = false;
+function applyPrefill() {
+  if (prefilled) return;
+  const p = params();
+  if (!p.get('date') && !p.get('issue') && !p.get('model')) return;
+  prefilled = true;
+  (p.get('issue') || '').split(',').map(c => ISSUE_CODE[c]).filter(Boolean).forEach(t => {
+    pickedIssues.add(t);
+    const el = document.querySelector(`.chip[data-v="${t}"]`); if (el) el.classList.add('on');
+  });
+  if (p.get('model') && !$('model').value) $('model').value = p.get('model');
+  const want = p.get('date');
+  if (want) {
+    const i = dateList.findIndex(d => ymd(d) === want);
+    const [y, m, dd] = want.split('-').map(Number);
+    const label = `${m}/${dd}`;
+    if (i >= 0 && !blocked.has(want + '|ALL')) {
+      pickedDate = dateList[i]; pickedSlot = null;
+      document.querySelectorAll('.date').forEach(x => x.classList.toggle('on', +x.dataset.i === i));
+      const el = document.querySelector(`.date[data-i="${i}"]`); if (el) el.scrollIntoView({ inline: 'center', block: 'nearest' });
+      renderSlots();
+      tip(`已幫您選好 ${label}，請再選一個時段 👇`);
+    } else if (i >= 0) {
+      tip(`${label} 當天已額滿，請改選其他日期 🙏`);
+    } else {
+      tip(`${label} 超出線上可預約的範圍（14 天內），請選近期日期，或在備註寫下希望的日期，我們會再跟您確認。`);
+      if (!$('note').value) $('note').value = `希望日期：${label}`;
+    }
+  }
+}
+function tip(m) { const n = $('notice'); n.style.display = 'block'; n.textContent = m; }
+
 function normPhone(p) { let s = String(p).replace(/\D/g, ''); if (s.length === 9 && s[0] === '9') s = '0' + s; return s; }
 
 async function submit() {
@@ -208,11 +246,12 @@ async function submit() {
 function fail(m) { $('err').textContent = '⚠️ ' + m; $('err').scrollIntoView({ behavior: 'smooth', block: 'center' }); }
 
 (async () => {
-  readStore(); buildUI(); loadBlocks();
+  readStore(); buildUI(); await loadBlocks(); applyPrefill();
   $('submit').onclick = submit;
   try {
     await liff.init({ liffId: LIFF_ID });
-    const before = storeKey; readStore(); if (storeKey !== before) loadBlocks();
+    const before = storeKey; readStore(); if (storeKey !== before) await loadBlocks();
+    applyPrefill();
     if (!liff.isInClient()) {
       $('notice').style.display = 'block';
       $('notice').textContent = '請在 LINE 的店家聊天室中點「立即預約」開啟此頁，才能送出預約。';

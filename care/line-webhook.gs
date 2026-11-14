@@ -109,12 +109,99 @@ function handleEvent_(ev, store, token) {
     // 預約、詢問等夾帶電話的訊息（例：王先生0912345678明天換電池）不觸發
     var m = text.match(/^(?:CARE\+?|保固登錄|登錄)?(09\d{8})$/i);
     var isCare = /CARE/i.test(text) || /^(保固|延保|保固條款|延長保固)$/.test(text);
+    if (!m && !isCare && isBookingIntent_(text)) { bookingIntent_(ev, store, token, raw); return; }
     if (!m) {
       if (isCare) reply_(ev.replyToken, token, [{ type: 'text', text: CARE_INTRO }, termsImage_(store)]);
       return; // 其他訊息交給原本的關鍵字自動回覆
     }
     bindCare_(ev, store, token, userId, m[1]);
   }
+}
+
+/* ───────── 客人用文字說要預約 → 判讀日期／項目，回覆預填好的預約表單連結（Reply，不扣額度） ───────── */
+// 這些字句已由 LINE 後台關鍵字自動回覆處理，避免重複回覆
+var BOOKING_OA_KEYWORDS = ['立即預約', '預約', '我要預約', '想預約', '預約時間', '要預約'];
+function isBookingIntent_(text) {
+  if (BOOKING_OA_KEYWORDS.indexOf(text) >= 0) return false;
+  if (!/預約|約時間|約個時間|預定時間/.test(text)) return false;
+  if (/取消|改期|改時間|延後|提前|已預約|有預約/.test(text)) return false;   // 已有預約的異動交給真人
+  return true;
+}
+
+var ISSUE_RULES = [
+  ['battery', '換電池', /電池|耗電|掉電|膨脹|充不飽|蓄電/],
+  ['screen', '螢幕維修', /螢幕|液晶|面板|玻璃|屏|綠線|黑屏|觸控|摔破|破裂/],
+  ['port', '尾插／充電', /尾插|充電孔|充不了電|不能充電|無法充電|充電(?!頭|器|線)/],
+  ['water', '泡水', /泡水|進水|掉水|濕掉|淋到/],
+  ['board', '不開機／主機板', /不開機|開不了機|無法開機|主機板|主板|當機|一直重開|重開機/],
+  ['camera', '鏡頭', /鏡頭|相機|拍照/]
+];
+var WD_ZH = '日一二三四五六';
+
+function bookingIntent_(ev, store, token, raw) {
+  var t = raw.replace(/\s+/g, '');
+  var issues = ISSUE_RULES.filter(function (r) { return r[2].test(t); });
+  var model = (raw.match(/(?:iphone|i(?=\d))\s?(\d{1,2})\s*(pro\s*max|promax|pro|plus|mini|max|e)?/i) || null);
+  var modelStr = model ? 'iPhone ' + model[1] + (model[2] ? ' ' + model[2].replace(/\s+/g, ' ').replace(/promax/i, 'Pro Max').replace(/\b\w/g, function (c) { return c.toUpperCase(); }) : '') : '';
+  var d = parseWantDate_(t);
+
+  var lines = [], note = '', q = ['store=' + storeKey_(store)];
+  if (d && d.past) {
+    note = '⚠️ ' + d.label + ' 已經過了，請在表單中重新選擇日期 🙏';
+  } else if (d && d.sunday) {
+    note = '⚠️ ' + d.label + '（週日）公休，請在表單中改選其他日期 🙏';
+  } else if (d) {
+    lines.push('📅 日期：' + d.label + '（' + WD_ZH[d.wd] + '）');
+    q.push('date=' + d.ymd);
+    if (d.far) note = '（線上可預約 14 天內，較遠的日期我們會再跟您確認）';
+  }
+  if (issues.length) {
+    lines.push('🔧 項目：' + issues.map(function (r) { return r[1]; }).join('、'));
+    q.push('issue=' + issues.map(function (r) { return r[0]; }).join(','));
+  }
+  if (modelStr) { lines.push('📱 機型：' + modelStr); q.push('model=' + encodeURIComponent(modelStr)); }
+
+  var url = 'https://liff.line.me/' + BOOKING_LIFF_ID + '?' + q.join('&');
+  var msg = (lines.length ? '收到！已幫您預先填好 👇\n' + lines.join('\n') + '\n\n' : '收到！請點下方連結填寫預約 👇\n\n') +
+    (note ? note + '\n\n' : '') +
+    '點這裡選時段、填姓名電話就完成了：\n' + url + '\n\n' +
+    '送出後 ' + store.branch + ' 會在此回覆確認 ✅\n（週一～週六 11:00–21:00，週日公休）';
+  reply_(ev.replyToken, token, msg);
+}
+
+// 解析「10/13、10月13日、13號、明天、後天、下週三、星期五」等；以台灣時間為準
+function parseWantDate_(t) {
+  var p = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-M-d').split('-').map(Number);
+  var today = Date.UTC(p[0], p[1] - 1, p[2]);
+  var DAY = 86400000, target = null, explicitMD = false;
+  var m;
+  if ((m = t.match(/(\d{1,2})\s*[\/月\.\-]\s*(\d{1,2})\s*[日號号]?/))) {
+    var mo = +m[1], da = +m[2];
+    if (mo >= 1 && mo <= 12 && da >= 1 && da <= 31) { target = Date.UTC(p[0], mo - 1, da); explicitMD = true; }
+  } else if ((m = t.match(/(?:^|[^\d])(\d{1,2})\s*[日號号]/))) {
+    var dd = +m[1];
+    if (dd >= 1 && dd <= 31) { target = Date.UTC(p[0], p[1] - 1, dd); if (target < today) target = Date.UTC(p[0], p[1], dd); }
+  } else if (/大後天/.test(t)) target = today + 3 * DAY;
+  else if (/後天/.test(t)) target = today + 2 * DAY;
+  else if (/明天|明日/.test(t)) target = today + DAY;
+  else if (/今天|今日/.test(t)) target = today;
+  else if ((m = t.match(/(下下|下個?|這個?|本)?(?:週|周|星期|禮拜)([一二三四五六日天])/))) {
+    var want = '日一二三四五六'.indexOf(m[2] === '天' ? '日' : m[2]);
+    var cur = new Date(today).getUTCDay();
+    var monday = today - ((cur + 6) % 7) * DAY;            // 以週一為一週開始
+    var off = ((want + 6) % 7) * DAY;
+    if (m[1] && /^下下/.test(m[1])) target = monday + 14 * DAY + off;
+    else if (m[1] && /^下/.test(m[1])) target = monday + 7 * DAY + off;
+    else if (m[1]) target = monday + off;                   // 這週／本週
+    else target = today + ((want - cur + 7) % 7) * DAY;     // 只說「週三」→ 最近的那天
+  }
+  if (target === null) return null;
+  var dt = new Date(target);
+  var r = { ymd: Utilities.formatDate(dt, 'UTC', 'yyyy-MM-dd'), label: (dt.getUTCMonth() + 1) + '/' + dt.getUTCDate(), wd: dt.getUTCDay() };
+  if (target < today) { r.past = true; return r; }
+  if (r.wd === 0) r.sunday = true;
+  if (target - today > 14 * DAY) r.far = true;
+  return r;
 }
 
 function bindCare_(ev, store, token, userId, phone) {
