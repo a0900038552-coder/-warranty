@@ -55,6 +55,7 @@ function prop_(k) {
 function doPost(e) {
   try {
     var p = (e && e.parameter) || {};
+    if (p.action === 'staff') return json_(staffAction_(JSON.parse(e.postData.contents || '{}')));
     var store = STORES[p.store];
     if (!store) return ok_();
     var token = prop_(store.tokenProp);
@@ -68,7 +69,12 @@ function doPost(e) {
   return ok_();
 }
 
-function doGet() { return ContentService.createTextOutput('Repair CARE+ webhook OK'); }
+function doGet(e) {
+  var p = (e && e.parameter) || {};
+  if (p.action === 'blocks' && STORES[p.store]) return json_({ blocks: blocksFor_(STORES[p.store].branch) });
+  return ContentService.createTextOutput('Repair CARE+ webhook OK');
+}
+function json_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
 function ok_() { return ContentService.createTextOutput(JSON.stringify({ ok: true })).setMimeType(ContentService.MimeType.JSON); }
 
 /* ───────── 事件處理 ───────── */
@@ -96,6 +102,8 @@ function handleEvent_(ev, store, token) {
   if (ev.type === 'message' && ev.message.type === 'text') {
     var raw = String(ev.message.text || '');
     if (/^📅\s*預約申請/.test(raw)) { handleBooking_(ev, store, token, userId, raw); return; }
+    var acc = raw.match(/^接受改約\s*#?([A-Za-z0-9]+)$/);
+    if (acc) { acceptProposal_(ev, store, token, userId, acc[1]); return; }
     var text = raw.replace(/[\s\-－]/g, '');
     // 只有「單獨一支手機號碼」或「CARE+ 手機號碼」才登錄；
     // 預約、詢問等夾帶電話的訊息（例：王先生0912345678明天換電池）不觸發
@@ -226,6 +234,7 @@ function patchDoc_(path, obj) {
 function createDoc_(col, obj) {
   var res = fsFetch_(fsBase_() + '/' + col, { method: 'post', payload: JSON.stringify({ fields: toFields_(obj) }) });
   if (res.getResponseCode() !== 200) throw new Error('新增失敗：' + res.getContentText());
+  return JSON.parse(res.getContentText()).name.split('/').pop();
 }
 
 function queryByPhone_(phone) {
@@ -318,14 +327,117 @@ function handleBooking_(ev, store, token, userId, raw) {
     store.branch + ' 門市人員確認時段後，會在此聊天室回覆您。\n' +
     '（週一～週六 11:00–21:00，週日公休）';
   if (!reply_(ev.replyToken, token, msg)) return;
+  var bid = '';
+  try {
+    bid = createDoc_('bookings', { branch: store.branch, store: storeKey_(store), lineUserId: userId,
+      name: f['姓名'] || '', phone: f['電話'] || '', model: f['機型'] || '', issues: f['問題'] || '',
+      wish: f['希望時間'] || '', note: f['備註'] || '', status: 'pending', createdAt: new Date().toISOString() });
+  } catch (err) { console.error('預約寫入資料庫失敗：' + err); }
   var id = PropertiesService.getScriptProperties().getProperty('BOOKING_SHEET_ID');
   if (!id) return;
   try {
-    SpreadsheetApp.openById(id).getSheets()[0].appendRow([
+    var sh = SpreadsheetApp.openById(id).getSheets()[0];
+    if (!sh.getRange(1, 10).getValue()) sh.getRange(1, 10).setValue('ID').setFontWeight('bold').setBackground('#16181d').setFontColor('#ffffff');
+    sh.appendRow([
       Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy/MM/dd HH:mm'), store.branch,
-      f['姓名'] || '', "'" + (f['電話'] || ''), f['機型'] || '', f['問題'] || '', f['希望時間'] || '', f['備註'] || '', '待確認'
+      f['姓名'] || '', "'" + (f['電話'] || ''), f['機型'] || '', f['問題'] || '', f['希望時間'] || '', f['備註'] || '', '待確認', bid
     ]);
   } catch (err) { console.error('預約寫入試算表失敗：' + err); }
+}
+
+function storeKey_(store) { for (var k in STORES) if (STORES[k] === store) return k; return ''; }
+function storeByBranch_(branch) { for (var k in STORES) if (STORES[k].branch === branch) return STORES[k]; return null; }
+var STORE_ADDR = { '楠梓店': '高雄市楠梓區楠梓路10號', '德賢店': '高雄市楠梓區德賢路258號' };
+
+/* ───────── 預約管理（員工在保固系統按按鈕） ───────── */
+function staffAction_(req) {
+  // 1. 驗證員工：用 Firebase 登入憑證向 Google 確認身分
+  var who = UrlFetchApp.fetch('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' + FIREBASE_API_KEY, {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    payload: JSON.stringify({ idToken: req.idToken || '' }) });
+  if (who.getResponseCode() !== 200) return { ok: false, error: '登入已失效，請重新登入' };
+  var staff = (JSON.parse(who.getContentText()).users || [{}])[0].email || '';
+  if (!staff || staff === BOT_EMAIL) return { ok: false, error: '沒有權限' };
+
+  var b = getDoc_('bookings/' + req.id);
+  if (!b) return { ok: false, error: '找不到這筆預約' };
+  var store = storeByBranch_(b.branch);
+  var token = prop_(store.tokenProp);
+  var now = new Date().toISOString();
+  var text, quick = null, upd = { updatedAt: now, updatedBy: staff };
+
+  if (req.type === 'confirm') {
+    var time = req.time || b.proposedTime || b.wish;
+    text = '✅ 您的預約已確認\n\n🕐 ' + time + '\n📍 復原者' + b.branch + '（' + STORE_ADDR[b.branch] + '）\n📱 ' + b.model + '｜' + b.issues +
+           '\n\n如需更改時間，請直接在此聊天室告訴我們，謝謝！';
+    upd.status = 'confirmed'; upd.confirmedTime = time;
+  } else if (req.type === 'propose') {
+    if (!req.time) return { ok: false, error: '請選擇新的時間' };
+    text = '🔄 關於您的預約\n\n您希望的時間（' + b.wish + '）目前無法安排，' + (req.reason ? '原因：' + req.reason + '。' : '') +
+           '\n\n建議改為：\n🕐 ' + req.time + '\n📍 復原者' + b.branch + '\n\n可以的話請按下方「接受新時間」；不方便也可以重新選時間 🙏';
+    quick = { items: [
+      { type: 'action', action: { type: 'message', label: '接受新時間', text: '接受改約 #' + req.id } },
+      { type: 'action', action: { type: 'uri', label: '重新選時間', uri: 'https://liff.line.me/' + BOOKING_LIFF_ID + '?store=' + storeKey_(store) } }
+    ] };
+    upd.status = 'proposed'; upd.proposedTime = req.time;
+  } else if (req.type === 'decline') {
+    text = '🙏 很抱歉，您的預約（' + b.wish + '）目前無法安排。' + (req.reason ? '\n原因：' + req.reason : '') +
+           '\n\n如有需要，歡迎直接在此聊天室與我們討論其他時間，謝謝您！';
+    upd.status = 'declined'; upd.declineReason = req.reason || '';
+  } else if (req.type === 'done' || req.type === 'noshow') {
+    upd.status = req.type === 'done' ? 'done' : 'noshow';   // 不通知客人
+  } else return { ok: false, error: '未知的操作' };
+
+  if (text) {
+    var msg = { type: 'text', text: text };
+    if (quick) msg.quickReply = quick;
+    var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', {
+      method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      headers: { Authorization: 'Bearer ' + token },
+      payload: JSON.stringify({ to: b.lineUserId, messages: [msg] }) });
+    if (res.getResponseCode() !== 200) return { ok: false, error: 'LINE 傳送失敗（可能客人已封鎖或本月訊息額度用完）：' + res.getContentText() };
+  }
+  patchDoc_('bookings/' + req.id, upd);
+  sheetStatus_(req.id, upd.status, upd.confirmedTime || upd.proposedTime || '');
+  return { ok: true, status: upd.status };
+}
+
+/* 客人按「接受新時間」 */
+function acceptProposal_(ev, store, token, userId, id) {
+  var b = getDoc_('bookings/' + id);
+  if (!b || b.lineUserId !== userId || b.status !== 'proposed') {
+    reply_(ev.replyToken, token, '這筆改約已失效或已處理，如有問題請直接留言給我們 🙏'); return;
+  }
+  var msg = '✅ 預約已確認，謝謝您！\n\n🕐 ' + b.proposedTime + '\n📍 復原者' + b.branch + '（' + STORE_ADDR[b.branch] + '）';
+  if (!reply_(ev.replyToken, token, msg)) return;
+  patchDoc_('bookings/' + id, { status: 'confirmed', confirmedTime: b.proposedTime, updatedAt: new Date().toISOString(), updatedBy: 'customer' });
+  sheetStatus_(id, 'confirmed', b.proposedTime);
+}
+
+var STATUS_ZH = { pending: '待確認', confirmed: '已確認', proposed: '已提議改時間', declined: '已婉拒', done: '已完成', noshow: '未到' };
+function sheetStatus_(id, status, time) {
+  var sid = PropertiesService.getScriptProperties().getProperty('BOOKING_SHEET_ID');
+  if (!sid) return;
+  try {
+    var sh = SpreadsheetApp.openById(sid).getSheets()[0];
+    var ids = sh.getRange(1, 10, sh.getLastRow(), 1).getValues();
+    for (var i = ids.length - 1; i >= 1; i--) {
+      if (String(ids[i][0]) === id) {
+        sh.getRange(i + 1, 9).setValue((STATUS_ZH[status] || status) + (time && status !== 'done' && status !== 'noshow' ? '：' + time : ''));
+        return;
+      }
+    }
+  } catch (err) { console.error('更新試算表狀態失敗：' + err); }
+}
+
+/* 封鎖時段（表單讀取用，不含個資） */
+function blocksFor_(branch) {
+  var res = fsFetch_(fsBase_() + ':runQuery', { method: 'post', payload: JSON.stringify({ structuredQuery: {
+    from: [{ collectionId: 'slot_blocks' }],
+    where: { fieldFilter: { field: { fieldPath: 'branch' }, op: 'EQUAL', value: { stringValue: branch } } }, limit: 500 } }) });
+  if (res.getResponseCode() !== 200) return [];
+  return JSON.parse(res.getContentText()).filter(function (x) { return x.document; })
+    .map(function (x) { var d = fromFields_(x.document.fields); return d.date + '|' + d.slot; });
 }
 
 /* 在編輯器選 setupBookingSheet 按「執行」一次：建立「復原者 LINE 預約紀錄」試算表 */

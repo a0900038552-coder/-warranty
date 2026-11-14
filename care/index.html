@@ -100,6 +100,18 @@ th{color:var(--mute);font-weight:600}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:99px;font-size:14px;opacity:0;transition:.25s;pointer-events:none;z-index:99}
 .toast.show{opacity:1}
 .drop{border:2px dashed #cbd5e1;border-radius:12px;padding:28px;text-align:center;color:var(--mute);cursor:pointer}
+.bk{background:#fff;border:1px solid var(--line);border-left:5px solid #f59e0b;border-radius:12px;padding:12px 14px;margin-bottom:10px}
+.bk.confirmed{border-left-color:var(--green)}.bk.proposed{border-left-color:var(--blue)}.bk.declined,.bk.noshow{border-left-color:#9ca3af;opacity:.75}.bk.done{border-left-color:#9ca3af}
+.bk-top{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.bk-time{font-weight:800;font-size:16px}
+.bk-meta{font-size:13px;color:var(--mute);margin-top:2px}
+.bk .row-actions{margin-top:10px}
+.bk .btn{padding:6px 12px;font-size:13px}
+.slots{display:grid;grid-template-columns:110px repeat(6,1fr);gap:4px;font-size:12px;overflow-x:auto}
+.slots div{padding:6px 4px;text-align:center;border-radius:6px}
+.slots .h{font-weight:700;color:var(--mute)}
+.slots button{border:1px solid #d1d5db;background:#fff;border-radius:6px;padding:6px 2px;cursor:pointer;font-size:12px}
+.slots button.off{background:#4b5563;color:#fff;border-color:#4b5563}
 .drop:hover{border-color:var(--red);color:var(--red)}
 </style>
 </head>
@@ -123,7 +135,7 @@ th{color:var(--mute);font-weight:600}
 <section id="app" class="hidden">
 <header>
   <div class="hd-row">
-    <div class="logo">復原者 保固管理<small>REPAIR CARE+ SYSTEM · v2026.11.14b</small></div>
+    <div class="logo">復原者 保固管理<small>REPAIR CARE+ SYSTEM · v2026.11.14c</small></div>
     <div class="hd-right">
       <select id="branchFilter">
         <option value="">全部分店</option>
@@ -140,6 +152,7 @@ th{color:var(--mute);font-weight:600}
   <button data-tab="search" class="active">🔍 查詢</button>
   <button data-tab="add">＋ 新增</button>
   <button data-tab="import">📊 匯入報表</button>
+  <button data-tab="booking">📅 預約<span id="bkCount"></span></button>
   <button data-tab="manage">⚙️ 管理</button>
 </nav>
 
@@ -178,6 +191,28 @@ th{color:var(--mute);font-weight:600}
         <button class="btn btn-primary" id="pv-ok">確認匯入</button>
         <button class="btn btn-ghost" id="pv-cancel">取消</button>
       </div>
+    </div>
+  </div>
+
+  <!-- 預約 -->
+  <div id="tab-booking" class="hidden">
+    <div class="panel">
+      <div class="grid">
+        <div><label>狀態</label>
+          <select id="bkStatus">
+            <option value="open">待處理（待確認＋等客人回覆）</option>
+            <option value="confirmed">已確認</option>
+            <option value="closed">已完成／婉拒／未到</option>
+            <option value="">全部</option>
+          </select></div>
+      </div>
+      <p class="hint">按「確認」「改時間」「婉拒」會用 LINE 通知客人（每則扣 1 則訊息額度）；「完成」「未到」只改狀態，不會通知。分店依右上角選擇。</p>
+    </div>
+    <div id="bkList"></div>
+    <div class="panel">
+      <h2>封鎖時段（額滿／休息）</h2>
+      <p class="hint" style="margin-bottom:10px">點一下切換：深灰色＝已封鎖，客人在預約表單上就不能選。按日期可整天封鎖。需先在右上角選擇分店。</p>
+      <div id="slotGrid"></div>
     </div>
   </div>
 
@@ -307,7 +342,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const $ = id => document.getElementById(id);
 
-let records = [], bindings = [], lineUsers = {};
+let records = [], bindings = [], lineUsers = {}, bookings = [], blocks = new Set();
 let unsubs = [];
 let pendingRows = [], pendingFile = '';
 let editingId = null;
@@ -329,6 +364,12 @@ onAuthStateChanged(auth, user => {
   }, err));
   unsubs.push(onSnapshot(collection(db, 'care_bindings'), s => {
     bindings = s.docs.map(d => ({ id: d.id, ...d.data() })); render();
+  }, err));
+  unsubs.push(onSnapshot(collection(db, 'bookings'), s => {
+    bookings = s.docs.map(d => ({ id: d.id, ...d.data() })); renderBookings();
+  }, err));
+  unsubs.push(onSnapshot(collection(db, 'slot_blocks'), s => {
+    blocks = new Set(s.docs.map(d => d.id)); renderSlots();
   }, err));
   unsubs.push(onSnapshot(collection(db, 'line_users'), s => {
     lineUsers = {}; s.docs.forEach(d => lineUsers[d.id] = d.data()); render();
@@ -470,7 +511,7 @@ $('list').addEventListener('click', e => {
 
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
   document.querySelectorAll('nav button').forEach(x => x.classList.toggle('active', x === b));
-  ['search', 'add', 'import', 'manage'].forEach(t => $('tab-' + t).classList.toggle('hidden', t !== b.dataset.tab));
+  ['search', 'add', 'import', 'booking', 'manage'].forEach(t => $('tab-' + t).classList.toggle('hidden', t !== b.dataset.tab));
 });
 
 /* ════════ 6. 新增／編輯表單 ════════ */
@@ -794,6 +835,115 @@ $('rulesTable').innerHTML = `<table><tr><th>類別</th><th>一般保固</th><th>
 
 /* ════════ 10. 小工具 ════════ */
 function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+/* ════════ 預約管理 ════════ */
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbxBK7c2Oledgo-jT-kRnueuU8grZxVinuocyp2iLI8u-c5Q94fZSeiemH0UkeAqdjfTlw/exec';
+const SLOTS = ['11:00–13:00', '13:00–15:00', '15:00–17:00', '17:00–19:00', '19:00–21:00'];
+const WEEK = '日一二三四五六';
+const BK_ZH = { pending: '待確認', proposed: '等客人回覆', confirmed: '已確認', declined: '已婉拒', done: '已完成', noshow: '未到' };
+const BK_COLOR = { pending: '#f59e0b', proposed: 'var(--blue)', confirmed: 'var(--green)', declined: '#6b7280', done: '#6b7280', noshow: '#6b7280' };
+function nextDays(n) {
+  const out = [], d = new Date(); d.setHours(0, 0, 0, 0);
+  while (out.length < n) { if (d.getDay() !== 0) out.push(new Date(d)); d.setDate(d.getDate() + 1); }
+  return out;
+}
+const dLabel = d => `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}（週${WEEK[d.getDay()]}）`;
+const blockId = (br, d, slot) => `${br}_${ymd(d)}_${slot}`;
+
+function renderBookings() {
+  const br = $('branchFilter').value, st = $('bkStatus').value;
+  const open = bookings.filter(b => (!br || b.branch === br) && (b.status === 'pending' || b.status === 'proposed')).length;
+  $('bkCount').textContent = open ? ` (${open})` : '';
+  const list = bookings.filter(b => (!br || b.branch === br) && (
+    st === '' ? true : st === 'open' ? ['pending', 'proposed'].includes(b.status) :
+    st === 'closed' ? ['done', 'declined', 'noshow'].includes(b.status) : b.status === st))
+    .sort((a, b) => st === 'closed' ? String(b.createdAt).localeCompare(a.createdAt) : String(a.createdAt).localeCompare(b.createdAt));
+  $('bkList').innerHTML = list.length ? list.map(b => {
+    const time = b.confirmedTime || b.proposedTime || b.wish;
+    const acts = {
+      pending: `<button class="btn btn-primary" data-bk="confirm" data-id="${b.id}">✅ 確認</button><button class="btn btn-dark" data-bk="propose" data-id="${b.id}">🔄 改時間</button><button class="btn btn-ghost" data-bk="decline" data-id="${b.id}">婉拒</button>`,
+      proposed: `<button class="btn btn-ghost" data-bk="confirm" data-id="${b.id}">客人電話確認了</button><button class="btn btn-ghost" data-bk="propose" data-id="${b.id}">再改時間</button><button class="btn btn-ghost" data-bk="decline" data-id="${b.id}">婉拒</button>`,
+      confirmed: `<button class="btn btn-dark" data-bk="done" data-id="${b.id}">已完成</button><button class="btn btn-ghost" data-bk="noshow" data-id="${b.id}">未到</button><button class="btn btn-ghost" data-bk="propose" data-id="${b.id}">改時間</button>`
+    }[b.status] || '';
+    return `<div class="bk ${b.status}">
+      <div class="bk-top"><div><div class="bk-time">${esc(time)}</div>
+        <div class="bk-meta">${b.status === 'proposed' ? '原希望：' + esc(b.wish) + '　→ 已提議新時間，等客人按接受' : ''}</div></div>
+        <span class="badge" style="background:${BK_COLOR[b.status]};color:#fff">${BK_ZH[b.status] || b.status}</span></div>
+      <div style="margin-top:6px"><b>${esc(b.name)}</b>　<a href="tel:${esc(b.phone)}">${esc(b.phone)}</a>　${esc(b.branch)}</div>
+      <div>📱 ${esc(b.model)}｜${esc(b.issues)}</div>
+      ${b.note ? `<div class="bk-meta">備註：${esc(b.note)}</div>` : ''}
+      <div class="bk-meta">申請：${esc(String(b.createdAt || '').slice(0, 16).replace('T', ' '))}${b.updatedBy ? '　最後處理：' + esc(b.updatedBy) : ''}</div>
+      ${acts ? `<div class="row-actions">${acts}</div>` : ''}</div>`;
+  }).join('') : '<div class="panel hint">目前沒有預約。</div>';
+}
+
+function renderSlots() {
+  const br = $('branchFilter').value;
+  if (!br) { $('slotGrid').innerHTML = '<p class="hint">請先在右上角選擇分店。</p>'; return; }
+  let h = '<div class="slots"><div class="h">日期</div><div class="h">整天</div>' + SLOTS.map(x => `<div class="h">${x}</div>`).join('');
+  nextDays(14).forEach(d => {
+    const all = blocks.has(blockId(br, d, 'ALL'));
+    h += `<div class="h">${d.getMonth() + 1}/${d.getDate()} 週${WEEK[d.getDay()]}</div>`;
+    h += `<button class="${all ? 'off' : ''}" data-blk="${blockId(br, d, 'ALL')}" data-date="${ymd(d)}" data-slot="ALL">${all ? '休息' : '—'}</button>`;
+    SLOTS.forEach(x => { const off = all || blocks.has(blockId(br, d, x));
+      h += `<button class="${off ? 'off' : ''}" ${all ? 'disabled' : ''} data-blk="${blockId(br, d, x)}" data-date="${ymd(d)}" data-slot="${x}">${off ? '額滿' : '可約'}</button>`; });
+  });
+  $('slotGrid').innerHTML = h + '</div>';
+}
+
+$('slotGrid').addEventListener('click', async e => {
+  const b = e.target.closest('button[data-blk]'); if (!b || b.disabled) return;
+  const id = b.dataset.blk;
+  try {
+    if (blocks.has(id)) await deleteDoc(doc(db, 'slot_blocks', id));
+    else await setDoc(doc(db, 'slot_blocks', id), { branch: $('branchFilter').value, date: b.dataset.date, slot: b.dataset.slot, by: auth.currentUser.email, at: new Date().toISOString() });
+  } catch (er) { toast('⚠️ ' + er.message); }
+});
+
+function pickTime(cur) {
+  const ds = nextDays(14);
+  const dOpts = ds.map(d => `<option value="${dLabel(d)}">${dLabel(d)}</option>`).join('');
+  const sOpts = SLOTS.map(x => `<option>${x}</option>`).join('');
+  return new Promise(res => {
+    const m = document.createElement('div'); m.className = 'modal';
+    m.innerHTML = `<div class="panel"><h2>建議新的時間</h2><p class="hint" style="margin-bottom:8px">客人原本希望：${esc(cur)}</p>
+      <div class="grid"><div><label>日期</label><select id="pt-d">${dOpts}</select></div><div><label>時段</label><select id="pt-s">${sOpts}</select></div></div>
+      <label style="margin-top:10px">原因（可不填，會顯示給客人）</label><input id="pt-r" placeholder="例如：當天時段已滿">
+      <div class="row-actions"><button class="btn btn-primary" id="pt-ok">傳送給客人</button><button class="btn btn-ghost" id="pt-no">取消</button></div></div>`;
+    document.body.appendChild(m);
+    m.querySelector('#pt-ok').onclick = () => { res({ time: m.querySelector('#pt-d').value + m.querySelector('#pt-s').value, reason: m.querySelector('#pt-r').value.trim() }); m.remove(); };
+    m.querySelector('#pt-no').onclick = () => { res(null); m.remove(); };
+  });
+}
+
+$('bkList').addEventListener('click', async e => {
+  const btn = e.target.closest('button[data-bk]'); if (!btn) return;
+  const b = bookings.find(x => x.id === btn.dataset.id); if (!b) return;
+  const type = btn.dataset.bk, req = { id: b.id, type };
+  if (type === 'confirm') {
+    const t = b.proposedTime && b.status === 'proposed' ? b.proposedTime : b.wish;
+    if (!confirm(`確認預約並用 LINE 通知 ${b.name}？\n\n時間：${t}`)) return;
+    req.time = t;
+  } else if (type === 'propose') {
+    const r = await pickTime(b.wish); if (!r) return; Object.assign(req, r);
+  } else if (type === 'decline') {
+    const r = prompt(`婉拒 ${b.name} 的預約，並用 LINE 通知。\n原因（可空白，會顯示給客人）：`, '');
+    if (r === null) return; req.reason = r.trim();
+  }
+  btn.closest('.row-actions').querySelectorAll('button').forEach(x => x.disabled = true);
+  try {
+    req.idToken = await auth.currentUser.getIdToken();
+    const res = await fetch(GAS_URL + '?action=staff', { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(req) });
+    const j = await res.json();
+    if (!j.ok) throw new Error(j.error || '失敗');
+    toast(['done', 'noshow'].includes(type) ? '已更新狀態' : '✅ 已用 LINE 通知客人');
+  } catch (er) {
+    toast('⚠️ ' + er.message);
+    btn.closest('.row-actions')?.querySelectorAll('button').forEach(x => x.disabled = false);
+  }
+});
+$('bkStatus').onchange = renderBookings;
+$('branchFilter').addEventListener('change', () => { renderBookings(); renderSlots(); });
+
 function toast(m) { const t = $('toast'); t.textContent = m; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2800); }
 function localStorageGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
 function localStorageSet(k, v) { try { localStorage.setItem(k, v); } catch {} }

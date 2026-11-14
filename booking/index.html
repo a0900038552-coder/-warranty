@@ -105,6 +105,23 @@ const WD = ['日', '一', '二', '三', '四', '五', '六'];
 const $ = id => document.getElementById(id);
 let storeKey = 'nanzi', pickedDate = null, pickedSlot = null;
 const pickedIssues = new Set();
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbxBK7c2Oledgo-jT-kRnueuU8grZxVinuocyp2iLI8u-c5Q94fZSeiemH0UkeAqdjfTlw/exec';
+let blocked = new Set(), dateList = [];
+const ymd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+async function loadBlocks() {
+  try {
+    const r = await fetch(GAS_URL + '?action=blocks&store=' + storeKey);
+    blocked = new Set((await r.json()).blocks || []);
+  } catch (e) { blocked = new Set(); }
+  markDates(); renderSlots();
+}
+function markDates() {
+  document.querySelectorAll('.date').forEach(el => {
+    const d = dateList[+el.dataset.i], full = blocked.has(ymd(d) + '|ALL');
+    el.style.opacity = full ? '.35' : ''; el.style.pointerEvents = full ? 'none' : '';
+    if (full && pickedDate === d) { pickedDate = null; pickedSlot = null; el.classList.remove('on'); }
+  });
+}
 
 function readStore() {
   const p = new URLSearchParams(location.search);
@@ -129,6 +146,7 @@ function buildUI() {
     if (i === 0 && now.getHours() >= 19) continue; // 今天太晚就不給選
     ds.push(d);
   }
+  dateList = ds;
   $('dates').innerHTML = ds.map((d, i) => `<div class="date" data-i="${i}"><span>${i === 0 && d.toDateString() === now.toDateString() ? '今天' : '週' + WD[d.getDay()]}</span><b>${d.getMonth() + 1}/${d.getDate()}</b></div>`).join('');
   $('dates').onclick = e => {
     const c = e.target.closest('.date'); if (!c) return;
@@ -141,9 +159,10 @@ function buildUI() {
 function renderSlots() {
   const now = new Date();
   const isToday = pickedDate && pickedDate.toDateString() === now.toDateString();
+  if (pickedDate && pickedSlot && (blocked.has(ymd(pickedDate) + '|' + pickedSlot))) pickedSlot = null;
   $('slots').innerHTML = SLOTS.map(s => {
     const startH = parseInt(s, 10);
-    const off = !pickedDate || (isToday && startH <= now.getHours());
+    const off = !pickedDate || (isToday && startH <= now.getHours()) || blocked.has(ymd(pickedDate) + '|' + s) || blocked.has(ymd(pickedDate) + '|ALL');
     return `<div class="slot${pickedSlot === s ? ' on' : ''}" data-v="${s}" style="${off ? 'opacity:.35;pointer-events:none' : ''}">${s}</div>`;
   }).join('');
   $('slots').onclick = e => {
@@ -189,11 +208,11 @@ async function submit() {
 function fail(m) { $('err').textContent = '⚠️ ' + m; $('err').scrollIntoView({ behavior: 'smooth', block: 'center' }); }
 
 (async () => {
-  readStore(); buildUI();
+  readStore(); buildUI(); loadBlocks();
   $('submit').onclick = submit;
   try {
     await liff.init({ liffId: LIFF_ID });
-    readStore();
+    const before = storeKey; readStore(); if (storeKey !== before) loadBlocks();
     if (!liff.isInClient()) {
       $('notice').style.display = 'block';
       $('notice').textContent = '請在 LINE 的店家聊天室中點「立即預約」開啟此頁，才能送出預約。';
