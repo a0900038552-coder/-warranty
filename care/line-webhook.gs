@@ -268,50 +268,91 @@ function testSetup() {
 
 /* ───────── 圖文選單：在編輯器選 setupRichMenu 按「執行」即可為兩間店建立並設為預設 ───────── */
 var BOOKING_LIFF_ID = '2012612889-aZuwwjgj';
-var RICHMENU_IMG = 'https://a0900038552-coder.github.io/-warranty/care/richmenu.jpg?v=20261114';
+/* ───────── 圖文選單（兩頁分頁：維修服務／配件好康） ─────────
+ * 在編輯器選 setupRichMenu 按「執行」即可兩店一起更新。
+ * 換配件 DM 時：更新 GitHub 上的 care/richmenu_tab2.jpg 與 dm/ 圖片後重跑本函式。
+ */
+var RICHMENU_TAB1 = 'https://a0900038552-coder.github.io/-warranty/care/richmenu_tab1.jpg';
+var RICHMENU_TAB2 = 'https://a0900038552-coder.github.io/-warranty/care/richmenu_tab2.jpg';
+var DM_URL = 'https://a0900038552-coder.github.io/-warranty/dm/';
+var STORE_PHONE = { nanzi: '', dexian: '' };   // 兩店電話（例：07-1234567），填好才能上架
+
 function setupRichMenu() {
-  var img = UrlFetchApp.fetch(RICHMENU_IMG).getBlob().getBytes();
+  var v = '?v=' + Date.now();
+  var img1 = UrlFetchApp.fetch(RICHMENU_TAB1 + v).getBlob().getBytes();
+  var img2 = UrlFetchApp.fetch(RICHMENU_TAB2 + v).getBlob().getBytes();
   Object.keys(STORES).forEach(function (k) {
     var s = STORES[k], token = prop_(s.tokenProp);
-    var W = [0, 833, 1666], w = [833, 833, 834], H = [0, 843], h = 843;
-    var acts = [
-      { type: 'message', label: '維修報價', text: s.quoteText },
-      { type: 'uri', label: '立即預約', uri: 'https://liff.line.me/' + BOOKING_LIFF_ID + '?store=' + k },
-      { type: 'message', label: 'CARE+延保', text: 'CARE+' },
-      { type: 'message', label: '門市導航', text: '地址' },
-      { type: 'message', label: '二手機收購', text: s.usedText },
-      { type: 'uri', label: '官方網站', uri: 'https://www.grandmasterfix.com.tw/' }
-    ];
-    var areas = acts.map(function (a, i) {
-      return { bounds: { x: W[i % 3], y: H[Math.floor(i / 3)], width: w[i % 3], height: h }, action: a };
-    });
-    var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/richmenu', {
-      method: 'post', contentType: 'application/json', muteHttpExceptions: true,
-      headers: { Authorization: 'Bearer ' + token },
-      payload: JSON.stringify({ size: { width: 2500, height: 1686 }, selected: true,
-        name: '復原者 6格選單 2026-11', chatBarText: '選單', areas: areas })
-    });
-    if (res.getResponseCode() !== 200) throw new Error(s.branch + ' 建立失敗：' + res.getContentText());
-    var id = JSON.parse(res.getContentText()).richMenuId;
-    var up = UrlFetchApp.fetch('https://api-data.line.me/v2/bot/richmenu/' + id + '/content', {
-      method: 'post', contentType: 'image/jpeg', payload: img, muteHttpExceptions: true,
-      headers: { Authorization: 'Bearer ' + token } });
-    if (up.getResponseCode() !== 200) throw new Error(s.branch + ' 圖片上傳失敗：' + up.getContentText());
-    var def = UrlFetchApp.fetch('https://api.line.me/v2/bot/user/all/richmenu/' + id, {
+    var phone = String(STORE_PHONE[k] || '').replace(/[^\d+]/g, '');
+    if (!phone) throw new Error(s.branch + ' 尚未填電話（STORE_PHONE）');
+    var A1 = 'care-tab1', A2 = 'care-tab2';
+    var TABH = 195, TOP = 200, TW = 1250;
+    var tabs = function (cur) {
+      return [
+        { bounds: { x: 0, y: 0, width: TW, height: TABH }, action: { type: 'richmenuswitch', richMenuAliasId: A1, data: 'tab=1' } },
+        { bounds: { x: TW, y: 0, width: 2500 - TW, height: TABH }, action: { type: 'richmenuswitch', richMenuAliasId: A2, data: 'tab=2' } }
+      ];
+    };
+    // 第 1 頁：維修服務（上排 預約大格＋報價，下排 4 格）
+    var rowH = 743, cw = 625;
+    var m1 = tabs(1).concat([
+      { bounds: { x: 0, y: TOP, width: 1875, height: rowH }, action: { type: 'uri', label: '立即預約', uri: 'https://liff.line.me/' + BOOKING_LIFF_ID + '?store=' + k } },
+      { bounds: { x: 1875, y: TOP, width: 625, height: rowH }, action: { type: 'message', label: '維修報價', text: s.quoteText } },
+      { bounds: { x: 0, y: TOP + rowH, width: cw, height: 1686 - TOP - rowH }, action: { type: 'message', label: 'CARE+延保', text: 'CARE+' } },
+      { bounds: { x: cw, y: TOP + rowH, width: cw, height: 1686 - TOP - rowH }, action: { type: 'uri', label: '撥打電話', uri: 'tel:' + phone } },
+      { bounds: { x: cw * 2, y: TOP + rowH, width: cw, height: 1686 - TOP - rowH }, action: { type: 'message', label: '門市導航', text: '地址' } },
+      { bounds: { x: cw * 3, y: TOP + rowH, width: 2500 - cw * 3, height: 1686 - TOP - rowH }, action: { type: 'message', label: '二手收購', text: s.usedText } }
+    ]);
+    // 第 2 頁：配件好康
+    var m2 = tabs(2).concat([
+      { bounds: { x: 0, y: TOP, width: 1565, height: 1686 - TOP }, action: { type: 'uri', label: '配件型錄', uri: DM_URL + '?p=catalog&store=' + k } },
+      { bounds: { x: 1565, y: TOP, width: 935, height: rowH }, action: { type: 'uri', label: '維修加價購', uri: DM_URL + '?p=addon&store=' + k } },
+      { bounds: { x: 1565, y: TOP + rowH, width: 935, height: 1686 - TOP - rowH }, action: { type: 'message', label: '預訂配件', text: '我想預訂配件' } }
+    ]);
+    var id1 = createMenu_(token, s.branch, '復原者 分頁選單 維修服務', m1, img1);
+    var id2 = createMenu_(token, s.branch, '復原者 分頁選單 配件好康', m2, img2);
+    setAlias_(token, A1, id1); setAlias_(token, A2, id2);
+    var def = UrlFetchApp.fetch('https://api.line.me/v2/bot/user/all/richmenu/' + id1, {
       method: 'post', muteHttpExceptions: true, headers: { Authorization: 'Bearer ' + token } });
     if (def.getResponseCode() !== 200) throw new Error(s.branch + ' 設為預設失敗：' + def.getContentText());
-    console.log(s.branch + ' 圖文選單已上架：' + id);
+    console.log(s.branch + ' 分頁選單已上架：' + id1 + ' / ' + id2);
     // 清掉舊版（由本程式建立、已不再使用的）選單
     var list = JSON.parse(UrlFetchApp.fetch('https://api.line.me/v2/bot/richmenu/list', {
       headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true }).getContentText()).richmenus || [];
     list.forEach(function (m) {
-      if (m.richMenuId !== id && /^復原者 6格選單/.test(m.name)) {
+      if (m.richMenuId !== id1 && m.richMenuId !== id2 && /^復原者 (6格選單|分頁選單)/.test(m.name)) {
         UrlFetchApp.fetch('https://api.line.me/v2/bot/richmenu/' + m.richMenuId, {
           method: 'delete', headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true });
         console.log(s.branch + ' 已移除舊選單：' + m.richMenuId);
       }
     });
   });
+}
+
+function createMenu_(token, branch, name, areas, img) {
+  var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/richmenu', {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    headers: { Authorization: 'Bearer ' + token },
+    payload: JSON.stringify({ size: { width: 2500, height: 1686 }, selected: true, name: name, chatBarText: '選單', areas: areas }) });
+  if (res.getResponseCode() !== 200) throw new Error(branch + ' 建立「' + name + '」失敗：' + res.getContentText());
+  var id = JSON.parse(res.getContentText()).richMenuId;
+  var up = UrlFetchApp.fetch('https://api-data.line.me/v2/bot/richmenu/' + id + '/content', {
+    method: 'post', contentType: 'image/jpeg', payload: img, muteHttpExceptions: true,
+    headers: { Authorization: 'Bearer ' + token } });
+  if (up.getResponseCode() !== 200) throw new Error(branch + ' 圖片上傳失敗：' + up.getContentText());
+  return id;
+}
+
+function setAlias_(token, alias, id) {
+  var h = { Authorization: 'Bearer ' + token };
+  var upd = UrlFetchApp.fetch('https://api.line.me/v2/bot/richmenu/alias/' + alias, {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true, headers: h,
+    payload: JSON.stringify({ richMenuId: id }) });
+  if (upd.getResponseCode() === 200) return;
+  var cr = UrlFetchApp.fetch('https://api.line.me/v2/bot/richmenu/alias', {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true, headers: h,
+    payload: JSON.stringify({ richMenuAliasId: alias, richMenuId: id }) });
+  if (cr.getResponseCode() !== 200) throw new Error('建立選單切換失敗：' + cr.getContentText());
 }
 
 
@@ -347,6 +388,10 @@ function handleBooking_(ev, store, token, userId, raw) {
 
 function storeKey_(store) { for (var k in STORES) if (STORES[k] === store) return k; return ''; }
 function storeByBranch_(branch) { for (var k in STORES) if (STORES[k].branch === branch) return STORES[k]; return null; }
+var ADDON_TEXT_ = { type: 'text', text: '🎁 維修客人專屬加價購\n修好當天順便貼，滿版保護貼加購只要 $250！\n想加購的話到店時跟我們說，或直接在這裡留言 👇' };
+var ADDON_IMG_ = { type: 'image',
+  originalContentUrl: 'https://a0900038552-coder.github.io/-warranty/dm/addon.jpg',
+  previewImageUrl: 'https://a0900038552-coder.github.io/-warranty/dm/addon_preview.jpg' };
 var STORE_ADDR = { '楠梓店': '高雄市楠梓區楠梓路10號', '德賢店': '高雄市楠梓區德賢路258號' };
 
 /* ───────── 預約管理（員工在保固系統按按鈕） ───────── */
@@ -391,10 +436,12 @@ function staffAction_(req) {
   if (text) {
     var msg = { type: 'text', text: text };
     if (quick) msg.quickReply = quick;
+    var msgs = [msg];
+    if (req.type === 'confirm') msgs = [msg, ADDON_TEXT_, ADDON_IMG_];   // 同一次推播多附圖不另計額度
     var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', {
       method: 'post', contentType: 'application/json', muteHttpExceptions: true,
       headers: { Authorization: 'Bearer ' + token },
-      payload: JSON.stringify({ to: b.lineUserId, messages: [msg] }) });
+      payload: JSON.stringify({ to: b.lineUserId, messages: msgs }) });
     if (res.getResponseCode() !== 200) return { ok: false, error: 'LINE 傳送失敗（可能客人已封鎖或本月訊息額度用完）：' + res.getContentText() };
   }
   patchDoc_('bookings/' + req.id, upd);
@@ -409,7 +456,7 @@ function acceptProposal_(ev, store, token, userId, id) {
     reply_(ev.replyToken, token, '這筆改約已失效或已處理，如有問題請直接留言給我們 🙏'); return;
   }
   var msg = '✅ 預約已確認，謝謝您！\n\n🕐 ' + b.proposedTime + '\n📍 復原者' + b.branch + '（' + STORE_ADDR[b.branch] + '）';
-  if (!reply_(ev.replyToken, token, msg)) return;
+  if (!reply_(ev.replyToken, token, [{ type: 'text', text: msg }, ADDON_TEXT_, ADDON_IMG_])) return;
   patchDoc_('bookings/' + id, { status: 'confirmed', confirmedTime: b.proposedTime, updatedAt: new Date().toISOString(), updatedBy: 'customer' });
   sheetStatus_(id, 'confirmed', b.proposedTime);
 }

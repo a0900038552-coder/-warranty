@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>復原者｜2026 秋冬配件好康報</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#16181d;font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;color:#fff;padding-bottom:88px}
+header{position:sticky;top:0;z-index:5;background:#16181d;border-bottom:4px solid #d71920;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+header b{font-size:16px;letter-spacing:1px}
+header small{display:block;font-size:11px;color:#9aa0ab;font-weight:400;letter-spacing:2px}
+.tabs{display:flex;gap:6px}
+.tabs a{color:#c9ccd3;text-decoration:none;font-size:13px;border:1px solid #444;border-radius:99px;padding:5px 12px;white-space:nowrap}
+.tabs a.on{background:#fff;color:#16181d;border-color:#fff;font-weight:700}
+main{max-width:720px;margin:0 auto}
+main img{display:block;width:100%;height:auto;margin:10px 0;background:#222}
+.bar{position:fixed;left:0;right:0;bottom:0;z-index:5;background:#16181d;border-top:1px solid #333;padding:10px 14px calc(10px + env(safe-area-inset-bottom));display:flex;gap:10px;max-width:720px;margin:0 auto}
+.bar a{flex:1;text-align:center;text-decoration:none;font-weight:900;font-size:16px;border-radius:12px;padding:13px 6px}
+.order{background:#06c755;color:#fff}
+.book{background:#d71920;color:#fff}
+.note{font-size:12px;color:#9aa0ab;text-align:center;padding:6px 14px 16px;line-height:1.6}
+</style>
+</head>
+<body>
+<header>
+  <div><b>復原者 配件好康</b><small>GRANDMASTER FIX</small></div>
+  <nav class="tabs"><a href="?p=catalog" id="t-catalog">秋冬好康報</a><a href="?p=addon" id="t-addon">維修加價購</a></nav>
+</header>
+<main id="main"></main>
+<p class="note" id="note"></p>
+<div class="bar">
+  <a class="order" id="order" href="#">💬 LINE 下訂／詢問</a>
+  <a class="book" id="book" href="#">📅 預約到店</a>
+</div>
+<script>
+// 分店：?store=nanzi / dexian（從各店 LINE 圖文選單帶入）
+var STORES = {
+  nanzi:  { name: '楠梓店', oa: '@826ztlds' },
+  dexian: { name: '德賢店', oa: '@347agrda' }
+};
+var q = new URLSearchParams(location.search);
+var store = STORES[q.get('store')] ? q.get('store') : 'nanzi';
+var page = q.get('p') === 'addon' ? 'addon' : 'catalog';
+var V = '20261115';
+
+document.querySelectorAll('.tabs a').forEach(function (a) {
+  a.href = '?p=' + a.id.slice(2) + '&store=' + store;
+  a.classList.toggle('on', a.id === 't-' + page);
+});
+
+var imgs = page === 'addon' ? ['addon.jpg'] : [1, 2, 3, 4, 5, 6, 7, 8].map(function (n) { return 'p' + n + '.jpg'; });
+document.getElementById('main').innerHTML = imgs.map(function (src, i) {
+  return '<img src="' + src + '?v=' + V + '" alt="配件 DM 第 ' + (i + 1) + ' 頁" loading="' + (i < 2 ? 'eager' : 'lazy') + '">';
+}).join('');
+
+document.getElementById('note').textContent = page === 'addon'
+  ? '維修當天加購，每項限 1 件。按下方「LINE 下訂」直接告訴我們想加購哪一項。'
+  : '預訂 9 折，到貨 LINE 通知。按下方「LINE 下訂」傳送機型和想要的商品即可。';
+
+var msg = page === 'addon' ? '我想維修加價購：' : '我想預訂配件：\n機型：\n商品：';
+document.getElementById('order').href = 'https://line.me/R/oaMessage/' + encodeURIComponent(STORES[store].oa) + '/?' + encodeURIComponent(msg);
+document.getElementById('book').href = 'https://liff.line.me/2012612889-aZuwwjgj?store=' + store;
+</script>
+</body>
+</html>
