@@ -101,10 +101,16 @@ function bindCare_(ev, store, token, userId, phone) {
   // 先回覆；回覆成功才寫入資料庫（確認是真的 LINE 事件）
   var msg;
   if (recs.length) {
-    var lines = recs.map(function (r) {
-      var base = Number(r.baseDays) || 0, care = Number(r.careDays) || 0;
-      return '・' + (CAT_LABEL[r.category] || r.type) + '：保固至 ' + fmtYmd_(addDays_(parseYmd_(r.repairDate), base + care)) +
-             '（原 ' + base + ' 天＋CARE+ ' + care + ' 天）';
+    var lines = [];
+    recs.forEach(function (r) {
+      // itemsCode 例："battery:90:90|port:30:60"（一筆維修含多個零件時各自計算）
+      var parts = String(r.itemsCode || (r.category + ':' + r.baseDays + ':' + r.careDays)).split('|');
+      parts.forEach(function (p) {
+        var a = p.split(':'), base = Number(a[1]) || 0, care = Number(a[2]) || 0;
+        if (!(care > 0)) return;
+        lines.push('・' + (CAT_LABEL[a[0]] || r.type) + '：保固至 ' + fmtYmd_(addDays_(parseYmd_(r.repairDate), base + care)) +
+                   '（原 ' + base + ' 天＋CARE+ ' + care + ' 天）');
+      });
     });
     msg = '✅ Repair CARE+ 已啟用！\n' + store.branch + ' 維修紀錄：\n' + lines.join('\n') +
           '\n\n提醒：申請保固時須為本帳號好友，封鎖期間延長保固不適用。';

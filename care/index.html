@@ -80,6 +80,8 @@ textarea{min-height:60px;resize:vertical}
 .kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:6px 14px;margin-top:8px;font-size:13px}
 .kv div span{display:block;color:var(--mute);font-size:11px}
 .kv div b{font-weight:700}
+.kv.parts{grid-template-columns:repeat(3,1fr);background:#f9fafb;border-radius:8px;padding:6px 10px}
+@media(max-width:560px){.kv.parts{grid-template-columns:1fr 1fr 1fr;font-size:12px}}
 .care-off{color:var(--mute)}
 .note{margin-top:8px;font-size:13px;background:#f9fafb;border-radius:8px;padding:6px 10px}
 .warn{margin-top:8px;font-size:13px;background:#fff1f2;color:#9f1239;border-radius:8px;padding:6px 10px}
@@ -254,6 +256,32 @@ function autoCategory(type) {
   return 'other';
 }
 
+// 一筆品項可能含多個零件，例如「iPhone 13 電池0112+尾插排/鴻0113」→ 電池、尾插排 各自保固
+function parseItems(type) {
+  const segs = String(type || '').split(/[+＋、，,;；&]/).map(s => s.trim()).filter(Boolean);
+  const seen = new Set(), items = [];
+  segs.forEach(s => {
+    const k = autoCategory(s);
+    if (k === 'other' || k === 'none' || seen.has(k)) return;
+    seen.add(k); items.push(k);
+  });
+  if (!items.length) items.push(autoCategory(type));
+  return items;
+}
+// 由零件類別組出要存的保固欄位
+function warrantyFields(cats, otherDays) {
+  const items = cats.map(k => ({ category: k, baseDays: CATS[k].base === null ? Number(otherDays || 0) : CATS[k].base, careDays: CATS[k].care }));
+  const main = items.reduce((a, b) => (b.baseDays + b.careDays > a.baseDays + a.careDays ? b : a), items[0]);
+  return {
+    category: main.category, baseDays: main.baseDays, careDays: main.careDays,
+    items, itemsCode: items.map(i => `${i.category}:${i.baseDays}:${i.careDays}`).join('|'),
+  };
+}
+function recItems(r) {
+  if (Array.isArray(r.items) && r.items.length) return r.items;
+  return [{ category: r.category || 'other', baseDays: Number(r.baseDays) || 0, careDays: Number(r.careDays) || 0 }];
+}
+
 /* ════════ 3. 初始化 ════════ */
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -306,7 +334,7 @@ function diffDays(a, b) { return Math.round((b - a) / 86400000); }
 function normPhone(p) { let s = String(p || '').replace(/\D/g, ''); if (s.length === 9 && s[0] === '9') s = '0' + s; return s; }
 
 function careInfo(r) {
-  const eligible = Number(r.careDays) > 0;
+  const eligible = recItems(r).some(i => Number(i.careDays) > 0);
   const binding = eligible ? bindings.find(b =>
     b.phone === r.phone && b.branch === r.branch &&
     (() => { const k = diffDays(parseD(r.repairDate), new Date(b.boundAt)); return k >= -1 && k <= CARE_BIND_WINDOW_DAYS; })()
@@ -318,15 +346,22 @@ function careInfo(r) {
 }
 
 function status(r) {
-  const base = Number(r.baseDays) || 0;
   const ci = careInfo(r);
-  const baseExp = base > 0 ? addDays(r.repairDate, base) : null;
-  const careExp = ci.eligible && baseExp ? addDays(r.repairDate, base + Number(r.careDays)) : null;
-  const effExp = ci.active ? careExp : baseExp;
-  if (!effExp) return { ci, baseExp, careExp, effExp, cls: 'expired', label: '無保固' };
+  // 每個零件各自計算一般／CARE+ 到期日
+  const parts = recItems(r).map(i => {
+    const base = Number(i.baseDays) || 0, care = Number(i.careDays) || 0;
+    const baseExp = base > 0 ? addDays(r.repairDate, base) : null;
+    const careExp = care > 0 && baseExp ? addDays(r.repairDate, base + care) : null;
+    const effExp = ci.active && careExp ? careExp : baseExp;
+    return { category: i.category, baseExp, careExp, effExp };
+  });
+  const latest = k => parts.map(p => p[k]).filter(Boolean).sort((a, b) => b - a)[0] || null;
+  const baseExp = latest('baseExp'), careExp = latest('careExp'), effExp = latest('effExp');
+  const out = { ci, parts, baseExp, careExp, effExp };
+  if (!effExp) return { ...out, cls: 'expired', label: '無保固' };
   const left = diffDays(today(), effExp);
-  if (left < 0) return { ci, baseExp, careExp, effExp, cls: 'expired', label: '已過保' };
-  return { ci, baseExp, careExp, effExp, cls: left <= 7 ? 'expiring' : 'valid', label: `剩 ${left} 天`, left };
+  if (left < 0) return { ...out, cls: 'expired', label: '已過保' };
+  return { ...out, cls: left <= 7 ? 'expiring' : 'valid', label: `剩 ${left} 天`, left };
 }
 
 /* ════════ 5. 畫面 ════════ */
@@ -363,14 +398,22 @@ function render() {
 
 function card(r) {
   const s = status(r), ci = s.ci;
-  const cat = CATS[r.category] || CATS.other;
-  let careCell, chips = '';
-  if (!ci.eligible) careCell = `<b class="care-off">不適用</b>`;
-  else if (ci.state === 'line') { careCell = `<b style="color:var(--red)">${show(s.careExp)}</b>`; chips += `<span class="chip chip-care">CARE+ LINE 已綁定</span>`; }
-  else if (ci.state === 'manual') { careCell = `<b style="color:var(--red)">${show(s.careExp)}</b>`; chips += `<span class="chip chip-manual">CARE+ 人工啟用</span>`; }
-  else if (ci.state === 'blocked') { careCell = `<b class="care-off">暫停（${show(s.careExp)}）</b>`; chips += `<span class="chip chip-blocked">LINE 已封鎖</span>`; }
-  else careCell = `<b class="care-off">未啟用</b>`;
+  let chips = '';
+  if (ci.state === 'line') chips += `<span class="chip chip-care">CARE+ LINE 已綁定</span>`;
+  else if (ci.state === 'manual') chips += `<span class="chip chip-manual">CARE+ 人工啟用</span>`;
+  else if (ci.state === 'blocked') chips += `<span class="chip chip-blocked">LINE 已封鎖</span>`;
   if (r.source === 'legacy') chips += `<span class="chip chip-legacy">舊系統</span>`;
+  const careCellFor = p => {
+    if (!p.careExp) return `<b class="care-off">不適用</b>`;
+    if (ci.active) return `<b style="color:var(--red)">${show(p.careExp)}</b>`;
+    if (ci.state === 'blocked') return `<b class="care-off">暫停（${show(p.careExp)}）</b>`;
+    return `<b class="care-off">未啟用</b>`;
+  };
+  // 每個零件一列：類別｜一般保固到期｜CARE+ 到期
+  const partRows = s.parts.map(p => `
+      <div><span>保固類別</span><b>${(CATS[p.category] || CATS.other).label}</b></div>
+      <div><span>一般保固到期</span><b>${p.baseExp ? show(p.baseExp) : '無保固'}</b></div>
+      <div><span>CARE+ 到期</span>${careCellFor(p)}</div>`).join('');
 
   return `<div class="card ${s.cls}">
     <div class="card-top">
@@ -381,12 +424,10 @@ function card(r) {
     </div>
     <div class="kv">
       <div><span>品項</span><b>${esc(r.type)}</b></div>
-      <div><span>保固類別</span><b>${cat.label}</b></div>
       <div><span>維修日期</span><b>${show(parseD(r.repairDate))}</b></div>
-      <div><span>一般保固到期</span><b>${s.baseExp ? show(s.baseExp) : '無保固'}</b></div>
-      <div><span>CARE+ 到期</span>${careCell}</div>
       <div><span>金額</span><b>${r.price ? 'NT$ ' + Number(String(r.price).replace(/[^\d.]/g, '') || 0).toLocaleString() : '—'}</b></div>
     </div>
+    <div class="kv parts">${partRows}</div>
     ${ci.state === 'blocked' ? `<div class="warn">客人目前封鎖了 ${esc(r.branch)} LINE，CARE+ 延長部分暫不適用；客人重新加入好友後自動恢復。一般保固不受影響。</div>` : ''}
     ${r.note ? `<div class="note">📝 ${esc(r.note)}</div>` : ''}
     ${r.followup ? `<div class="note">📌 後續：${esc(r.followup)}</div>` : ''}
@@ -423,7 +464,7 @@ function formHTML(p) {
     <div><label>客人姓名 *</label><input name="name" required></div>
     <div><label>電話 *</label><input name="phone" type="tel" inputmode="numeric" placeholder="09xxxxxxxx" required></div>
     <div><label>品項 *</label><input name="type" placeholder="例：iPhone 13 電池" required></div>
-    <div><label>保固類別</label><select name="category">${catOpts}</select><div class="hint">輸入品項後會自動判斷，可手動修改</div></div>
+    <div><label>保固類別</label><select name="category">${catOpts}</select><div class="hint">輸入品項後會自動判斷，可手動修改</div><div class="hint" data-multi style="color:var(--red);font-weight:700"></div></div>
     <div data-other class="hidden"><label>保固天數（依店家告知）</label><input name="otherDays" type="number" min="0" value="0"></div>
     <div><label>金額</label><input name="price" inputmode="numeric"></div>
   </div>
@@ -441,8 +482,15 @@ function formHTML(p) {
 
 function wireForm(form) {
   const cat = form.category, type = form.type, other = form.querySelector('[data-other]');
-  const sync = () => other.classList.toggle('hidden', cat.value !== 'other');
-  type.addEventListener('input', () => { if (!form.dataset.catTouched) { cat.value = autoCategory(type.value); sync(); } });
+  const multi = form.querySelector('[data-multi]');
+  const sync = () => {
+    const items = parseItems(type.value);
+    const isMulti = items.length > 1;
+    multi.textContent = isMulti ? `偵測到多個零件：${items.map(k => CATS[k].label).join('＋')}，會分別計算保固` : '';
+    cat.disabled = isMulti;
+    other.classList.toggle('hidden', isMulti || cat.value !== 'other');
+  };
+  type.addEventListener('input', () => { if (!form.dataset.catTouched) cat.value = parseItems(type.value)[0]; sync(); });
   cat.addEventListener('change', () => { form.dataset.catTouched = '1'; sync(); });
   sync();
 }
@@ -451,12 +499,11 @@ function readForm(form) {
   const f = Object.fromEntries(new FormData(form).entries());
   const phone = normPhone(f.phone);
   if (!/^09\d{8}$/.test(phone)) { toast('⚠️ 電話格式應為 09 開頭 10 碼'); return null; }
-  const c = CATS[f.category];
+  const items = parseItems(f.type);
+  const cats = items.length > 1 ? items : [form.category.value];
   return {
     branch: f.branch, repairDate: f.repairDate, name: f.name.trim(), phone,
-    type: f.type.trim(), category: f.category,
-    baseDays: c.base === null ? Number(f.otherDays || 0) : c.base,
-    careDays: c.care,
+    type: f.type.trim(), ...warrantyFields(cats, f.otherDays),
     price: (f.price || '').trim(), note: (f.note || '').trim(),
     ...(f.followup !== undefined ? { followup: f.followup.trim() } : {}),
     careManual: form.careManual.checked,
@@ -593,7 +640,7 @@ function showPreview() {
   const noDate = pendingRows.filter(r => !r.repairDate).length;
   $('pv-title').textContent = `📊 ${pendingFile}：找到 ${pendingRows.length} 筆` + (noBranch ? `（${noBranch} 筆偵測不到分店）` : '') + (noDate ? `（${noDate} 筆沒有日期，會跳過）` : '');
   $('pv-table').innerHTML = `<table><tr><th>日期</th><th>分店</th><th>姓名</th><th>電話</th><th>品項</th><th>保固類別</th></tr>` +
-    pendingRows.slice(0, 30).map(r => `<tr><td>${r.repairDate || '—'}</td><td>${r.branch || '—'}</td><td>${esc(r.name)}</td><td>${r.phone}</td><td>${esc(r.type)}</td><td>${CATS[r.category].label}</td></tr>`).join('') +
+    pendingRows.slice(0, 30).map(r => `<tr><td>${r.repairDate || '—'}</td><td>${r.branch || '—'}</td><td>${esc(r.name)}</td><td>${r.phone}</td><td>${esc(r.type)}</td><td>${parseItems(r.type).map(k => CATS[k].label).join('＋')}</td></tr>`).join('') +
     `</table>` + (pendingRows.length > 30 ? `<p class="hint">…還有 ${pendingRows.length - 30} 筆</p>` : '');
   $('preview').classList.remove('hidden');
   $('preview').scrollIntoView({ behavior: 'smooth' });
@@ -606,9 +653,8 @@ $('pv-ok').onclick = async () => {
   const toAdd = [];
   pendingRows.forEach(p => {
     if (!p.repairDate) return;
-    const c = CATS[p.category];
     const r = { branch: p.branch || fallback, repairDate: p.repairDate, name: p.name || '（未填）', phone: p.phone,
-      type: p.type, category: p.category, baseDays: c.base ?? 0, careDays: c.care, price: p.price, note: p.note,
+      type: p.type, ...warrantyFields(parseItems(p.type), 0), price: p.price, note: p.note,
       careManual: false, source: 'excel', importFile: pendingFile, createdAt: new Date().toISOString(), createdBy: auth.currentUser.email };
     if (exist.has(key(r))) return;
     exist.add(key(r)); toAdd.push(r);
@@ -649,7 +695,7 @@ $('legacyFile').onchange = e => {
       toAdd.push({
         branch: BRANCHES.includes(o.branch) ? o.branch : '楠梓店',
         repairDate: date, name: o.name || '（未填）', phone: normPhone(o.phone) || String(o.phone || ''),
-        type, category: autoCategory(type), baseDays, careDays: 0,
+        type, category: autoCategory(type), baseDays, careDays: 0, items: [{ category: autoCategory(type), baseDays, careDays: 0 }],
         price: o.price || '', note: [o.note, o.parts ? `零件：${o.parts}` : ''].filter(Boolean).join('｜'),
         followup: o.followup || '', careManual: false,
         source: 'legacy', legacyId: o.id, legacyMonths: months,
@@ -673,7 +719,7 @@ $('exCsv').onclick = () => {
   const careTxt = { line: 'LINE 已綁定', manual: '人工啟用', blocked: 'LINE 已封鎖', none: '未啟用' };
   const rows = visible().map(r => {
     const s = status(r);
-    return [r.branch, r.name, r.phone, r.type, (CATS[r.category] || CATS.other).label, r.repairDate,
+    return [r.branch, r.name, r.phone, r.type, recItems(r).map(i => (CATS[i.category] || CATS.other).label).join('＋'), r.repairDate,
       s.baseExp ? ymd(s.baseExp) : '無保固', s.ci.eligible ? careTxt[s.ci.state] : '不適用',
       s.ci.eligible && s.careExp ? ymd(s.careExp) : '', s.label, r.price || '', r.note || '', r.followup || ''];
   });
