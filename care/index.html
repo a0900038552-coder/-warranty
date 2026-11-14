@@ -123,7 +123,7 @@ th{color:var(--mute);font-weight:600}
 <section id="app" class="hidden">
 <header>
   <div class="hd-row">
-    <div class="logo">復原者 保固管理<small>REPAIR CARE+ SYSTEM · v2026.11.14</small></div>
+    <div class="logo">復原者 保固管理<small>REPAIR CARE+ SYSTEM · v2026.11.14b</small></div>
     <div class="hd-right">
       <select id="branchFilter">
         <option value="">全部分店</option>
@@ -191,6 +191,11 @@ th{color:var(--mute);font-weight:600}
       </div>
     </div>
     <div class="panel">
+      <h2>依最新規則重新計算</h2>
+      <p class="hint" style="margin-bottom:10px">保固規則或品項判斷更新後，按這裡讓「報表匯入」的紀錄套用最新規則（保固類別、天數、品項上的交機日）。手動新增或編輯過的紀錄不會被改動，CARE+ 登錄也不受影響。</p>
+      <button class="btn btn-dark" id="recalcBtn">重新計算已匯入紀錄</button>
+    </div>
+    <div class="panel">
       <h2>從舊保固系統搬資料</h2>
       <p class="hint" style="margin-bottom:10px">在舊系統「管理」頁按「匯出 JSON」，再把檔案選到這裡。舊紀錄會保留當時的保固月數（換算成到期日），不會套用新規則，也不會有 CARE+。舊系統的資料完全不會被改動。</p>
       <button class="btn btn-ghost" id="legacyBtn">選擇舊系統 JSON 檔</button>
@@ -243,6 +248,8 @@ const CATS = {
   camera:  { label: '前後鏡頭',   base: 30, care: 30 },
   board:   { label: '主機板 IC',  base: 30, care: 30 },
   flex:    { label: '排線類',     base: 30, care: 30 },
+  used:    { label: '中古機',     base: 30, care: 30 },
+  newphone:{ label: '新機',       base: 365, care: 0 },
   other:   { label: '其他（依店家告知）', base: null, care: 0 },
   none:    { label: '無保固項目', base: 0,  care: 0 },
 };
@@ -251,6 +258,9 @@ function autoCategory(type) {
   // 先拿掉附加的配件／贈品（例：「液晶/雄0324 送霧面滿玻」裡的滿玻），再判斷維修零件
   const ADDON = /[前後]?鏡頭(保護)?貼|送[^+＋、]*|霧面滿玻|滿玻|玻保|保護貼|玻璃貼|鏡頭貼|犀牛盾|惡魔盾|[^+＋、]*殼|皮套|掛繩|傳輸線|充電線|充電頭|旅充|資料轉移|清潔/g;
   const core = t.replace(ADDON, '');
+  // 手機銷售：中古機 1 個月＋CARE+ 1 個月；新機（含老人機）1 年
+  if (/中古|二手/.test(core)) return 'used';
+  if (/新機|老人機/.test(core)) return 'newphone';
   if (/電池/.test(core)) return 'battery';
   // 主機板類：不開機、充電IC、零件座等
   if (/不開機|不開基|IC|主機板|主板|機板|液晶座|排線座|主板座|機板座/i.test(core)) return 'board';
@@ -261,7 +271,7 @@ function autoCategory(type) {
   if (/排線|開機排|音量排|聽筒|喇叭/.test(core)) return 'flex';
   if (/鏡頭|相機|視訊/.test(core)) return 'camera';
   // 無保固：配件、按鍵、外殼、軟體服務（依官網條款）
-  if (core !== t || /軟體|刷機|升級|系統|外殼|中框|背蓋|後蓋|按鍵|開機鍵|音量鍵|新機|老人機/.test(t)) return 'none';
+  if (core !== t || /軟體|刷機|升級|系統|外殼|中框|背蓋|後蓋|按鍵|開機鍵|音量鍵/.test(t)) return 'none';
   return 'other';
 }
 
@@ -738,6 +748,28 @@ $('legacyFile').onchange = e => {
     catch (er) { toast('⚠️ 搬移失敗：' + er.message); }
   };
   rd.readAsText(f);
+};
+
+/* ════════ 8b. 依最新規則重新計算 ════════ */
+$('recalcBtn').onclick = async () => {
+  const changes = [];
+  records.filter(r => r.source === 'excel').forEach(r => {
+    const booked = r.bookedDate || r.repairDate;
+    const repairDate = dateFromType(r.type, booked) || booked;
+    const wf = warrantyFields(parseItems(r.type), 0);
+    if (repairDate !== r.repairDate || wf.itemsCode !== r.itemsCode || booked !== r.bookedDate)
+      changes.push({ id: r.id, data: { repairDate, bookedDate: booked, ...wf } });
+  });
+  if (!changes.length) return toast('所有紀錄都已是最新規則');
+  if (!confirm(`將更新 ${changes.length} 筆匯入紀錄的保固類別／天數／起算日，確定嗎？`)) return;
+  try {
+    for (let i = 0; i < changes.length; i += 400) {
+      const b = writeBatch(db);
+      changes.slice(i, i + 400).forEach(c => b.update(doc(db, 'records', c.id), c.data));
+      await b.commit();
+    }
+    toast(`✅ 已更新 ${changes.length} 筆`);
+  } catch (er) { toast('⚠️ 更新失敗：' + er.message); }
 };
 
 /* ════════ 9. 匯出 ════════ */
