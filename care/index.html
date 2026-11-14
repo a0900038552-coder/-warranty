@@ -599,6 +599,13 @@ function fmtDate(v) {
   if (roc && Number(roc[1]) < 1000) return `${Number(roc[1]) + 1911}-${roc[2].padStart(2, '0')}-${roc[3].padStart(2, '0')}`;
   const ad = s.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);
   if (ad) return `${ad[1]}-${ad[2].padStart(2, '0')}-${ad[3].padStart(2, '0')}`;
+  // 只有「月/日」的文字（例：11/14）→ 補上年份（取不晚於今天的那一年）
+  const md = s.match(/^(\d{1,2})[\/\-.](\d{1,2})$/);
+  if (md) {
+    const t = new Date(); let y = t.getFullYear();
+    if (new Date(y, Number(md[1]) - 1, Number(md[2])) > t) y--;
+    return `${y}-${md[1].padStart(2, '0')}-${md[2].padStart(2, '0')}`;
+  }
   return '';
 }
 
