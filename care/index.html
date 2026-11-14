@@ -247,12 +247,16 @@ const CATS = {
 };
 function autoCategory(type) {
   const t = String(type || '').replace(/\s+/g, '');
-  if (/保護貼|玻璃貼|保護殼|手機殼|傳輸線|充電線|充電頭|旅充|軟體|刷機|升級|系統|外殼|中框|按鍵/.test(t)) return 'none';
-  if (/電池/.test(t)) return 'battery';
-  if (/液晶|螢幕|面板|總成|觸控/.test(t)) return 'screen';
-  if (/尾插|充電孔|充電口|充電座|充電板|小板/.test(t)) return 'port';
-  if (/鏡頭|相機|視訊/.test(t)) return 'camera';
-  if (/主機板|主板|IC|機板/i.test(t)) return 'board';
+  // 先拿掉附加的配件／贈品（例：「液晶/雄0324 送霧面滿玻」裡的滿玻），再判斷維修零件
+  const ADDON = /[前後]?鏡頭(保護)?貼|送[^+＋、]*|霧面滿玻|滿玻|玻保|保護貼|玻璃貼|鏡頭貼|犀牛盾|惡魔盾|[^+＋、]*殼|皮套|掛繩|傳輸線|充電線|充電頭|旅充|資料轉移|清潔/g;
+  const core = t.replace(ADDON, '');
+  if (/電池/.test(core)) return 'battery';
+  if (/液晶座|排線座|主板座|機板座|飛線|主機板|主板|機板|IC/i.test(core)) return 'board';
+  if (/液晶|螢幕|面板|總成|觸控/.test(core)) return 'screen';
+  if (/尾插|充電孔|充電口|充電座|充電板|小板/.test(core)) return 'port';
+  if (/鏡頭|相機|視訊/.test(core)) return 'camera';
+  // 無保固：配件、按鍵、外殼、軟體服務（依官網條款）
+  if (core !== t || /軟體|刷機|升級|系統|外殼|中框|背蓋|後蓋|按鍵|開機鍵|音量鍵|新機|老人機/.test(t)) return 'none';
   return 'other';
 }
 
