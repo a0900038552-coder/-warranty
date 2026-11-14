@@ -89,7 +89,9 @@ function handleEvent_(ev, store, token) {
 
   if (ev.type === 'message' && ev.message.type === 'text') {
     var text = String(ev.message.text || '').replace(/[\s\-－]/g, '');
-    var m = text.match(/(09\d{8})/);
+    // 只有「單獨一支手機號碼」或「CARE+ 手機號碼」才登錄；
+    // 預約、詢問等夾帶電話的訊息（例：王先生0912345678明天換電池）不觸發
+    var m = text.match(/^(?:CARE\+?|保固登錄|登錄)?(09\d{8})$/i);
     var isCare = /CARE/i.test(text);
     if (!m) {
       if (isCare) reply_(ev.replyToken, token, '請輸入「CARE+」加上您維修時留的手機號碼，例如：\nCARE+ 0912345678');
