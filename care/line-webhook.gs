@@ -21,9 +21,17 @@
  */
 
 var STORES = {
-  nanzi:  { branch: '楠梓店', tokenProp: 'NANZI_TOKEN'  },
-  dexian: { branch: '德賢店', tokenProp: 'DEXIAN_TOKEN' }
+  nanzi:  { branch: '楠梓店', tokenProp: 'NANZI_TOKEN',  terms: 'nanzi'  },
+  dexian: { branch: '德賢店', tokenProp: 'DEXIAN_TOKEN', terms: 'dexian' }
 };
+// 保固條款圖片（放在 GitHub Pages，更新保固單時換圖並修改版本號）
+var TERMS_BASE = 'https://a0900038552-coder.github.io/-warranty/care/terms/';
+var TERMS_VER = '20261114';
+function termsImage_(store) {
+  return { type: 'image',
+    originalContentUrl: TERMS_BASE + store.terms + '.jpg?v=' + TERMS_VER,
+    previewImageUrl: TERMS_BASE + store.terms + '_preview.jpg?v=' + TERMS_VER };
+}
 var BIND_WINDOW_DAYS = 14;
 // 公開設定（與保固系統網頁相同，非機密）
 var FIREBASE_API_KEY = 'AIzaSyD04ZMXIt8Oo3hjm5qsMaKiLXYzp_9YKwA';
@@ -115,23 +123,24 @@ function bindCare_(ev, store, token, userId, phone) {
       });
     });
     msg = '✅ Repair CARE+ 已啟用！\n' + store.branch + ' 維修紀錄：\n' + lines.join('\n') +
-          '\n\n提醒：申請保固時須為本帳號好友，封鎖期間延長保固不適用。';
+          '\n\n提醒：申請保固時須為本帳號好友，封鎖期間延長保固不適用。\n保固條款請見下圖 👇';
   } else {
-    msg = '已收到您的 CARE+ 登錄 ✅\n門市建檔後會自動生效（維修日起 ' + BIND_WINDOW_DAYS + ' 天內有效）。\n如有疑問請洽 ' + store.branch + ' 門市人員。';
+    msg = '已收到您的 CARE+ 登錄 ✅\n門市建檔後會自動生效（維修日起 ' + BIND_WINDOW_DAYS + ' 天內有效）。\n保固條款請見下圖 👇 如有疑問請洽 ' + store.branch + ' 門市人員。';
   }
-  if (!reply_(ev.replyToken, token, msg)) return;
+  if (!reply_(ev.replyToken, token, [{ type: 'text', text: msg }, termsImage_(store)])) return;
 
   createDoc_('care_bindings', { phone: phone, branch: store.branch, lineUserId: userId, boundAt: now.toISOString(), source: 'line' });
   patchDoc_('line_users/' + userId, { status: 'friend', branch: store.branch, phone: phone, updatedAt: now.toISOString() });
 }
 
 /* ───────── LINE API ───────── */
-function reply_(replyToken, token, text) {
+function reply_(replyToken, token, msgs) {
   if (!replyToken) return false;
+  var messages = typeof msgs === 'string' ? [{ type: 'text', text: msgs }] : msgs;
   var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/reply', {
     method: 'post', contentType: 'application/json', muteHttpExceptions: true,
     headers: { Authorization: 'Bearer ' + token },
-    payload: JSON.stringify({ replyToken: replyToken, messages: [{ type: 'text', text: text }] })
+    payload: JSON.stringify({ replyToken: replyToken, messages: messages })
   });
   return res.getResponseCode() === 200;
 }
