@@ -424,7 +424,7 @@ function card(r) {
     </div>
     <div class="kv">
       <div><span>品項</span><b>${esc(r.type)}</b></div>
-      <div><span>維修日期</span><b>${show(parseD(r.repairDate))}</b></div>
+      <div><span>維修日期（保固起算）</span><b>${show(parseD(r.repairDate))}</b>${r.bookedDate && r.bookedDate !== r.repairDate ? `<span>報表入帳 ${show(parseD(r.bookedDate))}</span>` : ''}</div>
       <div><span>金額</span><b>${r.price ? 'NT$ ' + Number(String(r.price).replace(/[^\d.]/g, '') || 0).toLocaleString() : '—'}</b></div>
     </div>
     <div class="kv parts">${partRows}</div>
@@ -566,6 +566,18 @@ async function delRecord(id) {
 }
 
 /* ════════ 7. Excel 匯入 ════════ */
+// LINE Pay 延遲入帳：品項開頭寫實際交機日，例「11/1 13 電池/雄1028」→ 保固從 11/1 起算
+function dateFromType(type, bookedDate) {
+  const m = String(type || '').trim().match(/^(\d{1,2})[\/.](\d{1,2})(?=\s|$)/);
+  if (!m || !bookedDate) return '';
+  const mo = Number(m[1]), da = Number(m[2]);
+  if (mo < 1 || mo > 12 || da < 1 || da > 31) return '';
+  const bk = parseD(bookedDate);
+  let d = new Date(bk.getFullYear(), mo - 1, da);
+  if (d.getMonth() !== mo - 1) return '';
+  if (d > bk) d = new Date(bk.getFullYear() - 1, mo - 1, da); // 例：1/5 入帳、品項寫 12/28 → 去年
+  return ymd(d);
+}
 $('drop').onclick = () => $('xlsxFile').click();
 $('drop').ondragover = e => e.preventDefault();
 $('drop').ondrop = e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) readXlsx(f); };
@@ -592,7 +604,7 @@ function fmtDate(v) {
 
 function parseXlsx(buf, fileName) {
   const wb = XLSX.read(buf, { type: 'array', cellDates: true });
-  const SKIP = ['交接', '報價', '退貨', 'LINE PAY', 'LINEPAY', '廢'];
+  const SKIP = ['交接', '報價', '退貨', '廢'];
   pendingRows = [];
   wb.SheetNames.forEach(sn => {
     if (SKIP.some(s => sn.toUpperCase().includes(s))) return;
@@ -622,8 +634,9 @@ function parseXlsx(buf, fileName) {
       if (!/^09\d{8}$/.test(phone)) return;
       const type = C.type >= 0 ? String(r[C.type]).trim() : '';
       if (!type) return;
+      const typed = dateFromType(type, cur);
       pendingRows.push({
-        repairDate: cur, type, phone,
+        repairDate: typed || cur, bookedDate: cur, dateFromItem: !!typed, type, phone,
         name: C.name >= 0 ? String(r[C.name]).trim().replace(/[RS]$/, '') : '',
         note: C.note >= 0 ? String(r[C.note]).trim() : '',
         price: C.amt >= 0 ? String(r[C.amt]).trim() : '',
@@ -638,9 +651,10 @@ function parseXlsx(buf, fileName) {
 function showPreview() {
   const noBranch = pendingRows.filter(r => !r.branch).length;
   const noDate = pendingRows.filter(r => !r.repairDate).length;
-  $('pv-title').textContent = `📊 ${pendingFile}：找到 ${pendingRows.length} 筆` + (noBranch ? `（${noBranch} 筆偵測不到分店）` : '') + (noDate ? `（${noDate} 筆沒有日期，會跳過）` : '');
-  $('pv-table').innerHTML = `<table><tr><th>日期</th><th>分店</th><th>姓名</th><th>電話</th><th>品項</th><th>保固類別</th></tr>` +
-    pendingRows.slice(0, 30).map(r => `<tr><td>${r.repairDate || '—'}</td><td>${r.branch || '—'}</td><td>${esc(r.name)}</td><td>${r.phone}</td><td>${esc(r.type)}</td><td>${parseItems(r.type).map(k => CATS[k].label).join('＋')}</td></tr>`).join('') +
+  const fromItem = pendingRows.filter(r => r.dateFromItem).length;
+  $('pv-title').textContent = `📊 ${pendingFile}：找到 ${pendingRows.length} 筆` + (fromItem ? `（${fromItem} 筆使用品項上的交機日）` : '') + (noBranch ? `（${noBranch} 筆偵測不到分店）` : '') + (noDate ? `（${noDate} 筆沒有日期，會跳過）` : '');
+  $('pv-table').innerHTML = `<table><tr><th>保固起算</th><th>分頁</th><th>分店</th><th>姓名</th><th>電話</th><th>品項</th><th>保固類別</th></tr>` +
+    pendingRows.slice(0, 30).map(r => `<tr><td>${r.repairDate || '—'}${r.dateFromItem ? `<br><span class="hint" style="color:var(--red)">品項日期（入帳 ${r.bookedDate}）</span>` : ''}</td><td>${esc(r.sheet)}</td><td>${r.branch || '—'}</td><td>${esc(r.name)}</td><td>${r.phone}</td><td>${esc(r.type)}</td><td>${parseItems(r.type).map(k => CATS[k].label).join('＋')}</td></tr>`).join('') +
     `</table>` + (pendingRows.length > 30 ? `<p class="hint">…還有 ${pendingRows.length - 30} 筆</p>` : '');
   $('preview').classList.remove('hidden');
   $('preview').scrollIntoView({ behavior: 'smooth' });
@@ -655,7 +669,7 @@ $('pv-ok').onclick = async () => {
     if (!p.repairDate) return;
     const r = { branch: p.branch || fallback, repairDate: p.repairDate, name: p.name || '（未填）', phone: p.phone,
       type: p.type, ...warrantyFields(parseItems(p.type), 0), price: p.price, note: p.note,
-      careManual: false, source: 'excel', importFile: pendingFile, createdAt: new Date().toISOString(), createdBy: auth.currentUser.email };
+      careManual: false, source: 'excel', importFile: pendingFile, bookedDate: p.bookedDate || '', createdAt: new Date().toISOString(), createdBy: auth.currentUser.email };
     if (exist.has(key(r))) return;
     exist.add(key(r)); toAdd.push(r);
   });
