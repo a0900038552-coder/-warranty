@@ -21,8 +21,8 @@
  */
 
 var STORES = {
-  nanzi:  { branch: '楠梓店', tokenProp: 'NANZI_TOKEN',  terms: 'nanzi'  },
-  dexian: { branch: '德賢店', tokenProp: 'DEXIAN_TOKEN', terms: 'dexian' }
+  nanzi:  { branch: '楠梓店', tokenProp: 'NANZI_TOKEN',  terms: 'nanzi',  quoteText: '請告訴我您的狀況', usedText: '中古機' },
+  dexian: { branch: '德賢店', tokenProp: 'DEXIAN_TOKEN', terms: 'dexian', quoteText: '我想索取報價',     usedText: '二手機' }
 };
 // 保固條款圖片（放在 GitHub Pages，更新保固單時換圖並修改版本號）
 var TERMS_BASE = 'https://a0900038552-coder.github.io/-warranty/care/terms/';
@@ -33,6 +33,12 @@ function termsImage_(store) {
     previewImageUrl: TERMS_BASE + store.terms + '_preview.jpg?v=' + TERMS_VER };
 }
 var BIND_WINDOW_DAYS = 14;
+var CARE_INTRO = '🛡 Repair CARE+ 延長保固\n\n' +
+  '在本店維修後 14 天內，直接回傳您維修時留的手機號碼（例：0912345678），即可免費啟用延長保固：\n' +
+  '・液晶／螢幕、尾插排：＋60 天\n' +
+  '・電池：＋90 天\n' +
+  '・前後鏡頭、主機板、排線類、中古機：＋30 天\n\n' +
+  '申請保固時須為本帳號好友。完整條款請見下圖 👇';
 // 公開設定（與保固系統網頁相同，非機密）
 var FIREBASE_API_KEY = 'AIzaSyD04ZMXIt8Oo3hjm5qsMaKiLXYzp_9YKwA';
 var FIREBASE_PROJECT_ID = 'care-warranty';
@@ -92,9 +98,9 @@ function handleEvent_(ev, store, token) {
     // 只有「單獨一支手機號碼」或「CARE+ 手機號碼」才登錄；
     // 預約、詢問等夾帶電話的訊息（例：王先生0912345678明天換電池）不觸發
     var m = text.match(/^(?:CARE\+?|保固登錄|登錄)?(09\d{8})$/i);
-    var isCare = /CARE/i.test(text);
+    var isCare = /CARE/i.test(text) || /^(保固|延保|保固條款|延長保固)$/.test(text);
     if (!m) {
-      if (isCare) reply_(ev.replyToken, token, '請輸入「CARE+」加上您維修時留的手機號碼，例如：\nCARE+ 0912345678');
+      if (isCare) reply_(ev.replyToken, token, [{ type: 'text', text: CARE_INTRO }, termsImage_(store)]);
       return; // 其他訊息交給原本的關鍵字自動回覆
     }
     bindCare_(ev, store, token, userId, m[1]);
@@ -246,4 +252,42 @@ function testSetup() {
   idToken_();
   console.log('Firebase 機器人登入成功');
   console.log('查詢測試筆數：' + queryByPhone_('0900000000').length);
+}
+
+
+/* ───────── 圖文選單：在編輯器選 setupRichMenu 按「執行」即可為兩間店建立並設為預設 ───────── */
+var RICHMENU_IMG = 'https://a0900038552-coder.github.io/-warranty/care/richmenu.jpg?v=20261114';
+function setupRichMenu() {
+  var img = UrlFetchApp.fetch(RICHMENU_IMG).getBlob().getBytes();
+  Object.keys(STORES).forEach(function (k) {
+    var s = STORES[k], token = prop_(s.tokenProp);
+    var W = [0, 833, 1666], w = [833, 833, 834], H = [0, 843], h = 843;
+    var acts = [
+      { type: 'message', label: '維修報價', text: s.quoteText },
+      { type: 'message', label: '立即預約', text: '立即預約' },
+      { type: 'message', label: 'CARE+延保', text: 'CARE+' },
+      { type: 'message', label: '門市導航', text: '地址' },
+      { type: 'message', label: '二手機收購', text: s.usedText },
+      { type: 'uri', label: '官方網站', uri: 'https://www.grandmasterfix.com.tw/' }
+    ];
+    var areas = acts.map(function (a, i) {
+      return { bounds: { x: W[i % 3], y: H[Math.floor(i / 3)], width: w[i % 3], height: h }, action: a };
+    });
+    var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/richmenu', {
+      method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      headers: { Authorization: 'Bearer ' + token },
+      payload: JSON.stringify({ size: { width: 2500, height: 1686 }, selected: true,
+        name: '復原者 6格選單 2026-11', chatBarText: '選單', areas: areas })
+    });
+    if (res.getResponseCode() !== 200) throw new Error(s.branch + ' 建立失敗：' + res.getContentText());
+    var id = JSON.parse(res.getContentText()).richMenuId;
+    var up = UrlFetchApp.fetch('https://api-data.line.me/v2/bot/richmenu/' + id + '/content', {
+      method: 'post', contentType: 'image/jpeg', payload: img, muteHttpExceptions: true,
+      headers: { Authorization: 'Bearer ' + token } });
+    if (up.getResponseCode() !== 200) throw new Error(s.branch + ' 圖片上傳失敗：' + up.getContentText());
+    var def = UrlFetchApp.fetch('https://api.line.me/v2/bot/user/all/richmenu/' + id, {
+      method: 'post', muteHttpExceptions: true, headers: { Authorization: 'Bearer ' + token } });
+    if (def.getResponseCode() !== 200) throw new Error(s.branch + ' 設為預設失敗：' + def.getContentText());
+    console.log(s.branch + ' 圖文選單已上架：' + id);
+  });
 }
