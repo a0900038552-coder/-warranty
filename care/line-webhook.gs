@@ -275,7 +275,7 @@ var BOOKING_LIFF_ID = '2012612889-aZuwwjgj';
 var RICHMENU_TAB1 = 'https://a0900038552-coder.github.io/-warranty/care/richmenu_tab1.jpg';
 var RICHMENU_TAB2 = 'https://a0900038552-coder.github.io/-warranty/care/richmenu_tab2.jpg';
 var DM_URL = 'https://a0900038552-coder.github.io/-warranty/dm/';
-var STORE_PHONE = { nanzi: '', dexian: '' };   // 兩店電話（例：07-1234567），填好才能上架
+var STORE_PHONE = { nanzi: '0900038552', dexian: '0971626883' };   // 兩店電話（例：07-1234567），填好才能上架
 
 function setupRichMenu() {
   var v = '?v=' + Date.now();
