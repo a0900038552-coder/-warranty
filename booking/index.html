@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>預約維修｜復原者手機維修</title>
+<script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+:root{--ink:#16181d;--red:#d71920;--mute:#6b7280;--line:#e5e7eb;--bg:#f4f5f7}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;background:var(--bg);color:var(--ink);font-size:16px;line-height:1.5;padding-bottom:110px}
+header{background:var(--ink);color:#fff;padding:18px 18px 16px;border-bottom:4px solid var(--red)}
+header small{display:block;color:#a1a6b0;font-size:12px;letter-spacing:2px}
+header h1{font-size:22px;font-weight:900;letter-spacing:1px;margin-top:2px}
+header .store{display:inline-block;margin-top:8px;border:1px solid #fff;border-radius:99px;padding:2px 12px;font-size:13px;font-weight:700}
+main{padding:14px}
+.card{background:#fff;border-radius:14px;padding:16px;margin-bottom:12px;border:1px solid var(--line)}
+.card h2{font-size:15px;font-weight:800;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.card h2::before{content:"";width:4px;height:16px;background:var(--red);border-radius:2px}
+label{display:block;font-size:13px;font-weight:700;color:#374151;margin:10px 0 5px}
+label:first-of-type{margin-top:0}
+label .req{color:var(--red)}
+input,textarea{width:100%;border:1px solid #d1d5db;border-radius:10px;padding:12px;font:inherit;background:#fff}
+input:focus,textarea:focus{outline:2px solid var(--ink);border-color:transparent}
+textarea{min-height:70px;resize:vertical}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{border:1.5px solid #d1d5db;border-radius:99px;padding:8px 14px;font-size:14px;font-weight:700;background:#fff;color:var(--ink);cursor:pointer;user-select:none}
+.chip.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.dates{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;scroll-snap-type:x mandatory}
+.date{flex:0 0 64px;scroll-snap-align:start;border:1.5px solid #d1d5db;border-radius:12px;padding:8px 0;text-align:center;background:#fff;cursor:pointer}
+.date b{display:block;font-size:20px;font-family:Arial,sans-serif}
+.date span{font-size:12px;color:var(--mute)}
+.date.on{background:var(--red);border-color:var(--red);color:#fff}
+.date.on span{color:#ffe1e3}
+.slots{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.slot{border:1.5px solid #d1d5db;border-radius:10px;padding:10px;text-align:center;font-weight:700;font-size:14px;background:#fff;cursor:pointer}
+.slot.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.hint{font-size:12px;color:var(--mute);margin-top:6px}
+.err{color:var(--red);font-size:13px;font-weight:700;margin-top:6px;min-height:1em}
+.bar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);padding:12px 14px calc(12px + env(safe-area-inset-bottom))}
+.bar button{width:100%;border:none;border-radius:12px;padding:15px;font:inherit;font-size:17px;font-weight:900;background:var(--red);color:#fff;letter-spacing:2px}
+.bar button:disabled{background:#9ca3af}
+.done{display:none;text-align:center;padding:60px 20px}
+.done .ok{width:72px;height:72px;border-radius:50%;background:var(--red);color:#fff;font-size:40px;line-height:72px;margin:0 auto 16px}
+.done h2{font-size:20px;margin-bottom:8px}
+.done p{color:var(--mute)}
+.notice{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:12px;padding:12px;font-size:13px;margin-bottom:12px;display:none}
+</style>
+</head>
+<body>
+<header>
+  <small>復原者手機維修 · GRANDMASTER FIX</small>
+  <h1>預約維修</h1>
+  <span class="store" id="storeTag">楠梓店</span>
+</header>
+
+<main id="form">
+  <div class="notice" id="notice"></div>
+
+  <div class="card">
+    <h2>聯絡資料</h2>
+    <label>姓名 <span class="req">*</span></label>
+    <input id="name" autocomplete="name" placeholder="例：王小明">
+    <label>手機號碼 <span class="req">*</span></label>
+    <input id="phone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="09xxxxxxxx" maxlength="12">
+  </div>
+
+  <div class="card">
+    <h2>手機與問題</h2>
+    <label>品牌＋型號 <span class="req">*</span></label>
+    <input id="model" placeholder="例：iPhone 13 / Samsung A52">
+    <label>問題（可複選）<span class="req">*</span></label>
+    <div class="chips" id="issues"></div>
+    <label>補充說明</label>
+    <textarea id="note" placeholder="例：螢幕右下角破裂、電池健康度 75%…"></textarea>
+  </div>
+
+  <div class="card">
+    <h2>希望到店時間</h2>
+    <div class="dates" id="dates"></div>
+    <div class="slots" id="slots"></div>
+    <p class="hint">週一～週六 11:00–21:00，週日公休。實際時間以門市回覆確認為準。</p>
+  </div>
+  <div class="err" id="err"></div>
+</main>
+
+<div class="done" id="done">
+  <div class="ok">✓</div>
+  <h2>預約已送出</h2>
+  <p>門市確認後會在 LINE 與您聯繫，請留意訊息。</p>
+</div>
+
+<div class="bar" id="bar"><button id="submit">送出預約</button></div>
+
+<script>
+// ═══ 設定 ═══
+const LIFF_ID = '2012612889-aZuwwjgj';
+const STORES = { nanzi: '楠梓店', dexian: '德賢店' };
+const ISSUES = ['換電池', '螢幕維修', '尾插／充電', '泡水', '不開機／主機板', '鏡頭', '其他'];
+const SLOTS = ['11:00–13:00', '13:00–15:00', '15:00–17:00', '17:00–19:00', '19:00–21:00'];
+const DAYS_AHEAD = 14;
+const WD = ['日', '一', '二', '三', '四', '五', '六'];
+
+const $ = id => document.getElementById(id);
+let storeKey = 'nanzi', pickedDate = null, pickedSlot = null;
+const pickedIssues = new Set();
+
+function readStore() {
+  const p = new URLSearchParams(location.search);
+  let s = p.get('store');
+  // LIFF 會把 liff.line.me/{id}?store=xx 的參數放在 liff.state 傳進來
+  if (!s && p.get('liff.state')) s = new URLSearchParams(p.get('liff.state').replace(/^[^?]*\?/, '')).get('store');
+  if (STORES[s]) storeKey = s;
+  $('storeTag').textContent = STORES[storeKey];
+}
+
+function buildUI() {
+  $('issues').innerHTML = ISSUES.map(t => `<span class="chip" data-v="${t}">${t}</span>`).join('');
+  $('issues').onclick = e => {
+    const c = e.target.closest('.chip'); if (!c) return;
+    c.classList.toggle('on');
+    c.classList.contains('on') ? pickedIssues.add(c.dataset.v) : pickedIssues.delete(c.dataset.v);
+  };
+  const now = new Date(); const ds = [];
+  for (let i = 0; ds.length < DAYS_AHEAD && i < 30; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
+    if (d.getDay() === 0) continue; // 週日公休
+    if (i === 0 && now.getHours() >= 19) continue; // 今天太晚就不給選
+    ds.push(d);
+  }
+  $('dates').innerHTML = ds.map((d, i) => `<div class="date" data-i="${i}"><span>${i === 0 && d.toDateString() === now.toDateString() ? '今天' : '週' + WD[d.getDay()]}</span><b>${d.getMonth() + 1}/${d.getDate()}</b></div>`).join('');
+  $('dates').onclick = e => {
+    const c = e.target.closest('.date'); if (!c) return;
+    document.querySelectorAll('.date').forEach(x => x.classList.toggle('on', x === c));
+    pickedDate = ds[+c.dataset.i]; pickedSlot = null; renderSlots();
+  };
+  renderSlots();
+}
+
+function renderSlots() {
+  const now = new Date();
+  const isToday = pickedDate && pickedDate.toDateString() === now.toDateString();
+  $('slots').innerHTML = SLOTS.map(s => {
+    const startH = parseInt(s, 10);
+    const off = !pickedDate || (isToday && startH <= now.getHours());
+    return `<div class="slot${pickedSlot === s ? ' on' : ''}" data-v="${s}" style="${off ? 'opacity:.35;pointer-events:none' : ''}">${s}</div>`;
+  }).join('');
+  $('slots').onclick = e => {
+    const c = e.target.closest('.slot'); if (!c) return;
+    pickedSlot = c.dataset.v; renderSlots();
+  };
+}
+
+function normPhone(p) { let s = String(p).replace(/\D/g, ''); if (s.length === 9 && s[0] === '9') s = '0' + s; return s; }
+
+async function submit() {
+  $('err').textContent = '';
+  const name = $('name').value.trim(), phone = normPhone($('phone').value), model = $('model').value.trim();
+  if (!name) return fail('請填寫姓名');
+  if (!/^09\d{8}$/.test(phone)) return fail('手機號碼格式應為 09 開頭 10 碼');
+  if (!model) return fail('請填寫手機品牌與型號');
+  if (!pickedIssues.size) return fail('請至少選一個問題');
+  if (!pickedDate || !pickedSlot) return fail('請選擇希望的日期與時段');
+
+  const d = pickedDate;
+  const when = `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}（${WD[d.getDay()]}）${pickedSlot}`;
+  const note = $('note').value.trim();
+  const text = [
+    `📅 預約申請（${STORES[storeKey]}）`,
+    `姓名：${name}`,
+    `電話：${phone}`,
+    `機型：${model}`,
+    `問題：${[...pickedIssues].join('、')}`,
+    `希望時間：${when}`,
+    note ? `備註：${note}` : '',
+  ].filter(Boolean).join('\n');
+
+  $('submit').disabled = true; $('submit').textContent = '送出中…';
+  try {
+    await liff.sendMessages([{ type: 'text', text }]);
+    $('form').style.display = 'none'; $('bar').style.display = 'none'; $('done').style.display = 'block';
+    setTimeout(() => { try { liff.closeWindow(); } catch (e) {} }, 2200);
+  } catch (e) {
+    $('submit').disabled = false; $('submit').textContent = '送出預約';
+    fail('送出失敗，請從店家 LINE 聊天室內的「立即預約」重新開啟（' + (e.message || e) + '）');
+  }
+}
+function fail(m) { $('err').textContent = '⚠️ ' + m; $('err').scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+
+(async () => {
+  readStore(); buildUI();
+  $('submit').onclick = submit;
+  try {
+    await liff.init({ liffId: LIFF_ID });
+    readStore();
+    if (!liff.isInClient()) {
+      $('notice').style.display = 'block';
+      $('notice').textContent = '請在 LINE 的店家聊天室中點「立即預約」開啟此頁，才能送出預約。';
+    }
+  } catch (e) {
+    $('notice').style.display = 'block';
+    $('notice').textContent = '預約系統載入失敗，請稍後再試或直接在聊天室留言給我們。';
+  }
+})();
+</script>
+</body>
+</html>

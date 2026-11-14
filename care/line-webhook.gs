@@ -94,7 +94,9 @@ function handleEvent_(ev, store, token) {
   }
 
   if (ev.type === 'message' && ev.message.type === 'text') {
-    var text = String(ev.message.text || '').replace(/[\s\-－]/g, '');
+    var raw = String(ev.message.text || '');
+    if (/^📅\s*預約申請/.test(raw)) { handleBooking_(ev, store, token, userId, raw); return; }
+    var text = raw.replace(/[\s\-－]/g, '');
     // 只有「單獨一支手機號碼」或「CARE+ 手機號碼」才登錄；
     // 預約、詢問等夾帶電話的訊息（例：王先生0912345678明天換電池）不觸發
     var m = text.match(/^(?:CARE\+?|保固登錄|登錄)?(09\d{8})$/i);
@@ -256,6 +258,7 @@ function testSetup() {
 
 
 /* ───────── 圖文選單：在編輯器選 setupRichMenu 按「執行」即可為兩間店建立並設為預設 ───────── */
+var BOOKING_LIFF_ID = '2012612889-aZuwwjgj';
 var RICHMENU_IMG = 'https://a0900038552-coder.github.io/-warranty/care/richmenu.jpg?v=20261114';
 function setupRichMenu() {
   var img = UrlFetchApp.fetch(RICHMENU_IMG).getBlob().getBytes();
@@ -264,7 +267,7 @@ function setupRichMenu() {
     var W = [0, 833, 1666], w = [833, 833, 834], H = [0, 843], h = 843;
     var acts = [
       { type: 'message', label: '維修報價', text: s.quoteText },
-      { type: 'message', label: '立即預約', text: '立即預約' },
+      { type: 'uri', label: '立即預約', uri: 'https://liff.line.me/' + BOOKING_LIFF_ID + '?store=' + k },
       { type: 'message', label: 'CARE+延保', text: 'CARE+' },
       { type: 'message', label: '門市導航', text: '地址' },
       { type: 'message', label: '二手機收購', text: s.usedText },
@@ -289,5 +292,54 @@ function setupRichMenu() {
       method: 'post', muteHttpExceptions: true, headers: { Authorization: 'Bearer ' + token } });
     if (def.getResponseCode() !== 200) throw new Error(s.branch + ' 設為預設失敗：' + def.getContentText());
     console.log(s.branch + ' 圖文選單已上架：' + id);
+    // 清掉舊版（由本程式建立、已不再使用的）選單
+    var list = JSON.parse(UrlFetchApp.fetch('https://api.line.me/v2/bot/richmenu/list', {
+      headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true }).getContentText()).richmenus || [];
+    list.forEach(function (m) {
+      if (m.richMenuId !== id && /^復原者 6格選單/.test(m.name)) {
+        UrlFetchApp.fetch('https://api.line.me/v2/bot/richmenu/' + m.richMenuId, {
+          method: 'delete', headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true });
+        console.log(s.branch + ' 已移除舊選單：' + m.richMenuId);
+      }
+    });
   });
+}
+
+
+/* ───────── LINE 預約表單（LIFF）送出的預約 ───────── */
+function handleBooking_(ev, store, token, userId, raw) {
+  var f = {};
+  raw.split('\n').forEach(function (line) {
+    var m = line.match(/^(姓名|電話|機型|問題|希望時間|備註)：(.*)$/);
+    if (m) f[m[1]] = m[2].trim();
+  });
+  var msg = '✅ 已收到您的預約！\n\n' +
+    '👤 ' + (f['姓名'] || '') + '\n📱 ' + (f['機型'] || '') + '｜' + (f['問題'] || '') + '\n🕐 ' + (f['希望時間'] || '') + '\n\n' +
+    store.branch + ' 門市人員確認時段後，會在此聊天室回覆您。\n' +
+    '（週一～週六 11:00–21:00，週日公休）';
+  if (!reply_(ev.replyToken, token, msg)) return;
+  var id = PropertiesService.getScriptProperties().getProperty('BOOKING_SHEET_ID');
+  if (!id) return;
+  try {
+    SpreadsheetApp.openById(id).getSheets()[0].appendRow([
+      Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy/MM/dd HH:mm'), store.branch,
+      f['姓名'] || '', "'" + (f['電話'] || ''), f['機型'] || '', f['問題'] || '', f['希望時間'] || '', f['備註'] || '', '待確認'
+    ]);
+  } catch (err) { console.error('預約寫入試算表失敗：' + err); }
+}
+
+/* 在編輯器選 setupBookingSheet 按「執行」一次：建立「復原者 LINE 預約紀錄」試算表 */
+function setupBookingSheet() {
+  var props = PropertiesService.getScriptProperties();
+  var id = props.getProperty('BOOKING_SHEET_ID');
+  if (id) { console.log('已存在：' + SpreadsheetApp.openById(id).getUrl()); return; }
+  var ss = SpreadsheetApp.create('復原者 LINE 預約紀錄');
+  var sh = ss.getSheets()[0];
+  sh.setName('預約');
+  sh.appendRow(['送出時間', '分店', '姓名', '電話', '機型', '問題', '希望時間', '備註', '狀態']);
+  sh.setFrozenRows(1);
+  sh.getRange(1, 1, 1, 9).setFontWeight('bold').setBackground('#16181d').setFontColor('#ffffff');
+  sh.setColumnWidths(1, 9, 130);
+  props.setProperty('BOOKING_SHEET_ID', ss.getId());
+  console.log('預約試算表已建立：' + ss.getUrl());
 }
