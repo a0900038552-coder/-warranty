@@ -242,6 +242,7 @@ const CATS = {
   port:    { label: '尾插排／板', base: 30, care: 60 },
   camera:  { label: '前後鏡頭',   base: 30, care: 30 },
   board:   { label: '主機板 IC',  base: 30, care: 30 },
+  flex:    { label: '排線類',     base: 30, care: 30 },
   other:   { label: '其他（依店家告知）', base: null, care: 0 },
   none:    { label: '無保固項目', base: 0,  care: 0 },
 };
@@ -251,9 +252,13 @@ function autoCategory(type) {
   const ADDON = /[前後]?鏡頭(保護)?貼|送[^+＋、]*|霧面滿玻|滿玻|玻保|保護貼|玻璃貼|鏡頭貼|犀牛盾|惡魔盾|[^+＋、]*殼|皮套|掛繩|傳輸線|充電線|充電頭|旅充|資料轉移|清潔/g;
   const core = t.replace(ADDON, '');
   if (/電池/.test(core)) return 'battery';
-  if (/液晶座|排線座|主板座|機板座|飛線|主機板|主板|機板|IC/i.test(core)) return 'board';
-  if (/液晶|螢幕|面板|總成|觸控/.test(core)) return 'screen';
+  // 主機板類：不開機、充電IC、零件座等
+  if (/不開機|不開基|IC|主機板|主板|機板|液晶座|排線座|主板座|機板座/i.test(core)) return 'board';
+  // 飛線是在液晶上作業 → 依液晶保固
+  if (/飛線|液晶|螢幕|面板|總成|觸控/.test(core)) return 'screen';
   if (/尾插|充電孔|充電口|充電座|充電板|小板/.test(core)) return 'port';
+  // 排線類：開機排、音量排、聽筒、聽筒排、喇叭（保固 1 個月＋CARE+ 1 個月）
+  if (/排線|開機排|音量排|聽筒|喇叭/.test(core)) return 'flex';
   if (/鏡頭|相機|視訊/.test(core)) return 'camera';
   // 無保固：配件、按鍵、外殼、軟體服務（依官網條款）
   if (core !== t || /軟體|刷機|升級|系統|外殼|中框|背蓋|後蓋|按鍵|開機鍵|音量鍵|新機|老人機/.test(t)) return 'none';

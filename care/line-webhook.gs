@@ -26,7 +26,7 @@ var STORES = {
   dexian: { branch: '德賢店', tokenProp: 'DEXIAN_TOKEN' }
 };
 var BIND_WINDOW_DAYS = 14;
-var CAT_LABEL = { screen: '液晶／螢幕', battery: '電池', port: '尾插排／板', camera: '前後鏡頭', board: '主機板 IC' };
+var CAT_LABEL = { screen: '液晶／螢幕', battery: '電池', port: '尾插排／板', camera: '前後鏡頭', board: '主機板 IC', flex: '排線類' };
 
 function prop_(k) {
   var v = PropertiesService.getScriptProperties().getProperty(k);
