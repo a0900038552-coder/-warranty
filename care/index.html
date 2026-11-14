@@ -101,7 +101,7 @@ th{color:var(--mute);font-weight:600}
 .toast.show{opacity:1}
 .drop{border:2px dashed #cbd5e1;border-radius:12px;padding:28px;text-align:center;color:var(--mute);cursor:pointer}
 .bk{background:#fff;border:1px solid var(--line);border-left:5px solid #f59e0b;border-radius:12px;padding:12px 14px;margin-bottom:10px}
-.bk.confirmed{border-left-color:var(--green)}.bk.proposed{border-left-color:var(--blue)}.bk.declined,.bk.noshow{border-left-color:#9ca3af;opacity:.75}.bk.done{border-left-color:#9ca3af}
+.bk.confirmed{border-left-color:var(--green)}.bk.proposed{border-left-color:var(--blue)}.bk.declined,.bk.noshow,.bk.cancelled{border-left-color:#9ca3af;opacity:.75}.bk.done{border-left-color:#9ca3af}
 .bk-top{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .bk-time{font-weight:800;font-size:16px}
 .bk-meta{font-size:13px;color:var(--mute);margin-top:2px}
@@ -135,7 +135,7 @@ th{color:var(--mute);font-weight:600}
 <section id="app" class="hidden">
 <header>
   <div class="hd-row">
-    <div class="logo">復原者 保固管理<small>REPAIR CARE+ SYSTEM · v2026.11.14c</small></div>
+    <div class="logo">復原者 保固管理<small>REPAIR CARE+ SYSTEM · v2026.11.14d</small></div>
     <div class="hd-right">
       <select id="branchFilter">
         <option value="">全部分店</option>
@@ -202,11 +202,11 @@ th{color:var(--mute);font-weight:600}
           <select id="bkStatus">
             <option value="open">待處理（待確認＋等客人回覆）</option>
             <option value="confirmed">已確認</option>
-            <option value="closed">已完成／婉拒／未到</option>
+            <option value="closed">已完成／婉拒／未到／取消</option>
             <option value="">全部</option>
           </select></div>
       </div>
-      <p class="hint">按「確認」「改時間」「婉拒」會用 LINE 通知客人（每則扣 1 則訊息額度）；「完成」「未到」只改狀態，不會通知。分店依右上角選擇。</p>
+      <p class="hint">按「確認」「改時間」「婉拒」會用 LINE 通知客人（每則扣 1 則訊息額度）；「取消」「完成」「未到」只改狀態，不會通知、不扣額度。分店依右上角選擇。</p>
     </div>
     <div id="bkList"></div>
     <div class="panel">
@@ -839,8 +839,8 @@ function newId() { return Date.now().toString(36) + Math.random().toString(36).s
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbxBK7c2Oledgo-jT-kRnueuU8grZxVinuocyp2iLI8u-c5Q94fZSeiemH0UkeAqdjfTlw/exec';
 const SLOTS = ['11:00–13:00', '13:00–15:00', '15:00–17:00', '17:00–19:00', '19:00–21:00'];
 const WEEK = '日一二三四五六';
-const BK_ZH = { pending: '待確認', proposed: '等客人回覆', confirmed: '已確認', declined: '已婉拒', done: '已完成', noshow: '未到' };
-const BK_COLOR = { pending: '#f59e0b', proposed: 'var(--blue)', confirmed: 'var(--green)', declined: '#6b7280', done: '#6b7280', noshow: '#6b7280' };
+const BK_ZH = { pending: '待確認', proposed: '等客人回覆', confirmed: '已確認', declined: '已婉拒', done: '已完成', noshow: '未到', cancelled: '已取消' };
+const BK_COLOR = { pending: '#f59e0b', proposed: 'var(--blue)', confirmed: 'var(--green)', declined: '#6b7280', done: '#6b7280', noshow: '#6b7280', cancelled: '#6b7280' };
 function nextDays(n) {
   const out = [], d = new Date(); d.setHours(0, 0, 0, 0);
   while (out.length < n) { if (d.getDay() !== 0) out.push(new Date(d)); d.setDate(d.getDate() + 1); }
@@ -855,14 +855,14 @@ function renderBookings() {
   $('bkCount').textContent = open ? ` (${open})` : '';
   const list = bookings.filter(b => (!br || b.branch === br) && (
     st === '' ? true : st === 'open' ? ['pending', 'proposed'].includes(b.status) :
-    st === 'closed' ? ['done', 'declined', 'noshow'].includes(b.status) : b.status === st))
+    st === 'closed' ? ['done', 'declined', 'noshow', 'cancelled'].includes(b.status) : b.status === st))
     .sort((a, b) => st === 'closed' ? String(b.createdAt).localeCompare(a.createdAt) : String(a.createdAt).localeCompare(b.createdAt));
   $('bkList').innerHTML = list.length ? list.map(b => {
     const time = b.confirmedTime || b.proposedTime || b.wish;
     const acts = {
-      pending: `<button class="btn btn-primary" data-bk="confirm" data-id="${b.id}">✅ 確認</button><button class="btn btn-dark" data-bk="propose" data-id="${b.id}">🔄 改時間</button><button class="btn btn-ghost" data-bk="decline" data-id="${b.id}">婉拒</button>`,
-      proposed: `<button class="btn btn-ghost" data-bk="confirm" data-id="${b.id}">客人電話確認了</button><button class="btn btn-ghost" data-bk="propose" data-id="${b.id}">再改時間</button><button class="btn btn-ghost" data-bk="decline" data-id="${b.id}">婉拒</button>`,
-      confirmed: `<button class="btn btn-dark" data-bk="done" data-id="${b.id}">已完成</button><button class="btn btn-ghost" data-bk="noshow" data-id="${b.id}">未到</button><button class="btn btn-ghost" data-bk="propose" data-id="${b.id}">改時間</button>`
+      pending: `<button class="btn btn-primary" data-bk="confirm" data-id="${b.id}">✅ 確認</button><button class="btn btn-dark" data-bk="propose" data-id="${b.id}">🔄 改時間</button><button class="btn btn-ghost" data-bk="decline" data-id="${b.id}">婉拒</button><button class="btn btn-ghost" data-bk="cancel" data-id="${b.id}">🗑 取消（不通知）</button>`,
+      proposed: `<button class="btn btn-ghost" data-bk="confirm" data-id="${b.id}">客人電話確認了</button><button class="btn btn-ghost" data-bk="propose" data-id="${b.id}">再改時間</button><button class="btn btn-ghost" data-bk="decline" data-id="${b.id}">婉拒</button><button class="btn btn-ghost" data-bk="cancel" data-id="${b.id}">🗑 取消（不通知）</button>`,
+      confirmed: `<button class="btn btn-dark" data-bk="done" data-id="${b.id}">已完成</button><button class="btn btn-ghost" data-bk="noshow" data-id="${b.id}">未到</button><button class="btn btn-ghost" data-bk="propose" data-id="${b.id}">改時間</button><button class="btn btn-ghost" data-bk="cancel" data-id="${b.id}">🗑 取消（不通知）</button>`
     }[b.status] || '';
     return `<div class="bk ${b.status}">
       <div class="bk-top"><div><div class="bk-time">${esc(time)}</div>
@@ -928,6 +928,8 @@ $('bkList').addEventListener('click', async e => {
   } else if (type === 'decline') {
     const r = prompt(`婉拒 ${b.name} 的預約，並用 LINE 通知。\n原因（可空白，會顯示給客人）：`, '');
     if (r === null) return; req.reason = r.trim();
+  } else if (type === 'cancel') {
+    if (!confirm(`取消 ${b.name} 的預約？\n\n只會改成「已取消」，不會傳 LINE 給客人、不扣訊息額度。`)) return;
   }
   btn.closest('.row-actions').querySelectorAll('button').forEach(x => x.disabled = true);
   try {
@@ -935,7 +937,7 @@ $('bkList').addEventListener('click', async e => {
     const res = await fetch(GAS_URL + '?action=staff', { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(req) });
     const j = await res.json();
     if (!j.ok) throw new Error(j.error || '失敗');
-    toast(['done', 'noshow'].includes(type) ? '已更新狀態' : '✅ 已用 LINE 通知客人');
+    toast(['done', 'noshow', 'cancel'].includes(type) ? '已更新狀態（未通知客人）' : '✅ 已用 LINE 通知客人');
   } catch (er) {
     toast('⚠️ ' + er.message);
     btn.closest('.row-actions')?.querySelectorAll('button').forEach(x => x.disabled = false);

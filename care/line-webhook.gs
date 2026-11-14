@@ -5,7 +5,7 @@
  *  1. 客人在 LINE 傳「CARE+ 0912345678」或直接傳電話 → 登錄 CARE+，回覆已啟用的保固到期日
  *  2. 客人封鎖官方帳號 → 標記為「已封鎖」（CARE+ 暫停）；重新加入好友 → 自動恢復
  *
- * 只使用 Reply（回覆）與接收事件，不使用 Push，不會扣 LINE 每月訊息額度。
+ * 自動回覆都用 Reply（不扣額度）；只有員工在保固系統按「確認／改時間／婉拒」才用 Push（扣額度）。
  *
  * 需要在「專案設定 → 指令碼屬性」填入以下 3 項（機密資料，不寫在程式碼裡）：
  *   BOT_PASSWORD            Firebase 機器人帳號（linebot@grandmasterfix.com.tw）的密碼
@@ -384,8 +384,8 @@ function staffAction_(req) {
     text = '🙏 很抱歉，您的預約（' + b.wish + '）目前無法安排。' + (req.reason ? '\n原因：' + req.reason : '') +
            '\n\n如有需要，歡迎直接在此聊天室與我們討論其他時間，謝謝您！';
     upd.status = 'declined'; upd.declineReason = req.reason || '';
-  } else if (req.type === 'done' || req.type === 'noshow') {
-    upd.status = req.type === 'done' ? 'done' : 'noshow';   // 不通知客人
+  } else if (req.type === 'done' || req.type === 'noshow' || req.type === 'cancel') {
+    upd.status = { done: 'done', noshow: 'noshow', cancel: 'cancelled' }[req.type];   // 不通知客人
   } else return { ok: false, error: '未知的操作' };
 
   if (text) {
@@ -414,7 +414,7 @@ function acceptProposal_(ev, store, token, userId, id) {
   sheetStatus_(id, 'confirmed', b.proposedTime);
 }
 
-var STATUS_ZH = { pending: '待確認', confirmed: '已確認', proposed: '已提議改時間', declined: '已婉拒', done: '已完成', noshow: '未到' };
+var STATUS_ZH = { pending: '待確認', confirmed: '已確認', proposed: '已提議改時間', declined: '已婉拒', done: '已完成', noshow: '未到', cancelled: '已取消（未通知）' };
 function sheetStatus_(id, status, time) {
   var sid = PropertiesService.getScriptProperties().getProperty('BOOKING_SHEET_ID');
   if (!sid) return;
@@ -423,7 +423,7 @@ function sheetStatus_(id, status, time) {
     var ids = sh.getRange(1, 10, sh.getLastRow(), 1).getValues();
     for (var i = ids.length - 1; i >= 1; i--) {
       if (String(ids[i][0]) === id) {
-        sh.getRange(i + 1, 9).setValue((STATUS_ZH[status] || status) + (time && status !== 'done' && status !== 'noshow' ? '：' + time : ''));
+        sh.getRange(i + 1, 9).setValue((STATUS_ZH[status] || status) + (time && status !== 'done' && status !== 'noshow' && status !== 'cancelled' ? '：' + time : ''));
         return;
       }
     }
