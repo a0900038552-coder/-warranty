@@ -60,6 +60,7 @@ td input{width:100%;border:1px solid #e5e7eb;border-radius:6px;padding:3px 6px}
     <div class="bar">
       <input type="search" id="q" placeholder="搜尋機型或零件，例：13 pro 感應排線、S23 液晶">
       <span class="seg" id="who"><button data-k="" class="on">全部</button><button data-k="me">我的報價</button><button data-k="peer">同行報價</button></span>
+      <span class="seg" id="kind"><button data-k="" class="on">全部</button><button data-k="repair">維修</button><button data-k="commission">門號佣金</button></span>
     </div>
     <div class="panel">
       <h3>報價總表 <span class="mute" id="cnt"></span></h3>
@@ -69,12 +70,12 @@ td input{width:100%;border:1px solid #e5e7eb;border-radius:6px;padding:3px 6px}
     </div>
     <div class="panel">
       <h3>✍️ 手動新增（記成「我的報價」）</h3>
-      <textarea id="paste" placeholder="一行一項，例：&#10;13 pro 感應排線 3000&#10;14 電池 1200"></textarea>
+      <textarea id="paste" placeholder="一行一項，可加對象，例：&#10;13 pro 感應排線 3000（大昌）&#10;@小林 14 電池 1200"></textarea>
       <div style="display:flex;gap:8px;align-items:center;margin-top:6px"><button class="btn" id="addBtn">新增</button><span class="mute" id="pv"></span></div>
     </div>
     <div class="panel">
       <h3>🕑 最近記錄 <span class="mute">（可直接修改；黃色＝讀不出機型或零件，請補上）</span></h3>
-      <table><thead><tr><th>時間</th><th>來源</th><th>機型</th><th>零件</th><th class="n">價格</th><th class="hide-m">原文</th><th></th></tr></thead><tbody id="recent"></tbody></table>
+      <table><thead><tr><th>時間</th><th>來源</th><th>對象</th><th>機型</th><th>零件</th><th class="n">價格</th><th class="hide-m">原文</th><th></th></tr></thead><tbody id="recent"></tbody></table>
     </div>
   </main>
 </section>
@@ -89,16 +90,23 @@ function parseQuoteLines_(text) {
     var raw = line.trim();
     if (!raw || raw.length > 60) return;
     if (/[?？]|多少|幾錢|嗎|有沒有|請問|報價一下|收不收/.test(raw)) return;          // 問句不是報價
-    var m = raw.match(/(?:NT\$?|\$)?\s*(\d{1,3}(?:,\d{3})+|\d{2,6})\s*(?:元|塊|圓|\$|nt)?\s*(?:\/?\s*(?:個|顆|片|支|組))?\s*$/i);
+    // 報價對象：「@大昌」、結尾「（大昌）」、開頭「大昌：」；沒寫就用群組名稱
+    var target = '', body = raw, tm;
+    if ((tm = body.match(/[@＠]\s*([^\s\d@＠][^\s@＠]{0,11})/))) { target = tm[1]; body = body.replace(tm[0], ' '); }
+    if (!target && (tm = body.match(/[（(]\s*([^（）()\d][^（）()]{0,11})\s*[）)]\s*$/))) { target = tm[1].trim(); body = body.slice(0, tm.index); }
+    if (!target && (tm = body.match(/^\s*([^\d\s:：@＠]{1,8})\s*[:：]\s*/))) { target = tm[1]; body = body.slice(tm[0].length); }
+    body = body.trim();
+    var m = body.match(/(?:NT\$?|\$)?\s*(\d{1,3}(?:,\d{3})+|\d{2,6})\s*(?:元|塊|圓|\$|nt)?\s*(?:\/?\s*(?:個|顆|片|支|組))?\s*$/i);
     if (!m) return;
     var price = Number(m[1].replace(/,/g, ''));
     if (!(price >= 50 && price <= 200000)) return;
-    var rest = raw.slice(0, m.index).replace(/[:：=＝\-－~～]+\s*$/, '').trim();
+    var rest = body.slice(0, m.index).replace(/[:：=＝\-－~～]+\s*$/, '').trim();
     if (!rest) return;
     var mm = modelOf_(rest);
     var part = (mm ? rest.replace(mm.raw, ' ') : rest).replace(/^[\s,，、\/]+|[\s,，、\/]+$/g, '').replace(/\s+/g, ' ');
     if (!part && !mm) return;
-    out.push({ raw: raw, model: mm ? mm.name : '', part: part, price: price, review: !mm || !part });
+    var kind = /佣金|攜碼|門號|續約|新辦|專案|月租|吃到飽/.test(raw) ? 'commission' : 'repair';
+    out.push({ raw: raw, model: mm ? mm.name : '', part: part, price: price, target: target, kind: kind, review: !mm || !part });
   });
   return out;
 }
@@ -142,7 +150,7 @@ const ymd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')
 const norm = s => String(s || '').toLowerCase().replace(/\s+/g, '').replace(/iphone/g, '');
 function toast(m) { const t = $('toast'); t.textContent = m; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2400); }
 
-let quotes = new Map(), who = '', open = null, older = false;
+let quotes = new Map(), who = '', kind = '', open = null, older = false;
 onAuthStateChanged(auth, u => { $('login').classList.toggle('hidden', !!u); $('app').classList.toggle('hidden', !u); if (u) start(); });
 $('loginForm').onsubmit = async e => { e.preventDefault(); try { await signInWithEmailAndPassword(auth, e.target.email.value.trim(), e.target.pw.value); } catch { toast('⚠️ 登入失敗'); } };
 
@@ -163,7 +171,8 @@ function render() {
   const all = [...quotes.values()].sort((a, b) => String(b.ts).localeCompare(String(a.ts)));
   const q = norm($('q').value);
   const hit = r => !q || norm(r.model + r.part).includes(q) || norm(r.part + r.model).includes(q) || norm(r.raw).includes(q);
-  const rows = all.filter(r => (!who || r.who === who) && hit(r));
+  const kOf = r => r.kind || 'repair';
+  const rows = all.filter(r => (!who || r.who === who) && (!kind || kOf(r) === kind) && hit(r));
   // 依 機型＋零件 分組
   const g = new Map();
   rows.forEach(r => {
@@ -175,22 +184,24 @@ function render() {
   $('cnt').textContent = `（${groups.length} 項、${rows.length} 筆）`;
   $('list').innerHTML = groups.slice(0, 300).map(x => {
     const me = x.list.find(r => r.who === 'me'), peer = x.list.find(r => r.who === 'peer');
-    const head = `<tr class="item" data-k="${esc(x.k)}"><td>${esc(x.model) || '<span class="tag rv">機型？</span>'}</td><td>${esc(x.part) || '<span class="tag rv">零件？</span>'}</td>
-      <td class="n me">${me ? fmt(me.price) : ''}</td><td class="n peer">${peer ? fmt(peer.price) + `<div class="mute">${esc(peer.speaker)}</div>` : ''}</td>
+    const head = `<tr class="item" data-k="${esc(x.k)}"><td>${esc(x.model) || '<span class="tag rv">機型？</span>'}</td><td>${esc(x.part) || '<span class="tag rv">零件？</span>'}${kOf(x.list[0]) === 'commission' ? ' <span class="tag rv">門號佣金</span>' : ''}</td>
+      <td class="n me">${me ? fmt(me.price) + (me.target ? `<div class="mute">給 ${esc(me.target)}${new Set(x.list.filter(r => r.who === 'me').map(r => r.target)).size > 1 ? ' 等' : ''}</div>` : '') : ''}</td><td class="n peer">${peer ? fmt(peer.price) + `<div class="mute">${esc(peer.speaker)}</div>` : ''}</td>
       <td class="hide-m mute">${esc(x.list[0].date)}</td><td class="n hide-m mute">${x.list.length}</td></tr>`;
-    const hist = open === x.k ? x.list.map(r => `<tr class="hist"><td class="mute">${esc(r.date)}</td><td><span class="tag ${r.who}">${r.who === 'me' ? '我' : esc(r.speaker)}</span> <span class="mute">${esc(r.group || '')}</span></td>
+    const hist = open === x.k ? x.list.map(r => `<tr class="hist"><td class="mute">${esc(r.date)}</td><td><span class="tag ${r.who}">${r.who === 'me' ? '我' : esc(r.speaker)}</span> ${r.target ? '→ <b>' + esc(r.target) + '</b>' : ''} <span class="mute">${esc(r.group || '')}</span></td>
       <td class="n ${r.who}">${fmt(r.price)}</td><td colspan="3" class="mute">${esc(r.raw)}</td></tr>`).join('') : '';
     return head + hist;
   }).join('') || '<tr><td colspan="6" class="mute">沒有符合的報價</td></tr>';
   $('recent').innerHTML = all.filter(r => !who || r.who === who).slice(0, 40).map(r => `<tr data-id="${r.id}" style="${r.review ? 'background:#fffbeb' : ''}">
     <td class="mute">${esc(String(r.ts || '').slice(5, 16).replace('T', ' '))}</td>
     <td><span class="tag ${r.who}">${r.who === 'me' ? '我' : esc(r.speaker)}</span><div class="mute">${esc(r.group || '')}</div></td>
+    <td><input data-f="target" value="${esc(r.target || '')}" placeholder="給誰" style="width:80px"></td>
     <td><input data-f="model" value="${esc(r.model)}"></td><td><input data-f="part" value="${esc(r.part)}"></td>
     <td class="n"><input data-f="price" value="${esc(r.price)}" style="width:80px;text-align:right" inputmode="numeric"></td>
-    <td class="hide-m mute">${esc(r.raw)}</td><td><button class="x" data-del="${r.id}" title="刪除">✕</button></td></tr>`).join('') || '<tr><td colspan="7" class="mute">還沒有紀錄</td></tr>';
+    <td class="hide-m mute">${esc(r.raw)}</td><td><button class="x" data-del="${r.id}" title="刪除">✕</button></td></tr>`).join('') || '<tr><td colspan="8" class="mute">還沒有紀錄</td></tr>';
 }
 $('list').onclick = e => { const tr = e.target.closest('tr.item'); if (!tr) return; open = open === tr.dataset.k ? null : tr.dataset.k; render(); };
 let qT; $('q').oninput = () => { clearTimeout(qT); qT = setTimeout(render, 150); };
+$('kind').onclick = e => { const b = e.target.closest('button'); if (!b) return; kind = b.dataset.k; [...$('kind').children].forEach(x => x.classList.toggle('on', x === b)); render(); };
 $('who').onclick = e => { const b = e.target.closest('button'); if (!b) return; who = b.dataset.k; [...$('who').children].forEach(x => x.classList.toggle('on', x === b)); render(); };
 
 $('recent').addEventListener('change', async e => {
@@ -206,13 +217,13 @@ $('recent').addEventListener('click', async e => {
   const r = quotes.get(b.dataset.del); if (!confirm(`刪除這筆？\n${r.model} ${r.part} ${fmt(r.price)}`)) return;
   try { await deleteDoc(doc(db, 'quotes', r.id)); toast('已刪除'); } catch (er) { toast('⚠️ ' + er.message); }
 });
-$('paste').oninput = () => { const it = parseQuoteLines_($('paste').value); $('pv').textContent = it.length ? '讀到：' + it.map(q => `${q.model || '機型？'} ${q.part || '零件？'} $${q.price}`).join('、') : ''; };
+$('paste').oninput = () => { const it = parseQuoteLines_($('paste').value); $('pv').textContent = it.length ? '讀到：' + it.map(q => `${q.model || '機型？'} ${q.part || '零件？'} $${q.price}${q.target ? '→' + q.target : ''}`).join('、') : ''; };
 $('addBtn').onclick = async () => {
   const it = parseQuoteLines_($('paste').value); if (!it.length) return toast('沒有讀到報價（格式：機型 零件 價格）');
   const now = new Date();
   try {
     for (const q of it) await addDoc(collection(db, 'quotes'), { ts: now.toISOString(), date: ymd(now), who: 'me', speaker: '我', group: '手動新增', groupId: '',
-      model: q.model, part: q.part, price: q.price, raw: q.raw, review: q.review, by: auth.currentUser.email });
+      model: q.model, part: q.part, price: q.price, raw: q.raw, review: q.review, kind: q.kind, target: q.target, by: auth.currentUser.email });
     $('paste').value = ''; $('pv').textContent = ''; toast(`✅ 已新增 ${it.length} 筆`);
   } catch (er) { toast('⚠️ ' + er.message); }
 };

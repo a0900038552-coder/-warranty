@@ -619,7 +619,7 @@ function quoteEvent_(ev, token, props) {
   var owner = props.getProperty('QUOTE_OWNER') || '';
   if (src.type === 'user') {
     if (text === '我是老闆') {
-      if (!owner) { props.setProperty('QUOTE_OWNER', uid); reply_(ev.replyToken, token, '✅ 已設定您為老闆。\n之後您在群組報的價會記成「我的報價」，同行報的價記成「同行報價」。\n\n也可以直接私訊我報價（例：13 pro 感應排線 3000），我會回覆記錄結果。'); }
+      if (!owner) { props.setProperty('QUOTE_OWNER', uid); reply_(ev.replyToken, token, '✅ 已設定您為老闆。\n之後您在群組報的價會記成「我的報價」，對象預設是群組名稱；同行報的價記成「同行報價」。\n\n要指定對象可以寫：13 pro 感應排線 3000（大昌）或 @大昌 13 pro 感應排線 3000\n\n也可以直接私訊我報價，我會回覆記錄結果。'); }
       else if (owner === uid) reply_(ev.replyToken, token, '您已經是老闆囉 👍');
       return;
     }
@@ -639,10 +639,11 @@ function quoteEvent_(ev, token, props) {
   items.forEach(function (q, i) {
     createDoc_('quotes', { ts: now.toISOString(), date: Utilities.formatDate(now, 'Asia/Taipei', 'yyyy-MM-dd'),
       who: mine ? 'me' : 'peer', speaker: speaker, groupId: gid, group: group,
-      model: q.model, part: q.part, price: q.price, raw: q.raw, review: q.review, msgId: ev.message.id + '_' + i });
+      model: q.model, part: q.part, price: q.price, raw: q.raw, review: q.review, msgId: ev.message.id + '_' + i,
+      kind: q.kind, target: q.target || (mine && src.groupId ? group : '') });
   });
   if (src.type === 'user') reply_(ev.replyToken, token, '✅ 已記錄 ' + items.length + ' 筆：\n' + items.map(function (q) {
-    return '・' + (q.model || '（機型？）') + ' ' + (q.part || '（零件？）') + ' $' + q.price;
+    return '・' + (q.model || '（機型？）') + ' ' + (q.part || '（零件？）') + ' $' + q.price + (q.target ? '（給 ' + q.target + '）' : '') + (q.kind === 'commission' ? '［門號佣金］' : '');
   }).join('\n') + (items.some(function (q) { return q.review; }) ? '\n\n有標「？」的請到報價頁補上。' : ''));
 }
 function lineGet_(url, token) {
@@ -674,16 +675,23 @@ function parseQuoteLines_(text) {
     var raw = line.trim();
     if (!raw || raw.length > 60) return;
     if (/[?？]|多少|幾錢|嗎|有沒有|請問|報價一下|收不收/.test(raw)) return;          // 問句不是報價
-    var m = raw.match(/(?:NT\$?|\$)?\s*(\d{1,3}(?:,\d{3})+|\d{2,6})\s*(?:元|塊|圓|\$|nt)?\s*(?:\/?\s*(?:個|顆|片|支|組))?\s*$/i);
+    // 報價對象：「@大昌」、結尾「（大昌）」、開頭「大昌：」；沒寫就用群組名稱
+    var target = '', body = raw, tm;
+    if ((tm = body.match(/[@＠]\s*([^\s\d@＠][^\s@＠]{0,11})/))) { target = tm[1]; body = body.replace(tm[0], ' '); }
+    if (!target && (tm = body.match(/[（(]\s*([^（）()\d][^（）()]{0,11})\s*[）)]\s*$/))) { target = tm[1].trim(); body = body.slice(0, tm.index); }
+    if (!target && (tm = body.match(/^\s*([^\d\s:：@＠]{1,8})\s*[:：]\s*/))) { target = tm[1]; body = body.slice(tm[0].length); }
+    body = body.trim();
+    var m = body.match(/(?:NT\$?|\$)?\s*(\d{1,3}(?:,\d{3})+|\d{2,6})\s*(?:元|塊|圓|\$|nt)?\s*(?:\/?\s*(?:個|顆|片|支|組))?\s*$/i);
     if (!m) return;
     var price = Number(m[1].replace(/,/g, ''));
     if (!(price >= 50 && price <= 200000)) return;
-    var rest = raw.slice(0, m.index).replace(/[:：=＝\-－~～]+\s*$/, '').trim();
+    var rest = body.slice(0, m.index).replace(/[:：=＝\-－~～]+\s*$/, '').trim();
     if (!rest) return;
     var mm = modelOf_(rest);
     var part = (mm ? rest.replace(mm.raw, ' ') : rest).replace(/^[\s,，、\/]+|[\s,，、\/]+$/g, '').replace(/\s+/g, ' ');
     if (!part && !mm) return;
-    out.push({ raw: raw, model: mm ? mm.name : '', part: part, price: price, review: !mm || !part });
+    var kind = /佣金|攜碼|門號|續約|新辦|專案|月租|吃到飽/.test(raw) ? 'commission' : 'repair';
+    out.push({ raw: raw, model: mm ? mm.name : '', part: part, price: price, target: target, kind: kind, review: !mm || !part });
   });
   return out;
 }
