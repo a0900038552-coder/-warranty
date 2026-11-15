@@ -147,7 +147,7 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
     <div id="days"></div>
     <div class="add-day">
       <b>新增日期</b><input type="date" id="newDate"><button class="btn ghost" id="addDayBtn">＋ 加入</button>
-      <span class="hint">打字就會自動儲存；品項有電話的會自動建立保固紀錄。按 Enter 跳到下一列。支出請寫「支出:廠商」，金額直接打數字即可（會自動轉負數）。退修請寫「退修 10/27 13電池/雄0908」＋電話，原因寫在備註，保固系統會多一筆退修紀錄。</span>
+      <span class="hint">打字就會自動儲存；品項有電話的會自動建立保固紀錄。按 Enter 跳到下一列。支出請寫「支出:廠商」，付錢打負數、廠商退貨退錢打正數。退修請寫「退修 10/27 13電池/雄0908」＋電話，原因寫在備註，保固系統會多一筆退修紀錄。</span>
     </div>
   </main>
 </section>
@@ -430,14 +430,14 @@ async function syncWarranty(id, r) {
   if (rows[id]) rows[id]._hadRec = true;
 }
 
-// 支出／退修的金額一定是負數：手機鍵盤不好打「-」，離開欄位時自動轉成負數
+// 退修金額一定是負數（退錢給客人）：離開欄位時自動轉成負數。支出不自動轉（可能含廠商退貨的正數）
 $('days').addEventListener('focusout', e => {
   const i = e.target.closest?.('input[data-f="amount"]'); if (!i) return;
   const id = i.closest('tr').dataset.id, r = rows[id]; if (!r) return;
   const a = num(i.value);
-  if (a != null && a > 0 && (/^支出/.test(String(r.item || '').trim()) || isRefund(r))) {
+  if (a != null && a > 0 && isRefund(r)) {
     i.value = String(-a); i.dispatchEvent(new Event('input', { bubbles: true }));
-    toast('支出／退修金額已自動改為負數');
+    toast('退修金額已自動改為負數');
   }
 });
 
