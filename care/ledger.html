@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>復原者 每日登打｜銷售報表</title>
+<style>
+:root{--ink:#16181d;--mute:#6b7280;--line:#e5e7eb;--bg:#f4f5f7;--card:#fff;--red:#d71920;--green:#15803d;--blue:#1d4ed8;--amber:#b45309}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.45}
+button,input,select{font:inherit}
+.hidden{display:none!important}
+#login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.login-box{background:#fff;border-radius:14px;padding:28px 24px;width:100%;max-width:360px;box-shadow:0 8px 30px rgba(0,0,0,.08)}
+.login-box h1{font-size:20px;margin-bottom:14px}
+.login-box input{width:100%;border:1px solid #d1d5db;border-radius:8px;padding:9px 10px;margin-bottom:10px}
+header{background:var(--ink);color:#fff;padding:10px 16px;border-bottom:4px solid var(--red);position:sticky;top:0;z-index:30}
+.hd{display:flex;align-items:center;gap:10px;flex-wrap:wrap;max-width:1280px;margin:0 auto}
+.logo{font-weight:900;font-size:16px;letter-spacing:1px;margin-right:auto}
+.logo small{display:block;font-weight:400;font-size:11px;color:#a1a6b0;letter-spacing:2px}
+.hd select,.hd input[type=month]{background:#2a2d35;color:#fff;border:1px solid #444;border-radius:8px;padding:5px 8px}
+.hbtn{background:none;border:1px solid #555;color:#ddd;border-radius:8px;padding:5px 11px;cursor:pointer;white-space:nowrap;text-decoration:none;font-size:13px}
+.hbtn.pri{background:var(--red);border-color:var(--red);color:#fff;font-weight:700}
+main{max-width:1280px;margin:0 auto;padding:12px 12px 80px}
+.sum{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.sum div{background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 14px;min-width:150px}
+.sum b{display:block;font-size:20px}
+.sum small{color:var(--mute);font-size:12px}
+.sum input{width:120px;border:1px solid #d1d5db;border-radius:6px;padding:3px 6px;font-size:18px;font-weight:700}
+.day{background:#fff;border:1px solid var(--line);border-radius:12px;margin-bottom:12px;overflow:hidden}
+.day-h{display:flex;align-items:center;gap:12px;padding:8px 12px;background:#fafafa;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.day-h .d{font-weight:900;font-size:16px}
+.day-h .t{margin-left:auto;font-size:13px;color:var(--mute)}
+.day-h .t b{color:var(--ink);font-size:15px;margin:0 10px 0 4px}
+.wrap{overflow-x:auto}
+table.g{border-collapse:collapse;width:100%;min-width:1100px;table-layout:fixed}
+table.g th{font-size:12px;color:var(--mute);font-weight:600;text-align:left;padding:4px 6px;border-bottom:1px solid var(--line);background:#fff}
+table.g td{border-bottom:1px solid #f0f0f0;padding:0;vertical-align:middle}
+table.g td input{width:100%;border:0;background:transparent;padding:7px 6px;outline:none}
+table.g td input:focus{background:#fff8e1;box-shadow:inset 0 0 0 2px #f59e0b}
+table.g td.num input{text-align:right}
+table.g td.ro{padding:7px 6px;text-align:right;color:var(--green);font-weight:600}
+tr.exp td input{color:#b91c1c}
+tr.ghost td input::placeholder{color:#c4c7cc}
+tr.saving td:first-child{box-shadow:inset 3px 0 0 #f59e0b}
+tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
+.wty{font-size:11px;padding:2px 6px;border-radius:99px;white-space:nowrap;display:inline-block;margin:0 4px}
+.wty.ok{background:#dcfce7;color:var(--green)}
+.wty.none{background:#f3f4f6;color:#9ca3af}
+.wty.warn{background:#fef3c7;color:var(--amber)}
+.del{border:0;background:none;color:#c4c7cc;cursor:pointer;font-size:15px;padding:4px 8px}
+.del:hover{color:var(--red)}
+.add-day{display:flex;gap:8px;align-items:center;background:#fff;border:1px dashed #c7cbd1;border-radius:12px;padding:12px;margin-bottom:12px;flex-wrap:wrap}
+.add-day input{border:1px solid #d1d5db;border-radius:8px;padding:6px 8px}
+.btn{border:0;border-radius:8px;padding:8px 14px;font-weight:700;cursor:pointer;background:var(--ink);color:#fff}
+.btn.ghost{background:#fff;color:var(--ink);border:1px solid #d1d5db}
+.hint{font-size:12px;color:var(--mute)}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#fff;padding:10px 16px;border-radius:10px;transition:.25s;z-index:99;font-size:14px}
+#toast.show{transform:translateX(-50%) translateY(0)}
+.status{font-size:12px;color:#a1a6b0}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:60;padding:16px}
+.modal .box{background:#fff;border-radius:12px;padding:18px;max-width:420px;width:100%}
+.modal .box h3{margin-bottom:10px}
+.modal label{display:flex;gap:8px;align-items:center;margin:6px 0}
+
+/* ═══ 列印：照 Excel「銷售報表」格式，A4 直式，每頁 63 格 ═══ */
+#print{display:none}
+@media print{
+  @page{size:A4 portrait;margin:7mm 6mm}
+  body{background:#fff}
+  #login,#app,#toast,.modal{display:none!important}
+  #print{display:block}
+  .pg{page-break-after:always;font-size:8.2pt;color:#000}
+  .pg:last-child{page-break-after:auto}
+  .pg h1{text-align:center;font-size:15pt;letter-spacing:10px;margin:0 0 1mm}
+  .pg .unit{display:flex;justify-content:space-between;font-size:9pt;margin-bottom:1mm;padding:0 2mm}
+  .pg table{border-collapse:collapse;width:100%;table-layout:fixed}
+  .pg td{border:.4pt solid #000;height:4.05mm;padding:0 1mm;overflow:hidden;white-space:nowrap;text-overflow:clip;line-height:4mm}
+  .pg td.r{text-align:right}
+  .pg td.c{text-align:center}
+  .pg tr.hd td{font-weight:700;text-align:center}
+  .pg tr.tot td{font-weight:700}
+  .pg .neg{color:#c00}
+}
+</style>
+</head>
+<body>
+
+<section id="login" class="hidden">
+  <form class="login-box" id="loginForm">
+    <h1>復原者 每日登打</h1>
+    <input name="email" type="email" placeholder="帳號（Email）" required autocomplete="username">
+    <input name="pw" type="password" placeholder="密碼" required autocomplete="current-password">
+    <button class="btn" style="width:100%">登入</button>
+    <p class="hint" style="margin-top:10px">與保固系統同一組帳號</p>
+  </form>
+</section>
+
+<section id="app" class="hidden">
+  <header><div class="hd">
+    <div class="logo">每日登打 · 銷售報表<small>GRANDMASTER FIX LEDGER</small></div>
+    <select id="branch"><option>楠梓店</option><option>德賢店</option></select>
+    <input type="month" id="month">
+    <span class="status" id="sync">已同步</span>
+    <button class="hbtn" id="printBtn">🖨 列印</button>
+    <button class="hbtn" id="xlsxBtn">⬇ 匯出 Excel</button>
+    <a class="hbtn" href="./">← 保固系統</a>
+  </div></header>
+  <main>
+    <div class="sum">
+      <div><small>承上月金額</small><input id="carry" type="number" step="1"></div>
+      <div><small>本月收支</small><b id="sMonth">0</b></div>
+      <div><small>目前結餘</small><b id="sBal">0</b></div>
+      <div><small>本月毛利</small><b id="sProfit" style="color:var(--green)">0</b></div>
+      <div><small>今天筆數</small><b id="sToday">0</b></div>
+    </div>
+    <div id="days"></div>
+    <div class="add-day">
+      <b>新增日期</b><input type="date" id="newDate"><button class="btn ghost" id="addDayBtn">＋ 加入</button>
+      <span class="hint">打字就會自動儲存；品項有電話的會自動建立保固紀錄。按 Enter 跳到下一列。支出請寫「支出:廠商」、金額打負數。</span>
+    </div>
+  </main>
+</section>
+
+<div id="print"></div>
+<div id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, query, where, getDocs, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { CATS, parseItems, warrantyFields, dateFromType, ymd, normPhone } from './rules.js?v=20261115';
+
+const app = initializeApp({
+  apiKey: "AIzaSyD04ZMXIt8Oo3hjm5qsMaKiLXYzp_9YKwA", authDomain: "care-warranty.firebaseapp.com",
+  projectId: "care-warranty", storageBucket: "care-warranty.firebasestorage.app",
+  messagingSenderId: "29512690431", appId: "1:29512690431:web:f0c2dd1cd6acb03d197aca"
+});
+const auth = getAuth(app), db = getFirestore(app);
+const $ = id => document.getElementById(id);
+const WD = '日一二三四五六';
+const FIELDS = ['item', 'amount', 'recv', 'handler', 'note', 'cost', 'phone', 'ticket'];
+
+let rows = {};            // id → row（目前分店＋月份）
+let extraDays = new Set(); // 新增但還沒有資料的日期
+let meta = null, unsub = null, unsubMeta = null;
+const timers = {}, dirty = new Set();
+
+/* ─── 小工具 ─── */
+const lsGet = k => { try { return localStorage.getItem(k); } catch { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const num = v => { const n = Number(String(v ?? '').replace(/[,\s]/g, '')); return String(v ?? '').trim() === '' || isNaN(n) ? null : n; };
+const fmt = n => n == null ? '' : Number(n).toLocaleString('en-US');
+const isExpense = r => /^支出/.test(String(r.item || '').trim()) || (num(r.amount) ?? 0) < 0;
+const profit = r => { const a = num(r.amount); if (a == null || isExpense(r)) return null; return a - Math.abs(num(r.cost) ?? 0); };
+const bm = () => `${$('branch').value}_${$('month').value}`;
+function toast(m) { const t = $('toast'); t.textContent = m; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2600); }
+function setSync(s) { $('sync').textContent = s; }
+const newId = () => doc(collection(db, 'ledger')).id;
+
+/* ─── 登入 ─── */
+onAuthStateChanged(auth, u => {
+  $('login').classList.toggle('hidden', !!u); $('app').classList.toggle('hidden', !u);
+  if (u) start();
+});
+$('loginForm').onsubmit = async e => {
+  e.preventDefault(); const f = e.target;
+  try { await signInWithEmailAndPassword(auth, f.email.value.trim(), f.pw.value); } catch (er) { toast('⚠️ 登入失敗'); }
+};
+
+function start() {
+  $('branch').value = lsGet('ledgerBranch') || '楠梓店';
+  const t = new Date(); $('month').value = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}`;
+  $('newDate').value = ymd(t);
+  $('branch').onchange = () => { lsSet('ledgerBranch', $('branch').value); load(); };
+  $('month').onchange = load;
+  load();
+}
+
+/* ─── 讀取（即時同步，兩人同時打也會互相看到）─── */
+function load() {
+  if (unsub) unsub(); if (unsubMeta) unsubMeta();
+  rows = {}; extraDays = new Set(); meta = null;
+  const t = new Date(), cur = ymd(t);
+  if (cur.slice(0, 7) === $('month').value && t.getDay() !== 0) extraDays.add(cur);
+  render();
+  unsub = onSnapshot(query(collection(db, 'ledger'), where('bm', '==', bm())), snap => {
+    let structural = false;
+    snap.docChanges().forEach(ch => {
+      const id = ch.doc.id, d = ch.doc.data();
+      if (ch.type === 'removed') { delete rows[id]; structural = true; return; }
+      if (dirty.has(id)) return;                     // 自己正在打的那列不要被蓋掉
+      if (!rows[id] || rows[id].date !== d.date) structural = true;
+      rows[id] = { id, ...d };
+      if (!structural) patchRow(rows[id]);
+    });
+    if (structural) render(); else totals();
+    setSync(snap.metadata.hasPendingWrites ? '儲存中…' : '已同步');
+  }, er => toast('⚠️ 讀取失敗：' + er.message));
+  unsubMeta = onSnapshot(doc(db, 'ledger_meta', bm()), async s => {
+    meta = s.exists() ? s.data() : null;
+    if (document.activeElement !== $('carry')) $('carry').value = meta?.carry ?? '';
+    if (!s.exists()) suggestCarry();
+    totals();
+  });
+}
+
+// 沒填承上月金額時，自動用上個月的結餘帶入（仍可手動修改）
+async function suggestCarry() {
+  const [y, m] = $('month').value.split('-').map(Number);
+  const pm = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
+  const key = `${$('branch').value}_${pm}`;
+  try {
+    const pmeta = await getDoc(doc(db, 'ledger_meta', key));
+    const prs = await getDocs(query(collection(db, 'ledger'), where('bm', '==', key)));
+    if (!pmeta.exists() && prs.empty) return;
+    let bal = Number(pmeta.data()?.carry || 0); prs.forEach(d => bal += num(d.data().amount) ?? 0);
+    if (!meta && $('carry').value === '') { $('carry').value = bal; $('carry').placeholder = '上月結餘'; totals(); }
+  } catch {}
+}
+$('carry').onchange = async () => {
+  try { await setDoc(doc(db, 'ledger_meta', bm()), { carry: num($('carry').value) ?? 0, updatedAt: new Date().toISOString(), updatedBy: auth.currentUser.email }, { merge: true }); toast('已儲存承上月金額'); }
+  catch (er) { toast('⚠️ ' + er.message); }
+};
+
+/* ─── 畫面 ─── */
+function daysList() {
+  const s = new Set(extraDays); Object.values(rows).forEach(r => s.add(r.date));
+  return [...s].filter(d => d.slice(0, 7) === $('month').value).sort();
+}
+const dayRows = d => Object.values(rows).filter(r => r.date === d).sort((a, b) => (a.order || 0) - (b.order || 0));
+
+function rowHTML(r, ghost) {
+  const v = f => esc(r[f] ?? '');
+  return `<tr data-id="${r.id}" data-date="${r.date}" class="${ghost ? 'ghost' : ''}${!ghost && isExpense(r) ? ' exp' : ''}">
+    <td><input data-f="item" value="${v('item')}" placeholder="${ghost ? '輸入品項…（例：13 電池/雄0915、支出:鴻勝）' : ''}"></td>
+    <td class="num"><input data-f="amount" value="${v('amount')}" inputmode="numeric"></td>
+    <td><input data-f="recv" value="${v('recv')}"></td>
+    <td><input data-f="handler" value="${v('handler')}"></td>
+    <td><input data-f="note" value="${v('note')}"></td>
+    <td class="num"><input data-f="cost" value="${v('cost')}" inputmode="numeric"></td>
+    <td class="ro" data-p>${ghost ? '' : fmt(profit(r))}</td>
+    <td><input data-f="phone" value="${v('phone')}" inputmode="tel"></td>
+    <td><input data-f="ticket" value="${v('ticket')}"></td>
+    <td data-w>${ghost ? '' : wtyChip(r)}</td>
+    <td>${ghost ? '' : `<button class="del" title="刪除這列" data-del="${r.id}">✕</button>`}</td>
+  </tr>`;
+}
+function wtyChip(r) {
+  if (isExpense(r) || !String(r.item || '').trim()) return '';
+  const ph = normPhone(r.phone);
+  if (!ph) return '<span class="wty none">無電話</span>';
+  if (!/^09\d{8}$/.test(ph)) return '<span class="wty warn">電話格式?</span>';
+  const its = parseItems(r.item).filter(k => k !== 'none' && k !== 'other');
+  if (!its.length) return '<span class="wty none">✓ 已建檔</span>';
+  return '<span class="wty ok">✓ ' + its.map(k => CATS[k].label.replace(/／.*/, '') + ' ' + CATS[k].base + (CATS[k].care ? '+' + CATS[k].care : '')).join('、') + '</span>';
+}
+
+function render() {
+  const keep = document.activeElement?.closest?.('tr[data-id]') ? { id: document.activeElement.closest('tr').dataset.id, f: document.activeElement.dataset.f, pos: document.activeElement.selectionStart } : null;
+  const today = ymd(new Date());
+  $('days').innerHTML = daysList().map(d => {
+    const dt = new Date(d + 'T00:00:00');
+    const ghost = { id: 'new-' + d, date: d };
+    return `<section class="day" data-day="${d}">
+      <div class="day-h"><span class="d">${dt.getMonth() + 1}月${dt.getDate()}日（${WD[dt.getDay()]}）${d === today ? ' <span class="wty ok">今天</span>' : ''}</span>
+        <span class="t" data-t></span></div>
+      <div class="wrap"><table class="g">
+        <colgroup><col style="width:30%"><col style="width:7%"><col style="width:4.5%"><col style="width:4.5%"><col style="width:9%"><col style="width:6.5%"><col style="width:6%"><col style="width:10%"><col style="width:8%"><col style="width:11.5%"><col style="width:3%"></colgroup>
+        <tr><th>售出品項</th><th>金額</th><th>接待</th><th>經手</th><th>備註</th><th>成本</th><th>毛利</th><th>連絡電話</th><th>單號</th><th>保固</th><th></th></tr>
+        ${dayRows(d).map(r => rowHTML(r, false)).join('')}
+        ${rowHTML(ghost, true)}
+      </table></div></section>`;
+  }).join('') || '<p class="hint" style="padding:20px">這個月還沒有資料，從下方「新增日期」開始。</p>';
+  totals();
+  if (keep) {
+    const el = document.querySelector(`tr[data-id="${keep.id}"] input[data-f="${keep.f}"]`);
+    if (el) { el.focus(); try { el.setSelectionRange(keep.pos, keep.pos); } catch {} }
+  }
+}
+
+function patchRow(r) {
+  const tr = document.querySelector(`tr[data-id="${r.id}"]`); if (!tr) return;
+  tr.querySelectorAll('input[data-f]').forEach(i => { if (i !== document.activeElement) i.value = r[i.dataset.f] ?? ''; });
+  tr.classList.toggle('exp', isExpense(r));
+  tr.querySelector('[data-p]').textContent = fmt(profit(r));
+  tr.querySelector('[data-w]').innerHTML = wtyChip(r);
+}
+
+function totals() {
+  let monthSum = 0, prof = 0;
+  daysList().forEach(d => {
+    const rs = dayRows(d);
+    const s = rs.reduce((a, r) => a + (num(r.amount) ?? 0), 0);
+    const p = rs.reduce((a, r) => a + (profit(r) ?? 0), 0);
+    monthSum += s; prof += p;
+    const el = document.querySelector(`section[data-day="${d}"] [data-t]`);
+    if (el) el.innerHTML = `${rs.length} 筆　合計<b>${fmt(s)}</b>毛利<b style="color:var(--green)">${fmt(p)}</b>`;
+  });
+  const carry = num($('carry').value) ?? 0;
+  $('sMonth').textContent = fmt(monthSum);
+  $('sBal').textContent = fmt(carry + monthSum);
+  $('sProfit').textContent = fmt(prof);
+  $('sToday').textContent = dayRows(ymd(new Date())).length;
+}
+
+/* ─── 編輯：打字即存 ─── */
+$('days').addEventListener('input', e => {
+  const i = e.target.closest('input[data-f]'); if (!i) return;
+  let tr = i.closest('tr');
+  let id = tr.dataset.id;
+  if (id.startsWith('new-')) {                 // 在空白列開始打字 → 建立新的一列
+    id = newId();
+    const prev = dayRows(tr.dataset.date).at(-1);
+    rows[id] = { id, date: tr.dataset.date, bm: bm(), branch: $('branch').value, order: Date.now(),
+      recv: lsGet('ledgerRecv') || '', handler: lsGet('ledgerHandler') || '',
+      createdAt: new Date().toISOString(), createdBy: auth.currentUser.email };
+    rows[id][i.dataset.f] = i.value;
+    dirty.add(id);
+    const f = i.dataset.f, pos = i.selectionStart;
+    render();
+    const el = document.querySelector(`tr[data-id="${id}"] input[data-f="${f}"]`);
+    if (el) { el.focus(); try { el.setSelectionRange(pos, pos); } catch {} }
+    queueSave(id);
+    return;
+  }
+  const r = rows[id]; if (!r) return;
+  r[i.dataset.f] = i.value;
+  if (i.dataset.f === 'recv') lsSet('ledgerRecv', i.value);
+  if (i.dataset.f === 'handler') lsSet('ledgerHandler', i.value);
+  dirty.add(id);
+  tr.classList.toggle('exp', isExpense(r));
+  tr.querySelector('[data-p]').textContent = fmt(profit(r));
+  tr.querySelector('[data-w]').innerHTML = wtyChip(r);
+  totals();
+  queueSave(id);
+});
+
+function queueSave(id) {
+  clearTimeout(timers[id]);
+  document.querySelector(`tr[data-id="${id}"]`)?.classList.add('saving');
+  setSync('儲存中…');
+  timers[id] = setTimeout(() => save(id), 700);
+}
+
+async function save(id) {
+  const r = rows[id]; if (!r) return;
+  const data = { bm: bm(), branch: r.branch, date: r.date, order: r.order || Date.now(), createdAt: r.createdAt, createdBy: r.createdBy,
+    updatedAt: new Date().toISOString(), updatedBy: auth.currentUser.email };
+  FIELDS.forEach(f => data[f] = String(r[f] ?? '').trim());
+  const tr = () => document.querySelector(`tr[data-id="${id}"]`);
+  try {
+    await setDoc(doc(db, 'ledger', id), data);
+    await syncWarranty(id, data);
+    dirty.delete(id);
+    tr()?.classList.remove('saving', 'err');
+    setSync('已同步');
+  } catch (er) {
+    tr()?.classList.add('err'); setSync('⚠️ 儲存失敗');
+    toast('⚠️ 儲存失敗，請檢查網路：' + er.message);
+  }
+}
+
+// 有電話的維修品項 → 自動建立／更新保固紀錄（與 Excel 匯入同規則；月初再匯入會自動略過重複）
+async function syncWarranty(id, r) {
+  const ref = doc(db, 'records', 'L' + id);
+  const phone = normPhone(r.phone);
+  if (isExpense(r) || !r.item || !/^09\d{8}$/.test(phone)) {
+    if (rows[id]?._hadRec !== false) { await deleteDoc(ref); if (rows[id]) rows[id]._hadRec = false; }   // 不存在也不會出錯
+    return;
+  }
+  const repairDate = dateFromType(r.item, r.date) || r.date;
+  await setDoc(ref, {
+    branch: r.branch, repairDate, bookedDate: r.date, name: (r.ticket || '').replace(/[RS]$/, '') || '（未填）',
+    phone, type: r.item, ...warrantyFields(parseItems(r.item), 0), price: r.amount, note: r.note,
+    source: 'ledger', ledgerId: id, createdAt: r.createdAt, createdBy: r.createdBy,
+    updatedAt: r.updatedAt, updatedBy: r.updatedBy
+  }, { merge: true });
+  if (rows[id]) rows[id]._hadRec = true;
+}
+
+// Enter → 下一列同一欄
+$('days').addEventListener('keydown', e => {
+  if (e.key !== 'Enter' || e.isComposing) return;
+  const i = e.target.closest('input[data-f]'); if (!i) return;
+  e.preventDefault();
+  const tr = i.closest('tr'), next = tr.nextElementSibling;
+  const target = next?.querySelector(`input[data-f="${i.dataset.f}"]`) || next?.querySelector('input[data-f="item"]');
+  if (target) target.focus();
+});
+
+$('days').addEventListener('click', async e => {
+  const b = e.target.closest('[data-del]'); if (!b) return;
+  const r = rows[b.dataset.del]; if (!r) return;
+  if (!confirm(`刪除這一列？\n\n${r.item || '（空白）'}　${r.amount || ''}\n\n若有建立保固紀錄也會一起刪除。`)) return;
+  try {
+    clearTimeout(timers[r.id]); dirty.delete(r.id);
+    await deleteDoc(doc(db, 'ledger', r.id));
+    await deleteDoc(doc(db, 'records', 'L' + r.id));
+    delete rows[r.id]; render(); toast('已刪除');
+  } catch (er) { toast('⚠️ 刪除失敗：' + er.message); }
+});
+
+$('addDayBtn').onclick = () => {
+  const d = $('newDate').value; if (!d) return;
+  if (d.slice(0, 7) !== $('month').value) { $('month').value = d.slice(0, 7); load(); }
+  extraDays.add(d); render();
+  document.querySelector(`section[data-day="${d}"] tr.ghost input[data-f="item"]`)?.focus();
+};
+
+// 離開頁面前把還沒存的送出
+window.addEventListener('beforeunload', e => {
+  if (dirty.size) { Object.keys(timers).forEach(id => { clearTimeout(timers[id]); save(id); }); e.preventDefault(); e.returnValue = ''; }
+});
+
+/* ─── 列印／匯出：照原本 Excel「銷售報表」格式 ─── */
+const PER_PAGE = 55;   // 每頁內容列數（加上表頭、承前、合計、零用金 = 63 格）
+function buildPages(fromDate) {
+  const carry = num($('carry').value) ?? 0;
+  const lines = [];
+  daysList().forEach(d => {
+    const rs = dayRows(d).filter(r => String(r.item || '').trim() || num(r.amount) != null);
+    if (!rs.length) return;
+    const dt = new Date(d + 'T00:00:00');
+    rs.forEach((r, i) => lines.push({ k: 'row', d, date: i === 0 ? `${dt.getMonth() + 1}月${dt.getDate()}日` : '', r }));
+    lines.push({ k: 'tot', d, sum: rs.reduce((a, r) => a + (num(r.amount) ?? 0), 0), prof: rs.reduce((a, r) => a + (profit(r) ?? 0), 0) });
+  });
+  const pages = []; let bal = carry;
+  for (let i = 0; i < lines.length || i === 0; i += PER_PAGE) {
+    const chunk = lines.slice(i, i + PER_PAGE);
+    const open = bal;
+    chunk.forEach(l => { if (l.k === 'row') bal += num(l.r.amount) ?? 0; });
+    pages.push({ open, close: bal, lines: chunk, first: i === 0 });
+    if (!lines.length) break;
+  }
+  return fromDate ? pages.filter(p => p.lines.some(l => l.d >= fromDate)) : pages;
+}
+function monthLabel() { const [y, m] = $('month').value.split('-'); return { y, m: Number(m) }; }
+
+function printHTML(pages) {
+  const { y, m } = monthLabel(), br = $('branch').value;
+  const pm = m === 1 ? 12 : m - 1;
+  const col = '<colgroup><col style="width:9%"><col style="width:41%"><col style="width:8%"><col style="width:4.5%"><col style="width:4.5%"><col style="width:9%"><col style="width:6%"><col style="width:6%"><col style="width:7.5%"><col style="width:6.5%"></colgroup>';
+  const cell = (v, cls = '') => `<td class="${cls}">${esc(v ?? '')}</td>`;
+  const money = v => v == null || v === '' ? '' : fmt(v);
+  return pages.map(p => {
+    let h = `<div class="pg"><h1>銷售報表</h1><div class="unit"><span>單位：復原者${esc(br)}</span><span>${y}年${m}月</span></div><table>${col}`;
+    h += `<tr class="hd">${['日期', '售出品項', '金額', '接待人', '經手人', '備註', '成本', '毛利', '連絡電話', '單號'].map(x => cell(x)).join('')}</tr>`;
+    h += `<tr>${cell('')}${cell(p.first ? `承${pm}月份金額` : '承前盈餘')}${cell(money(p.open), 'r')}${cell('').repeat(7)}</tr>`;
+    p.lines.forEach(l => {
+      if (l.k === 'tot') h += `<tr class="tot">${cell('合計', 'c')}${cell('')}${cell('')}${cell('')}${cell('')}${cell(money(l.sum), 'r')}${cell('')}${cell(money(l.prof), 'r')}${cell('')}${cell('')}</tr>`;
+      else {
+        const r = l.r, a = num(r.amount);
+        h += `<tr>${cell(l.date, 'c')}${cell(r.item)}<td class="r${a < 0 ? ' neg' : ''}">${money(a)}</td>${cell(r.recv, 'c')}${cell(r.handler, 'c')}${cell(r.note)}${cell(money(num(r.cost)), 'r')}${cell(money(profit(r)), 'r')}${cell(r.phone)}${cell(r.ticket)}</tr>`;
+      }
+    });
+    for (let i = p.lines.length; i < PER_PAGE; i++) h += `<tr>${cell('').repeat(10)}</tr>`;
+    h += `<tr class="tot">${cell('合計', 'c')}${cell('')}${cell(money(p.close), 'r')}${cell('').repeat(7)}</tr>`;
+    h += `<tr>${cell('零用金', 'c')}${cell('').repeat(9)}</tr>`;
+    h += `<tr class="tot">${cell('合計', 'c')}${cell('')}${cell(money(p.close), 'r')}${cell('').repeat(7)}</tr>`;
+    return h + '</table></div>';
+  }).join('');
+}
+
+$('printBtn').onclick = () => {
+  const today = ymd(new Date());
+  const m = document.createElement('div'); m.className = 'modal';
+  m.innerHTML = `<div class="box"><h3>🖨 列印銷售報表</h3>
+    <label><input type="radio" name="pr" value="all" checked> 整個月（${$('month').value}）</label>
+    <label><input type="radio" name="pr" value="from"> 從這天所在的頁開始：<input type="date" id="prFrom" value="${today}" style="border:1px solid #ccc;border-radius:6px;padding:3px"></label>
+    <p class="hint" style="margin:8px 0 12px">格式與原本 Excel 相同（A4 直式、每頁 63 格、每天有合計、頁尾結餘）。</p>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn ghost" id="prNo">取消</button><button class="btn" id="prGo">列印</button></div></div>`;
+  document.body.appendChild(m);
+  m.querySelector('#prNo').onclick = () => m.remove();
+  m.querySelector('#prGo').onclick = () => {
+    const from = m.querySelector('input[name=pr]:checked').value === 'from' ? m.querySelector('#prFrom').value : '';
+    $('print').innerHTML = printHTML(buildPages(from)); m.remove();
+    setTimeout(() => window.print(), 100);
+  };
+};
+
+$('xlsxBtn').onclick = () => {
+  if (!window.XLSX) return toast('⚠️ 函式庫載入中，請稍候');
+  const { y, m } = monthLabel(), br = $('branch').value, pm = m === 1 ? 12 : m - 1;
+  const wb = XLSX.utils.book_new();
+  buildPages('').forEach((p, idx) => {
+    const A = [[], ['', '', '銷   售   報   表'], ['', '', `  單位：復原者${br}`, '', '', '', '', `${y}年${m}月`],
+      ['', '', '日期', '售    出    品    項', '金    額', '接待人', '經手人    ', '備    註', '成本', '毛利', '連絡電話', '單號'],
+      ['', '', '', p.first ? `承${pm}月份金額` : '承前盈餘', p.open]];
+    p.lines.forEach(l => {
+      if (l.k === 'tot') A.push(['', '', '合計', '', '', '', '', l.sum, '', l.prof]);
+      else { const r = l.r; A.push(['', '', l.date, r.item || '', num(r.amount) ?? '', num(r.recv) ?? r.recv ?? '', num(r.handler) ?? r.handler ?? '', r.note || '', num(r.cost) ?? '', profit(r) ?? '', r.phone || '', r.ticket || '']); }
+    });
+    while (A.length < 5 + PER_PAGE) A.push([]);
+    A.push(['', '', '合計', '', p.close]); A.push(['', '', '零用金']); A.push(['', '', '合計', '', p.close]);
+    const ws = XLSX.utils.aoa_to_sheet(A);
+    ws['!cols'] = [{ wch: 5 }, { wch: 3 }, { wch: 10 }, { wch: 68 }, { wch: 12 }, { wch: 7 }, { wch: 8 }, { wch: 18 }, { wch: 9 }, { wch: 9 }, { wch: 13 }, { wch: 12 }];
+    ws['!merges'] = [{ s: { r: 1, c: 2 }, e: { r: 1, c: 7 } }, { s: { r: 2, c: 2 }, e: { r: 2, c: 3 } }];
+    Object.keys(ws).forEach(k => { if (/^K\d+$/.test(k) && ws[k].v) { ws[k].t = 's'; ws[k].v = String(ws[k].v); } });
+    XLSX.utils.book_append_sheet(wb, ws, '匯整' + (idx + 1));
+  });
+  XLSX.writeFile(wb, `${y}年${m}月 銷售報表（${br}）.xlsx`);
+};
+</script>
+</body>
+</html>
