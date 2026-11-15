@@ -663,12 +663,12 @@ function quoteEvent_(ev, token, props) {
   var mine = !!uid && (uid === owner || teamIds_(props).indexOf(uid) >= 0);
   var gid0 = src.groupId || src.roomId || '';
   // 群組裡客人／同行的問題：記下最近問的機型、維修項目，等我們只回「800」時拿來配對
-  if (gid0 && !mine) rememberAsk_(gid0, text, memberName_(src, token));
+  if (gid0 && !mine) rememberAsk_(gid0, text, memberName_(src, token), ev.message.id);
   var items = parseQuoteLines_(text);
   if (!mine) items = items.filter(function (q) { return !q.review; });   // 同行訊息：機型＋零件＋價格都有才記
   // 我們在群組只回價格（例：店員問「A71 電池 $?」→ 回「800 要訂」）→ 用前面的問題補上機型／項目
   if (mine && gid0 && (!items.length || items.every(function (q) { return q.review; }))) {
-    var ctxItems = contextQuotes_(gid0, text);
+    var ctxItems = contextQuotes_(gid0, text, ev.message.quotedMessageId);
     if (ctxItems.length) items = ctxItems;
   }
   if (!items.length) {
@@ -708,13 +708,19 @@ function ctxModel_(t) {
   var mm = modelOf_(s);
   return mm && !/^iPhone 10\b/.test(mm.name) ? mm.name : '';
 }
-function rememberAsk_(gid, text, who) {
+function rememberAsk_(gid, text, who, msgId) {
   var c = CacheService.getScriptCache(), k = 'qa_' + gid, o = JSON.parse(c.get(k) || '{}'), now = Date.now();
   var md = ctxModel_(text), pt = partOf_(text);
-  if (!md && !pt) return;
-  if (md) { o.model = md; o.mt = now; if (!pt) { o.part = ''; } }
-  if (pt) { o.part = pt; o.pt = now; }
-  o.asker = who; c.put(k, JSON.stringify(o), 7200);
+  if (md || pt) {
+    if (md) { o.model = md; o.mt = now; if (!pt) { o.part = ''; } }
+    if (pt) { o.part = pt; o.pt = now; }
+    o.asker = who; c.put(k, JSON.stringify(o), 7200);
+  }
+  // 每則問題另外記一份（6 小時），我們用「回覆」引用這則時，直接用它配對（同時問兩題也不會配錯）
+  if (msgId) {
+    var fresh = function (t) { return t && now - t < 7200000; };
+    c.put('qm_' + msgId, JSON.stringify({ model: md || (fresh(o.mt) ? o.model : ''), part: pt || (md ? '' : (fresh(o.pt) ? o.part : '')), asker: who }), 21600);
+  }
 }
 function clearAsk_(gid) { CacheService.getScriptCache().remove('qa_' + gid); }
 function ctxPrices_(t) {
@@ -725,10 +731,12 @@ function ctxPrices_(t) {
   while ((m = re.exec(c))) { var a = +m[1], b = m[2] ? +m[2] : 0; if (a >= 200 && a <= 80000 && (!b || b > a)) out.push({ lo: a, txt: b ? a + '-' + b : String(a) }); }
   return out;
 }
-function contextQuotes_(gid, text) {
+function contextQuotes_(gid, text, quotedId) {
   if (/已收|收到|轉帳|匯款|發票|收款|付款|帳號|總共|合計|找你/.test(text)) return [];
-  var o = JSON.parse(CacheService.getScriptCache().get('qa_' + gid) || '{}'), now = Date.now(), out = [];
+  var cache = CacheService.getScriptCache(), o = JSON.parse(cache.get('qa_' + gid) || '{}'), now = Date.now(), out = [];
   var cm = o.mt && now - o.mt < 7200000 ? o.model : '', cp = o.pt && now - o.pt < 7200000 ? o.part : '';
+  var q = quotedId ? JSON.parse(cache.get('qm_' + quotedId) || 'null') : null;
+  if (q) { var sameModel = !q.model || q.model === cm; cm = q.model || cm; cp = q.part || (sameModel ? cp : ''); o = { asker: q.asker }; }   // 有引用 → 以被回覆的那則為準
   String(text).split(/\n+/).forEach(function (line) {
     // 「電池1300 螢幕 原裝9400副廠5500」→ 一段一項
     var segs = line.split(/(?=原裝|原廠|副廠|拆機|原\s*\d|副\s*\d)|(?=電池|螢幕|尾插|充電孔|背蓋|背板|鏡頭|主板|聽筒|喇叭|排線)/).filter(function (x) { return ctxPrices_(x).length; });
