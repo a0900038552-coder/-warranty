@@ -138,7 +138,7 @@ th{color:var(--mute);font-weight:600}
 <section id="app" class="hidden">
 <header>
   <div class="hd-row">
-    <div class="logo">復原者 保固管理<small>REPAIR CARE+ SYSTEM · v2026.11.15b</small></div>
+    <div class="logo">復原者 保固管理<small>REPAIR CARE+ SYSTEM · v2026.11.15c</small></div>
     <div class="hd-right">
       <select id="branchFilter">
         <option value="">全部分店</option>
@@ -264,7 +264,7 @@ th{color:var(--mute);font-weight:600}
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch }
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 import { BRANCHES, CARE_BIND_WINDOW_DAYS, CATS, autoCategory, parseItems, warrantyFields, recItems, dateFromType, parseD, ymd, normPhone, refundInfo, refundRecord } from './rules.js?v=20261115b';
@@ -282,7 +282,8 @@ const firebaseConfig = {
 /* ════════ 3. 初始化 ════════ */
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db = getFirestore(app);
+// 本機快取：重新整理時先用電腦裡的資料秒開，再只同步有變動的部分
+const db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) });
 const $ = id => document.getElementById(id);
 
 let records = [], bindings = [], lineUsers = {}, bookings = [], blocks = new Set();
@@ -472,7 +473,7 @@ function card(r) {
 
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
-$('q').addEventListener('input', () => { showLimit = 50; render(); });
+let qTimer; $('q').addEventListener('input', () => { clearTimeout(qTimer); qTimer = setTimeout(() => { showLimit = 50; render(); }, 180); });
 $('branchFilter').addEventListener('change', () => { localStorageSet('care.branch', $('branchFilter').value); render(); });
 $('list').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;

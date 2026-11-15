@@ -132,6 +132,7 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
     <button class="hbtn" id="statBtn">📊 月統計</button>
     <button class="hbtn" id="printBtn">🖨 列印</button>
     <button class="hbtn" id="xlsxBtn">⬇ 匯出 Excel</button>
+    <button class="hbtn" id="impBtn">📥 匯入舊報表</button><input type="file" id="impFile" accept=".xlsx,.xls" class="hidden">
     <a class="hbtn" href="./">← 保固系統</a>
   </div></header>
   <main>
@@ -159,7 +160,7 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, query, where, getDocs, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, deleteDoc, onSnapshot, query, where, getDocs, getDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { CATS, parseItems, warrantyFields, dateFromType, ymd, normPhone, refundInfo, refundRecord } from './rules.js?v=20261115b';
 
 const app = initializeApp({
@@ -167,7 +168,7 @@ const app = initializeApp({
   projectId: "care-warranty", storageBucket: "care-warranty.firebasestorage.app",
   messagingSenderId: "29512690431", appId: "1:29512690431:web:f0c2dd1cd6acb03d197aca"
 });
-const auth = getAuth(app), db = getFirestore(app);
+const auth = getAuth(app), db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) });
 const $ = id => document.getElementById(id);
 const WD = '日一二三四五六';
 const FIELDS = ['item', 'amount', 'recv', 'handler', 'note', 'cost', 'phone', 'ticket'];
@@ -391,7 +392,7 @@ function queueSave(id) {
 
 async function save(id) {
   const r = rows[id]; if (!r) return;
-  const data = { bm: bm(), branch: r.branch, date: r.date, order: r.order || Date.now(), createdAt: r.createdAt, createdBy: r.createdBy,
+  const data = { bm: bm(), branch: r.branch, date: r.date, order: r.order || Date.now(), createdAt: r.createdAt, createdBy: r.createdBy, ...(r.imported ? { imported: true, importFile: r.importFile || '' } : {}),
     updatedAt: new Date().toISOString(), updatedBy: auth.currentUser.email };
   FIELDS.forEach(f => data[f] = String(r[f] ?? '').trim());
   const tr = () => document.querySelector(`tr[data-id="${id}"]`);
@@ -409,6 +410,7 @@ async function save(id) {
 
 // 有電話的維修品項 → 自動建立／更新保固紀錄（與 Excel 匯入同規則；月初再匯入會自動略過重複）
 async function syncWarranty(id, r) {
+  if (rows[id]?.imported) return;   // 從舊 Excel 匯入的列：保固紀錄在匯入時已處理，避免重複
   const ref = doc(db, 'records', 'L' + id);
   const phone = normPhone(r.phone);
   const refund = isRefund(r);
@@ -550,7 +552,7 @@ function renderStats() {
           </g>`;
         }).join('')}
       </svg></div>
-    <p class="hint" style="margin-top:8px">分類依品項文字自動判斷（維修零件與保固規則相同）；一列含多項時，以維修零件優先歸類。回收、進貨退出、房租等列為「其他收入」，不算營收。只統計已在「每日登打」的資料。</p>`;
+    <p class="hint" style="margin-top:8px">分類依品項文字自動判斷（維修零件與保固規則相同）；一列含多項時，以維修零件優先歸類。回收、進貨退出、房租等列為「其他收入」，不算營收。只統計已在「每日登打」的資料（舊月份可用「📥 匯入舊報表」補進來）。</p>`;
   $('segM').onclick = e => { const b = e.target.closest('button'); if (b) { statMetric = b.dataset.k; renderStats(); } };
   $('segS').onclick = async e => { const b = e.target.closest('button'); if (!b) return; statScope = b.dataset.k; if (statScope === 'both') await loadOther(); renderStats(); };
 }
@@ -563,6 +565,100 @@ document.addEventListener('mousemove', e => {
   tip.style.left = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8) + 'px';
   tip.style.top = (e.clientY + 14) + 'px';
 });
+
+/* ─── 匯入舊的 Excel 銷售報表（匯整1、匯整2…）→ 登打頁；同時補上缺的保固紀錄（與保固系統匯入同規則、自動去重）─── */
+$('impBtn').onclick = () => $('impFile').click();
+$('impFile').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) importXlsx(f); };
+
+function parseLedgerXlsx(buf) {
+  const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+  let branch = '', ym = '', carry = null, out = [], seq = 0;
+  wb.SheetNames.forEach(sn => {
+    if (/交接|報價|退貨|廢/.test(sn)) return;
+    const A = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, defval: '', raw: true, cellDates: true });
+    const h = A.findIndex(r => r.some(c => /[連聯]絡電話/.test(String(c).replace(/\s/g, ''))));
+    if (h < 0) return;
+    const H = A[h].map(c => String(c).replace(/\s+/g, ''));
+    const col = k => H.findIndex(x => x.includes(k));
+    const C = { date: col('日期'), item: col('品項'), amt: col('金額'), recv: col('接待'), hand: col('經手'), note: H.findIndex(x => /備[註注]/.test(x)),
+      cost: col('成本'), phone: H.findIndex(x => /[連聯]絡電話/.test(x)), ticket: col('單號') };
+    A.slice(0, h).forEach(r => r.forEach(c => {
+      const t = String(c);
+      if (!branch && /楠梓店/.test(t)) branch = '楠梓店'; if (!branch && /德賢店/.test(t)) branch = '德賢店';
+      const m = t.match(/(\d{4})\s*年\s*(\d{1,2})\s*月/); if (m && !ym) ym = `${m[1]}-${m[2].padStart(2, '0')}`;
+    }));
+    let cur = '';
+    for (const r of A.slice(h + 1)) {
+      const c0 = String(r[C.date] ?? '').trim(), item = String(r[C.item] ?? '').trim();
+      if (c0 === '零用金' || /^(保險櫃|現金|多錢|大吉大利)/.test(item)) break;     // 頁尾
+      if (c0 === '合計') continue;
+      if (/^承/.test(item)) { if (carry === null && /月份/.test(item)) carry = num(r[C.amt]); continue; }
+      const dv = r[C.date];
+      if (dv instanceof Date) cur = ymd(dv);
+      else if (c0) { const m = c0.match(/(\d{1,2})\s*[月\/]\s*(\d{1,2})/); if (m && ym) cur = `${ym.slice(0, 4)}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`; }
+      if (!item && num(r[C.amt]) == null) continue;
+      if (!cur) continue;
+      const v = k => C[k] >= 0 ? String(r[C[k]] ?? '').trim() : '';
+      out.push({ date: cur, item, amount: v('amt'), recv: v('recv'), handler: v('hand'), note: v('note'), cost: v('cost'), phone: v('phone'), ticket: v('ticket'), seq: seq++ });
+    }
+  });
+  if (!ym && out.length) ym = out[0].date.slice(0, 7);
+  return { branch, ym, carry, rows: out.filter(r => r.date.slice(0, 7) === ym) };
+}
+
+async function importXlsx(file) {
+  if (!window.XLSX) return toast('⚠️ 函式庫載入中，請稍候');
+  const p = parseLedgerXlsx(await file.arrayBuffer());
+  if (!p.rows.length) return toast('⚠️ 讀不到資料，請確認是「銷售報表」格式的 Excel');
+  const branch = p.branch || $('branch').value, key = `${branch}_${p.ym}`;
+  const existing = await getDocs(query(collection(db, 'ledger'), where('bm', '==', key)));
+  const sales = p.rows.filter(r => !isExpense(r)).reduce((a, r) => a + (num(r.amount) ?? 0), 0);
+  let msg = `📥 ${file.name}\n\n分店：${branch}${p.branch ? '' : '（偵測不到，使用目前選的分店）'}\n月份：${p.ym}\n共 ${p.rows.length} 列（${new Set(p.rows.map(r => r.date)).size} 天）\n承上月金額：${p.carry ?? '（未偵測到）'}\n營收合計：${fmt(sales)}`;
+  if (!existing.empty) msg += `\n\n⚠️ 這個月在登打頁已經有 ${existing.size} 筆資料，按「確定」會先刪除這 ${existing.size} 筆，換成 Excel 的內容。`;
+  if (!confirm(msg + '\n\n確定匯入？')) return;
+  setSync('匯入中…');
+  try {
+    // 1. 清掉該月舊資料（含它們自動建立的保固紀錄）
+    const del = existing.docs;
+    for (let i = 0; i < del.length; i += 200) {
+      const b = writeBatch(db);
+      del.slice(i, i + 200).forEach(d => { b.delete(d.ref); if (!d.data().imported) b.delete(doc(db, 'records', 'L' + d.id)); });
+      await b.commit();
+    }
+    // 2. 寫入登打資料
+    const now = new Date().toISOString(), me = auth.currentUser.email, base = Date.parse(p.ym + '-01T00:00:00');
+    const list = p.rows.map(r => ({ id: newId(), bm: key, branch, date: r.date, order: base + r.seq, item: r.item, amount: r.amount, recv: r.recv, handler: r.handler,
+      note: r.note, cost: r.cost, phone: r.phone, ticket: r.ticket, imported: true, importFile: file.name, createdAt: now, createdBy: me, updatedAt: now, updatedBy: me }));
+    for (let i = 0; i < list.length; i += 400) {
+      const b = writeBatch(db);
+      list.slice(i, i + 400).forEach(({ id, ...d }) => b.set(doc(db, 'ledger', id), d));
+      await b.commit();
+    }
+    if (p.carry != null) await setDoc(doc(db, 'ledger_meta', key), { carry: p.carry, updatedAt: now, updatedBy: me }, { merge: true });
+    // 3. 補保固紀錄（同電話＋同保固起算日＋同品項已存在就略過）
+    const recs = await getDocs(collection(db, 'records'));
+    const have = new Set(recs.docs.map(d => { const x = d.data(); return `${x.phone}_${x.repairDate}_${x.type}`; }));
+    const toAdd = [];
+    list.forEach(r => {
+      const phone = normPhone(r.phone);
+      if (!/^09\d{8}$/.test(phone) || !r.item || (isExpense(r) && !isRefund(r))) return;
+      const repairDate = dateFromType(r.item, r.date) || r.date;
+      let rec = { branch, repairDate, bookedDate: r.date, name: (r.ticket || '').replace(/[RS]$/, '') || '（未填）', phone, type: r.item,
+        ...warrantyFields(parseItems(r.item), 0), price: r.amount, note: r.note, careManual: false, source: 'excel', importFile: file.name, createdAt: now, createdBy: me };
+      if (isRefund(r)) rec = refundRecord(rec, r.date);
+      const k = `${phone}_${rec.repairDate}_${r.item}`;
+      if (have.has(k)) return; have.add(k); toAdd.push(rec);
+    });
+    for (let i = 0; i < toAdd.length; i += 400) {
+      const b = writeBatch(db);
+      toAdd.slice(i, i + 400).forEach(rec => b.set(doc(collection(db, 'records')), rec));
+      await b.commit();
+    }
+    if ($('branch').value !== branch) { $('branch').value = branch; lsSet('ledgerBranch', branch); }
+    $('month').value = p.ym; load();
+    toast(`✅ 匯入 ${list.length} 列；保固紀錄新增 ${toAdd.length} 筆（其餘已存在）`);
+  } catch (er) { setSync('⚠️ 匯入失敗'); toast('⚠️ 匯入失敗：' + er.message); }
+}
 
 /* ─── 列印／匯出：照原本 Excel「銷售報表」格式 ─── */
 const PER_PAGE = 55;   // 每頁內容列數（加上表頭、承前、合計、零用金 = 63 格）
