@@ -245,7 +245,7 @@ function load() {
     setSync(snap.metadata.hasPendingWrites ? '儲存中…' : '已同步');
   }, er => toast('⚠️ 讀取失敗：' + er.message));
   unsubCash = onSnapshot(query(collection(db, 'ledger_cash'), where('bm', '==', bm())), s => {
-    s.docs.forEach(d => { const x = d.data(); cash[x.date] = { safe: x.safe ?? '', drawer: x.drawer ?? '' }; });
+    s.docs.forEach(d => { const x = d.data(); cash[x.date] = { safe: x.safe ?? '', drawer: x.drawer ?? '', extra: x.extra ?? '' }; });
     totals();
   }, () => {});
   unsubMeta = onSnapshot(doc(db, 'ledger_meta', bm()), async s => {
@@ -266,6 +266,7 @@ async function suggestCarry() {
     const prs = await getDocs(query(collection(db, 'ledger'), where('bm', '==', key)));
     if (!pmeta.exists() && prs.empty) return;
     let bal = Number(pmeta.data()?.carry || 0); prs.forEach(d => bal += num(d.data().amount) ?? 0);
+    (await getDocs(query(collection(db, 'ledger_cash'), where('bm', '==', key)))).forEach(d => bal += num(d.data().extra) ?? 0);
     if (!meta && $('carry').value === '') { $('carry').value = bal; $('carry').placeholder = '上月結餘'; totals(); }
   } catch {}
 }
@@ -328,7 +329,8 @@ function render() {
         ${dayRows(d).map(r => rowHTML(r, false)).join('')}
         ${rowHTML(ghost, true)}
       </table></div>
-      <div class="cash" data-cash="${d}">💰 <b>點錢</b>　帳上結餘 <b data-bal></b>　＝　保險櫃 <input data-c="safe" inputmode="text"> ＋ 抽屜現金 <input data-c="drawer" inputmode="text"> <span data-diff></span></div></section>`;
+      <div class="cash" data-cash="${d}">💰 <b>點錢</b>　帳上結餘 <b data-bal></b>　＝　保險櫃 <input data-c="safe" inputmode="text"> ＋ 抽屜現金 <input data-c="drawer" inputmode="text"> <span data-diff></span>
+        <span style="margin-left:auto" title="點錢多出來、找不到原因的錢；填了會算進帳上結餘（少錢可打負數）">多錢 <input data-c="extra" inputmode="text" placeholder="手動填" style="width:90px"></span></div></section>`;
   }).join('') || '<p class="hint" style="padding:20px">這個月還沒有資料，從下方「新增日期」開始。</p>';
   totals();
   if (keep) {
@@ -358,11 +360,12 @@ function totals() {
   const carry = num($('carry').value) ?? 0;
   let run = carry, lastSafe = '';
   daysList().forEach(d => {
-    run += dayRows(d).reduce((a, r) => a + (num(r.amount) ?? 0), 0);
+    run += dayRows(d).reduce((a, r) => a + (num(r.amount) ?? 0), 0) + extraOf(d);
     const box = document.querySelector(`[data-cash="${d}"]`); if (!box) return;
-    const c = cash[d] || {}, si = box.querySelector('[data-c=safe]'), di = box.querySelector('[data-c=drawer]');
+    const c = cash[d] || {}, si = box.querySelector('[data-c=safe]'), di = box.querySelector('[data-c=drawer]'), xi = box.querySelector('[data-c=extra]');
     if (document.activeElement !== si) si.value = c.safe ?? '';
     if (document.activeElement !== di) di.value = c.drawer ?? '';
+    if (document.activeElement !== xi) xi.value = c.extra ?? '';
     si.placeholder = lastSafe !== '' ? fmt(lastSafe) + '（沿用）' : '金額';
     di.placeholder = '點完填';
     box.querySelector('[data-bal]').textContent = fmt(run);
@@ -374,7 +377,8 @@ function totals() {
     df.innerHTML = diff === 0 ? '<span class="ok">✓ 正確</span>' : diff > 0 ? `<span class="over">多 ${fmt(diff)} 元</span>` : `<span class="short">少 ${fmt(-diff)} 元</span>`;
   });
   $('sMonth').textContent = fmt(monthSum);
-  $('sBal').textContent = fmt(carry + monthSum);
+  const extras = Object.keys(cash).filter(x => x.slice(0, 7) === $('month').value).reduce((a, x) => a + extraOf(x), 0);
+  $('sBal').textContent = fmt(carry + monthSum + extras);
   $('sProfit').textContent = fmt(prof);
   $('sToday').textContent = dayRows(ymd(new Date())).length;
   clearTimeout(totals._st); totals._st = setTimeout(renderStats, 400);
@@ -472,6 +476,8 @@ $('days').addEventListener('focusout', e => {
 
 // 點錢：保險櫃（手動，沒填沿用前一天）＋抽屜現金 → 與帳上結餘比對
 const cashTimers = {};
+const extraOf = d => num(cash[d]?.extra) ?? 0;
+const extrasUpTo = d => Object.keys(cash).filter(x => x <= d && x.slice(0, 7) === $('month').value).reduce((a, x) => a + extraOf(x), 0);
 $('days').addEventListener('input', e => {
   const i = e.target.closest('input[data-c]'); if (!i) return;
   const d = i.closest('[data-cash]').dataset.cash;
@@ -481,7 +487,7 @@ $('days').addEventListener('input', e => {
   cashTimers[d] = setTimeout(async () => {
     try {
       await setDoc(doc(db, 'ledger_cash', `${$('branch').value}_${d}`), { bm: bm(), branch: $('branch').value, date: d,
-        safe: cash[d].safe ?? '', drawer: cash[d].drawer ?? '', updatedAt: new Date().toISOString(), updatedBy: auth.currentUser.email });
+        safe: cash[d].safe ?? '', drawer: cash[d].drawer ?? '', extra: cash[d].extra ?? '', updatedAt: new Date().toISOString(), updatedBy: auth.currentUser.email });
       setSync('已同步');
     } catch (er) { toast('⚠️ 點錢儲存失敗：' + er.message); }
   }, 700);
@@ -730,12 +736,13 @@ function cashLine(d, bal) {
   const drawer = num(cash[d]?.drawer); if (drawer == null) return '';
   const safe = effSafe(d) ?? 0, diff = safe + drawer - bal;
   return `<div style="display:flex;gap:18px;align-items:center;border:1px dashed #c9b26b;background:#fffbea;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:15px">
-    <b>💰 點錢</b><span>保險櫃 <b>${fmt(safe)}</b></span><span>＋ 抽屜現金 <b>${fmt(drawer)}</b></span><span>＝ <b>${fmt(safe + drawer)}</b></span>
+    <b>💰 點錢</b>${extraOf(d) ? `<span>多錢 <b>${fmt(extraOf(d))}</b></span>` : ''}<span>保險櫃 <b>${fmt(safe)}</b></span><span>＋ 抽屜現金 <b>${fmt(drawer)}</b></span><span>＝ <b>${fmt(safe + drawer)}</b></span>
     <span style="margin-left:auto;font-weight:800;color:${diff === 0 ? '#15803d' : diff > 0 ? '#1d4ed8' : '#c00'}">${diff === 0 ? '✓ 與帳上結餘相符' : diff > 0 ? '多 ' + fmt(diff) + ' 元' : '少 ' + fmt(-diff) + ' 元'}</span></div>`;
 }
 function snapHTML(d, mask) {
   const carry = num($('carry').value) ?? 0;
-  const before = daysList().filter(x => x < d).reduce((a, x) => a + dayRows(x).reduce((b, r) => b + (num(r.amount) ?? 0), 0), 0);
+  const before = daysList().filter(x => x < d).reduce((a, x) => a + dayRows(x).reduce((b, r) => b + (num(r.amount) ?? 0), 0), 0) + extrasUpTo(daysList().filter(x => x < d).at(-1) || '0000');
+  const extraD = extraOf(d);
   const rs = dayRows(d).filter(r => String(r.item || '').trim() || num(r.amount) != null);
   const sum = rs.reduce((a, r) => a + (num(r.amount) ?? 0), 0);
   const prof = rs.reduce((a, r) => a + (profit(r) ?? 0), 0);
@@ -749,10 +756,10 @@ function snapHTML(d, mask) {
       <div><div style="font-size:28px;font-weight:900;letter-spacing:6px">銷售日報</div><div style="font-size:15px;color:#555;margin-top:2px">單位：復原者${esc($('branch').value)}</div></div>
       <div style="text-align:right;font-size:20px;font-weight:800">${dt.getFullYear()} 年 ${dt.getMonth() + 1} 月 ${dt.getDate()} 日（${WD[dt.getDay()]}）</div></div>
     <div style="display:flex;gap:10px;margin-bottom:12px">
-      ${[['前日結餘', carry + before], ['銷售收入', sales], ['支出／退修', exp], ['本日合計', sum], ['本日毛利', prof], ['本日結餘', carry + before + sum]].map(([k, v], i) =>
+      ${[['前日結餘', carry + before], ['銷售收入', sales], ['支出／退修', exp], ['本日合計', sum], ['本日毛利', prof], ['本日結餘', carry + before + sum + extraD]].map(([k, v], i) =>
         `<div style="flex:1;border:1px solid #ddd;border-radius:8px;padding:7px 10px;${i === 5 ? 'background:#16181d;color:#fff;border-color:#16181d' : ''}"><div style="font-size:12px;opacity:.75">${k}</div><div style="font-size:21px;font-weight:800;${v < 0 && i !== 5 ? 'color:#c00' : ''}">${fmt(v)}</div></div>`).join('')}
     </div>
-    ${cashLine(d, carry + before + sum)}
+    ${cashLine(d, carry + before + sum + extraD)}
     <table style="border-collapse:collapse;width:100%;font-size:14px">
       <tr style="background:#f1f1f1;font-weight:700;text-align:center">${['#', '售出品項', '金額', '接待', '經手', '備註', '成本', '毛利', '連絡電話', '單號'].map(x => c(x)).join('')}</tr>
       ${rs.map((r, i) => { const a = num(r.amount); return `<tr>${c(i + 1, 'text-align:center;color:#888')}${c(r.item)}${c(m(a), 'text-align:right;' + (a < 0 ? 'color:#c00' : ''))}${c(r.recv, 'text-align:center')}${c(r.handler, 'text-align:center')}${c(r.note)}${c(m(num(r.cost)), 'text-align:right')}${c(m(profit(r)), 'text-align:right')}${c(mask ? maskPhone(r.phone) : r.phone)}${c(r.ticket)}</tr>`; }).join('')}
@@ -799,10 +806,14 @@ function reportHTML(title, period, unit, lines, totals, cats, open) {
       ${cats.map(k => `<tr>${c(k.c)}${c(k.n, 'text-align:center')}${c(fmt(k.rev), R)}${c(pct(k.rev, totals.rev), R)}${c(fmt(k.prof), R)}${c(pct(k.prof, k.rev), R)}</tr>`).join('')}</table>` : ''}
     <div style="font-size:12px;color:#888;margin-top:10px;text-align:right">復原者 每日登打系統產生　${new Date().toLocaleString('zh-TW', { hour12: false })}</div></div>`;
 }
+// 多錢以虛擬列加入（品項「多錢」、不算銷售），月報／年報的結餘才會跟帳上一致
+const extraRows = (branch, cmap) => Object.entries(cmap).filter(([, c]) => num(c.extra)).map(([d, c]) => ({ date: d, branch, item: '支出:多錢（點錢調整）', amount: String(num(c.extra)), _extra: true }));
 async function fetchMonth(branch, ym) {
-  if (branch === $('branch').value && ym === $('month').value) return { rows: Object.values(rows), carry: num($('carry').value) };
-  const [snap, meta] = await Promise.all([getDocs(query(collection(db, 'ledger'), where('bm', '==', `${branch}_${ym}`))), getDoc(doc(db, 'ledger_meta', `${branch}_${ym}`))]);
-  return { rows: snap.docs.map(d => d.data()), carry: meta.exists() ? Number(meta.data().carry || 0) : null };
+  if (branch === $('branch').value && ym === $('month').value) return { rows: Object.values(rows).concat(extraRows(branch, cash)), carry: num($('carry').value) };
+  const [snap, meta, cs] = await Promise.all([getDocs(query(collection(db, 'ledger'), where('bm', '==', `${branch}_${ym}`))), getDoc(doc(db, 'ledger_meta', `${branch}_${ym}`)),
+    getDocs(query(collection(db, 'ledger_cash'), where('bm', '==', `${branch}_${ym}`)))]);
+  const cmap = {}; cs.forEach(d => { const x = d.data(); cmap[x.date] = x; });
+  return { rows: snap.docs.map(d => d.data()).concat(extraRows(branch, cmap)), carry: meta.exists() ? Number(meta.data().carry || 0) : null };
 }
 async function buildReport(kind, branchSel, ym, year) {
   const brs = branchSel === 'both' ? ['楠梓店', '德賢店'] : [$('branch').value];
@@ -923,7 +934,8 @@ function buildPages(fromDate) {
     if (!rs.length) return;
     const dt = new Date(d + 'T00:00:00');
     rs.forEach((r, i) => lines.push({ k: 'row', d, date: i === 0 ? `${dt.getMonth() + 1}月${dt.getDate()}日` : '', r }));
-    lines.push({ k: 'tot', d, sum: rs.reduce((a, r) => a + (num(r.amount) ?? 0), 0), prof: rs.reduce((a, r) => a + (profit(r) ?? 0), 0) });
+    if (extraOf(d)) lines.push({ k: 'row', d, date: '', r: { item: '多錢', amount: String(extraOf(d)), recv: '', handler: '', note: '點錢多出', cost: '', phone: '', ticket: '' }, extraRow: true });
+    lines.push({ k: 'tot', d, sum: rs.reduce((a, r) => a + (num(r.amount) ?? 0), 0) + extraOf(d), prof: rs.reduce((a, r) => a + (profit(r) ?? 0), 0) });
   });
   const pages = []; let bal = carry;
   for (let i = 0; i < lines.length || i === 0; i += PER_PAGE) {
@@ -953,7 +965,7 @@ function printHTML(pages) {
       if (l.k === 'tot') h += `<tr class="tot">${cell('合計', 'c')}${cell('')}${cell('')}${cell('')}${cell('')}${cell(money(l.sum), 'r')}${cell('')}${cell(money(l.prof), 'r')}${cell('')}${cell('')}</tr>`;
       else {
         const r = l.r, a = num(r.amount);
-        h += `<tr>${cell(l.date, 'c')}${cell(r.item)}<td class="r${a < 0 ? ' neg' : ''}">${money(a)}</td>${cell(r.recv, 'c')}${cell(r.handler, 'c')}${cell(r.note)}${cell(money(num(r.cost)), 'r')}${cell(money(profit(r)), 'r')}${cell(r.phone)}${cell(r.ticket)}</tr>`;
+        h += `<tr>${cell(l.date, 'c')}${cell(r.item)}<td class="r${a < 0 ? ' neg' : ''}">${money(a)}</td>${cell(r.recv, 'c')}${cell(r.handler, 'c')}${cell(r.note)}${cell(money(num(r.cost)), 'r')}${cell(l.extraRow ? '' : money(profit(r)), 'r')}${cell(r.phone)}${cell(r.ticket)}</tr>`;
       }
     });
     for (let i = p.lines.length; i < PER_PAGE; i++) h += `<tr>${cell('').repeat(10)}</tr>`;
