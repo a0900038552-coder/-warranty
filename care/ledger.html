@@ -636,8 +636,11 @@ async function importXlsx(file) {
     }
     if (p.carry != null) await setDoc(doc(db, 'ledger_meta', key), { carry: p.carry, updatedAt: now, updatedBy: me }, { merge: true });
     // 3. 補保固紀錄（同電話＋同保固起算日＋同品項已存在就略過）
-    const recs = await getDocs(collection(db, 'records'));
-    const have = new Set(recs.docs.map(d => { const x = d.data(); return `${x.phone}_${x.repairDate}_${x.type}`; }));
+    const have = new Set();
+    const phones = [...new Set(list.map(r => normPhone(r.phone)).filter(p => /^09\d{8}$/.test(p)))];
+    for (let i = 0; i < phones.length; i += 30) {   // 只查這份報表裡出現的電話
+      (await getDocs(query(collection(db, 'records'), where('phone', 'in', phones.slice(i, i + 30))))).forEach(d => { const x = d.data(); have.add(`${x.phone}_${x.repairDate}_${x.type}`); });
+    }
     const toAdd = [];
     list.forEach(r => {
       const phone = normPhone(r.phone);

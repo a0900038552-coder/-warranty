@@ -138,7 +138,7 @@ th{color:var(--mute);font-weight:600}
 <section id="app" class="hidden">
 <header>
   <div class="hd-row">
-    <div class="logo">復原者 保固管理<small>REPAIR CARE+ SYSTEM · v2026.11.15c</small></div>
+    <div class="logo">復原者 保固管理<small>REPAIR CARE+ SYSTEM · v2026.11.15d</small></div>
     <div class="hd-right">
       <select id="branchFilter">
         <option value="">全部分店</option>
@@ -264,7 +264,7 @@ th{color:var(--mute);font-weight:600}
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch }
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch, query, where, getDocs, getCountFromServer, limit }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 import { BRANCHES, CARE_BIND_WINDOW_DAYS, CATS, autoCategory, parseItems, warrantyFields, recItems, dateFromType, parseD, ymd, normPhone, refundInfo, refundRecord } from './rules.js?v=20261115b';
@@ -286,7 +286,20 @@ const auth = getAuth(app);
 const db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) });
 const $ = id => document.getElementById(id);
 
+// 讀取策略（資料量上萬筆也不會超過免費額度）：
+//   recent：即時同步「最近 15 個月」的紀錄（還可能在保固內的都在這裡）
+//   found ：搜尋電話／姓名時，直接到資料庫查（多舊都查得到）
+const RECENT_DAYS = 460;
+let recent = [], found = new Map(), totalCount = null;
 let records = [], bindings = [], lineUsers = {}, bookings = [], blocks = new Set();
+function mergeRecords() {
+  const m = new Map(recent.map(r => [r.id, r]));
+  found.forEach((r, id) => { if (!m.has(id)) m.set(id, r); });
+  records = [...m.values()];
+}
+async function refreshCount() {
+  try { totalCount = (await getCountFromServer(collection(db, 'records'))).data().count; render(); } catch {}
+}
 let unsubs = [];
 let pendingRows = [], pendingFile = '';
 let editingId = null;
@@ -303,9 +316,11 @@ onAuthStateChanged(auth, user => {
   const saved = localStorageGet('care.branch');
   if (saved !== null) $('branchFilter').value = saved;
   const err = e => toast('⚠️ 讀取失敗：' + e.message);
-  unsubs.push(onSnapshot(collection(db, 'records'), s => {
-    records = s.docs.map(d => ({ id: d.id, ...d.data() })); render();
+  const cutoff = ymd(new Date(Date.now() - RECENT_DAYS * 86400000));
+  unsubs.push(onSnapshot(query(collection(db, 'records'), where('repairDate', '>=', cutoff)), s => {
+    recent = s.docs.map(d => ({ id: d.id, ...d.data() })); mergeRecords(); render();
   }, err));
+  refreshCount();
   unsubs.push(onSnapshot(collection(db, 'care_bindings'), s => {
     bindings = s.docs.map(d => ({ id: d.id, ...d.data() })); render();
   }, err));
@@ -373,15 +388,15 @@ function visible() {
 
 function render() {
   const list = visible();
-  const st = list.filter(r => r.kind !== 'refund').map(status);
+  const st = recent.filter(r => (!$('branchFilter').value || r.branch === $('branchFilter').value) && r.kind !== 'refund').map(status);
   $('stats').innerHTML = `
-    <div class="stat"><b>${st.length}</b><span>總紀錄</span></div>
+    <div class="stat"><b>${totalCount ?? '…'}</b><span>總紀錄（兩店）</span></div>
     <div class="stat"><b style="color:var(--green)">${st.filter(s => s.cls !== 'expired').length}</b><span>保固中</span></div>
     <div class="stat"><b style="color:var(--orange)">${st.filter(s => s.cls === 'expiring').length}</b><span>7 天內到期</span></div>
     <div class="stat"><b style="color:var(--red)">${st.filter(s => s.ci.active).length}</b><span>CARE+ 啟用</span></div>`;
 
   const q = $('q').value.trim().toLowerCase();
-  let rows = list.filter(r => !q ||
+  let rows = list.filter(r => !q || found.has(r.id) ||
     (r.phone || '').includes(q.replace(/\D/g, '') || '\u0000') ||
     (r.name || '').toLowerCase().includes(q) ||
     (r.type || '').toLowerCase().includes(q));
@@ -390,7 +405,7 @@ function render() {
   rows = rows.slice(0, showLimit);
 
   if (!total) {
-    $('list').innerHTML = `<div class="empty">${records.length ? '找不到符合的紀錄' : '還沒有任何紀錄，可到「新增」或「匯入報表」建立'}</div>`;
+    $('list').innerHTML = `<div class="empty">${searching ? '搜尋中…' : q ? '找不到符合的紀錄（電話請輸入完整 10 碼或開頭幾碼；姓名從第一個字開始打）' : '最近 15 個月沒有紀錄；較舊的請用電話或姓名搜尋'}</div>`;
     return;
   }
   $('list').innerHTML = rows.map(card).join('') +
@@ -473,7 +488,36 @@ function card(r) {
 
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
-let qTimer; $('q').addEventListener('input', () => { clearTimeout(qTimer); qTimer = setTimeout(() => { showLimit = 50; render(); }, 180); });
+let qTimer, searching = false, qSeq = 0;
+$('q').addEventListener('input', () => {
+  clearTimeout(qTimer);
+  qTimer = setTimeout(async () => { showLimit = 50; render(); await serverSearch(); }, 250);
+});
+// 到資料庫查：電話（完整或開頭）、姓名（開頭）；品項只在最近 15 個月內比對
+async function serverSearch() {
+  const q = $('q').value.trim(), my = ++qSeq;
+  found = new Map();
+  if (!q) { mergeRecords(); render(); return; }
+  const digits = q.replace(/\D/g, '');
+  const qs = [];
+  const col = collection(db, 'records');
+  if (digits.length >= 4 && digits === q.replace(/[\s\-]/g, '')) {
+    const ph = digits.length === 9 && digits[0] === '9' ? '0' + digits : digits;
+    qs.push(ph.length >= 10 ? query(col, where('phone', '==', ph)) : query(col, where('phone', '>=', ph), where('phone', '<', ph + '\uf8ff'), limit(100)));
+  } else if (!/^\d+$/.test(q)) {
+    qs.push(query(col, where('name', '>=', q), where('name', '<', q + '\uf8ff'), limit(100)));
+  }
+  if (!qs.length) return;
+  searching = true; render();
+  try {
+    for (const qq of qs) (await getDocs(qq)).forEach(d => found.set(d.id, { id: d.id, ...d.data() }));
+    // 把同電話的紀錄都帶出來（例如退修與原維修）
+    const phones = [...new Set([...found.values()].map(r => r.phone).filter(Boolean))].slice(0, 30);
+    if (phones.length && phones.length <= 30) (await getDocs(query(col, where('phone', 'in', phones)))).forEach(d => found.set(d.id, { id: d.id, ...d.data() }));
+  } catch (er) { toast('⚠️ 搜尋失敗：' + er.message); }
+  if (my !== qSeq) return;
+  searching = false; mergeRecords(); render();
+}
 $('branchFilter').addEventListener('change', () => { localStorageSet('care.branch', $('branchFilter').value); render(); });
 $('list').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
@@ -588,14 +632,14 @@ editForm.addEventListener('submit', async e => {
   if (records.find(x => x.id === editingId)?.kind === 'refund' || refundInfo(r.type, r.repairDate)) r = refundRecord(r, r.repairDate);
   try {
     await updateDoc(doc(db, 'records', editingId), { ...r, source: 'manual', updatedAt: new Date().toISOString(), updatedBy: auth.currentUser.email });
-    toast('✅ 已儲存修改'); closeEdit();
+    toast('✅ 已儲存修改'); closeEdit(); if ($('q').value.trim()) serverSearch();
   } catch (er) { toast('⚠️ 儲存失敗：' + er.message); }
 });
 
 async function delRecord(id) {
   const r = records.find(x => x.id === id); if (!r) return;
   if (!confirm(`確定刪除「${r.name}／${r.type}」這筆紀錄？刪除後無法復原。`)) return;
-  try { await deleteDoc(doc(db, 'records', id)); toast('已刪除'); }
+  try { await deleteDoc(doc(db, 'records', id)); found.delete(id); mergeRecords(); render(); refreshCount(); toast('已刪除'); }
   catch (er) { toast('⚠️ 刪除失敗：' + er.message); }
 }
 
@@ -692,7 +736,11 @@ $('pv-cancel').onclick = () => { pendingRows = []; $('preview').classList.add('h
 $('pv-ok').onclick = async () => {
   const fallback = $('pv-branch').value;
   const key = r => `${r.phone}_${r.repairDate}_${r.type}`;
-  const exist = new Set(records.map(key));
+  $('pv-ok').disabled = true; toast('檢查重複中…');
+  let exist;
+  try { exist = new Set((await existingByPhones(pendingRows.map(p => p.phone))).map(key)); }
+  catch (er) { $('pv-ok').disabled = false; return toast('⚠️ 檢查失敗：' + er.message); }
+  $('pv-ok').disabled = false;
   const toAdd = [];
   pendingRows.forEach(p => {
     if (!p.repairDate) return;
@@ -710,12 +758,22 @@ $('pv-ok').onclick = async () => {
   } catch (er) { toast('⚠️ 匯入失敗：' + er.message); }
 };
 
-async function batchWrite(list) {
+// 去重用：只查這批資料裡出現的電話（不讀整個資料庫）
+async function existingByPhones(phones) {
+  const out = [], uniq = [...new Set(phones.filter(p => /^09\d{8}$/.test(p)))];
+  for (let i = 0; i < uniq.length; i += 30) {
+    (await getDocs(query(collection(db, 'records'), where('phone', 'in', uniq.slice(i, i + 30))))).forEach(d => out.push({ id: d.id, ...d.data() }));
+  }
+  return out;
+}
+async function batchWrite(list, idOf) {
   for (let i = 0; i < list.length; i += 400) {
     const b = writeBatch(db);
-    list.slice(i, i + 400).forEach(r => b.set(doc(db, 'records', newId()), r));
+    list.slice(i, i + 400).forEach(r => b.set(doc(db, 'records', idOf ? idOf(r) : newId()), r));
     await b.commit();
+    if (list.length > 400) toast(`寫入中… ${Math.min(i + 400, list.length)} / ${list.length}`);
   }
+  refreshCount();
 }
 
 /* ════════ 8. 舊系統 JSON 搬移 ════════ */
@@ -727,10 +785,15 @@ $('legacyFile').onchange = e => {
     let data;
     try { data = JSON.parse(ev.target.result); if (!Array.isArray(data)) throw 0; }
     catch { return toast('⚠️ 檔案格式不對，請用舊系統「匯出 JSON」的檔案'); }
-    const exist = new Set(records.map(r => r.legacyId).filter(Boolean));
+    // 舊系統的每筆用固定編號（LG_舊編號）寫入：重複匯入只會覆蓋同一筆，不會變兩筆
+    let exist = new Set();
+    try {
+      const n = (await getCountFromServer(query(collection(db, 'records'), where('source', '==', 'legacy')))).data().count;
+      if (n && n < 2000) (await getDocs(query(collection(db, 'records'), where('source', '==', 'legacy')))).forEach(d => { const x = d.data(); if (x.legacyId) exist.add(String(x.legacyId)); });
+    } catch {}
     const toAdd = [];
     data.forEach(o => {
-      if (!o || exist.has(o.id)) return;
+      if (!o || exist.has(String(o.id))) return;
       const date = fmtDate(o.repairDate); if (!date) return;
       const months = Number(o.warrantyMonths) || 0;
       let baseDays = 0;
@@ -747,8 +810,9 @@ $('legacyFile').onchange = e => {
       });
     });
     if (!toAdd.length) return toast('沒有新的資料需要搬移');
-    if (!confirm(`要從舊系統搬入 ${toAdd.length} 筆紀錄嗎？（沒有分店標記的會歸到楠梓店）`)) return;
-    try { await batchWrite(toAdd); toast(`✅ 已搬入 ${toAdd.length} 筆`); }
+    if (toAdd.length > 18000) return toast('⚠️ 超過單日寫入額度，請把檔案分成兩半分兩天匯入');
+    if (!confirm(`要從舊系統搬入 ${toAdd.length} 筆紀錄嗎？（沒有分店標記的會歸到楠梓店）\n\n筆數多時需要一兩分鐘，請不要關閉頁面。`)) return;
+    try { await batchWrite(toAdd, r => 'LG_' + String(r.legacyId).replace(/[\/\s]/g, '_')); toast(`✅ 已搬入 ${toAdd.length} 筆`); }
     catch (er) { toast('⚠️ 搬移失敗：' + er.message); }
   };
   rd.readAsText(f);
@@ -757,7 +821,9 @@ $('legacyFile').onchange = e => {
 /* ════════ 8b. 依最新規則重新計算 ════════ */
 $('recalcBtn').onclick = async () => {
   const changes = [];
-  records.filter(r => r.source === 'excel').forEach(r => {
+  if (!confirm('會讀取所有 Excel 匯入的紀錄並依最新規則重算，資料多時會用掉較多讀取額度。確定嗎？')) return;
+  const all = (await getDocs(query(collection(db, 'records'), where('source', '==', 'excel')))).docs.map(d => ({ id: d.id, ...d.data() }));
+  all.forEach(r => {
     const booked = r.bookedDate || r.repairDate;
     const repairDate = dateFromType(r.type, booked) || booked;
     const wf = warrantyFields(parseItems(r.type), 0);
@@ -778,8 +844,11 @@ $('recalcBtn').onclick = async () => {
 
 /* ════════ 9. 匯出 ════════ */
 function download(name, blob) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); }
-$('exJson').onclick = () => download(`保固備份_${ymd(new Date())}.json`,
-  new Blob([JSON.stringify({ records, care_bindings: bindings, line_users: lineUsers }, null, 2)], { type: 'application/json' }));
+$('exJson').onclick = async () => {
+  if (!confirm('完整備份會讀取所有紀錄（筆數多時會用掉較多讀取額度），確定嗎？')) return;
+  const all = (await getDocs(collection(db, 'records'))).docs.map(d => ({ id: d.id, ...d.data() }));
+  download(`保固備份_${ymd(new Date())}.json`, new Blob([JSON.stringify({ records: all, care_bindings: bindings, line_users: lineUsers }, null, 2)], { type: 'application/json' }));
+};
 $('exCsv').onclick = () => {
   const head = ['分店', '姓名', '電話', '品項', '保固類別', '維修日期', '一般保固到期', 'CARE+狀態', 'CARE+到期', '目前狀態', '金額', '備註', '後續服務'];
   const careTxt = { line: 'LINE 已綁定', manual: '人工啟用', blocked: 'LINE 已封鎖', none: '未啟用' };
