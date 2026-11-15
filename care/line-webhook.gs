@@ -105,6 +105,7 @@ function handleEvent_(ev, store, token) {
     if (/^📅\s*預約申請/.test(raw)) { handleBooking_(ev, store, token, userId, raw); return; }
     var acc = raw.match(/^接受改約\s*#?([A-Za-z0-9]+)$/);
     if (acc) { acceptProposal_(ev, store, token, userId, acc[1]); return; }
+    if (/^(配件|配件好康|看配件|配件型錄|配件優惠|配件專區)$/.test(raw.trim())) { reply_(ev.replyToken, token, accessoryCarousel_(storeKey_(store))); return; }
     var text = raw.replace(/[\s\-－]/g, '');
     // 只有「單獨一支手機號碼」或「CARE+ 手機號碼」才登錄；
     // 預約、詢問等夾帶電話的訊息（例：王先生0912345678明天換電池）不觸發
@@ -393,7 +394,7 @@ function setupRichMenu() {
     ]);
     // 第 2 頁：配件好康
     var m2 = tabs(2).concat([
-      { bounds: { x: 0, y: TOP, width: 1565, height: 1686 - TOP }, action: { type: 'uri', label: '配件型錄', uri: DM_URL + '?p=catalog&store=' + k } },
+      { bounds: { x: 0, y: TOP, width: 1565, height: 1686 - TOP }, action: { type: 'message', label: '配件好康', text: '配件好康' } },
       { bounds: { x: 1565, y: TOP, width: 935, height: rowH }, action: { type: 'uri', label: '維修加價購', uri: DM_URL + '?p=addon&store=' + k } },
       { bounds: { x: 1565, y: TOP + rowH, width: 935, height: 1686 - TOP - rowH }, action: { type: 'message', label: '預訂配件', text: '我想預訂配件' } }
     ]);
@@ -480,6 +481,35 @@ var ADDON_TEXT_ = { type: 'text', text: '🎁 維修客人專屬加價購\n修�
 var ADDON_IMG_ = { type: 'image',
   originalContentUrl: 'https://a0900038552-coder.github.io/-warranty/dm/addon.jpg',
   previewImageUrl: 'https://a0900038552-coder.github.io/-warranty/dm/addon_preview.jpg' };
+/* 配件輪播卡片（客人打「配件」或點選單「配件好康」時回覆，不扣額度）
+ * 換檔期：更新 GitHub 的 care/cards/acc1~6.jpg，並把 ACC_VER 改新日期 */
+var ACC_VER = '20261115';
+var ACC_CARDS = [
+  { img: 'acc1', page: 2, alt: '保護貼 預訂 $531 起' },
+  { img: 'acc2', page: 3, alt: '保護殼 惡魔盾 2S 預訂 $1,152 起' },
+  { img: 'acc3', page: 4, alt: '鏡頭貼 預訂 $261 起' },
+  { img: 'acc4', page: 5, alt: '充電・掛繩 預訂 $162 起' },
+  { img: 'acc5', page: 6, alt: '行動電源 預訂 $891 起' },
+  { img: 'acc6', page: 8, alt: '組合方案 第 2 片最低 8 折' }
+];
+function accessoryCarousel_(k) {
+  var base = 'https://a0900038552-coder.github.io/-warranty/';
+  var bubbles = ACC_CARDS.map(function (c) {
+    var url = base + 'dm/?p=catalog&store=' + k + '#p' + c.page;
+    return { type: 'bubble', size: 'mega',
+      hero: { type: 'image', url: base + 'care/cards/' + c.img + '.jpg?v=' + ACC_VER, size: 'full', aspectRatio: '4:5', aspectMode: 'cover',
+        action: { type: 'uri', label: '看型錄', uri: url } },
+      footer: { type: 'box', layout: 'horizontal', spacing: 'sm', paddingAll: '10px', contents: [
+        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'uri', label: '看型錄', uri: url } },
+        { type: 'button', style: 'primary', color: '#d71920', height: 'sm', action: { type: 'message', label: 'LINE 預訂', text: '我想預訂配件' } }
+      ] } };
+  });
+  return [
+    { type: 'text', text: '🎁 2026 秋冬配件好康\n左右滑動看更多 👉　全系列預訂 9 折、現場施工' },
+    { type: 'flex', altText: '配件好康：' + ACC_CARDS.map(function (c) { return c.alt; }).join('、'), contents: { type: 'carousel', contents: bubbles } }
+  ];
+}
+
 var STORE_ADDR = { '楠梓店': '高雄市楠梓區楠梓路10號', '德賢店': '高雄市楠梓區德賢路258號' };
 
 /* ───────── 預約管理（員工在保固系統按按鈕） ───────── */

@@ -51,8 +51,9 @@ document.querySelectorAll('.tabs a').forEach(function (a) {
 
 var imgs = page === 'addon' ? ['addon.jpg'] : [1, 2, 3, 4, 5, 6, 7, 8].map(function (n) { return 'p' + n + '.jpg'; });
 document.getElementById('main').innerHTML = imgs.map(function (src, i) {
-  return '<img src="' + src + '?v=' + V + '" alt="配件 DM 第 ' + (i + 1) + ' 頁" loading="' + (i < 2 ? 'eager' : 'lazy') + '">';
+  return '<img id="p' + (i + 1) + '" src="' + src + '?v=' + V + '" alt="配件 DM 第 ' + (i + 1) + ' 頁" loading="eager" style="scroll-margin-top:60px">';
 }).join('');
+if (location.hash) setTimeout(function () { var el = document.querySelector(location.hash); if (el) el.scrollIntoView(); }, 300);
 
 document.getElementById('note').textContent = page === 'addon'
   ? '維修當天加購，每項限 1 件。按下方「LINE 下訂」直接告訴我們想加購哪一項。'
