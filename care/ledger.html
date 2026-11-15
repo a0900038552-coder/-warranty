@@ -130,6 +130,7 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
     <input type="month" id="month">
     <span class="status" id="sync">已同步</span>
     <button class="hbtn" id="statBtn">📊 月統計</button>
+    <button class="hbtn pri" id="snapBtn">📷 日報圖片</button>
     <button class="hbtn" id="printBtn">🖨 列印</button>
     <button class="hbtn" id="xlsxBtn">⬇ 匯出 Excel</button>
     <button class="hbtn" id="impBtn">📥 匯入舊報表</button><input type="file" id="impFile" accept=".xlsx,.xls" class="hidden">
@@ -155,9 +156,11 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
 
 <div id="print"></div>
 <div id="tip"></div>
+<div id="snap" style="position:fixed;left:-9999px;top:0"></div>
 <div id="toast"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
@@ -674,6 +677,73 @@ async function importXlsx(file) {
     toast(`✅ 匯入 ${list.length} 列；保固紀錄新增 ${toAdd.length} 筆（其餘已存在）`);
   } catch (er) { setSync('⚠️ 匯入失敗'); toast('⚠️ 匯入失敗：' + er.message); }
 }
+
+/* ─── 日報圖片：產生當天報表圖片，下載或直接分享到 LINE 群組（不扣訊息額度）─── */
+const maskPhone = p => { const d = String(p || '').replace(/\D/g, ''); return d.length >= 7 ? d.slice(0, 4) + '***' + d.slice(-3) : (p || ''); };
+function snapHTML(d, mask) {
+  const carry = num($('carry').value) ?? 0;
+  const before = daysList().filter(x => x < d).reduce((a, x) => a + dayRows(x).reduce((b, r) => b + (num(r.amount) ?? 0), 0), 0);
+  const rs = dayRows(d).filter(r => String(r.item || '').trim() || num(r.amount) != null);
+  const sum = rs.reduce((a, r) => a + (num(r.amount) ?? 0), 0);
+  const prof = rs.reduce((a, r) => a + (profit(r) ?? 0), 0);
+  const sales = rs.filter(r => !isExpense(r) && !isRefund(r)).reduce((a, r) => a + Math.max(0, num(r.amount) ?? 0), 0);
+  const exp = rs.filter(r => isExpense(r) || isRefund(r)).reduce((a, r) => a + (num(r.amount) ?? 0), 0);
+  const dt = new Date(d + 'T00:00:00');
+  const c = (v, st = '') => `<td style="border:1px solid #333;padding:5px 7px;${st}">${esc(v ?? '')}</td>`;
+  const m = v => v == null || v === '' ? '' : fmt(v);
+  return `<div style="width:1100px;background:#fff;padding:28px 30px;font-family:'Noto Sans TC','PingFang TC','Microsoft JhengHei',sans-serif;color:#111;font-size:15px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:4px solid #d71920;padding-bottom:10px;margin-bottom:12px">
+      <div><div style="font-size:28px;font-weight:900;letter-spacing:6px">銷售日報</div><div style="font-size:15px;color:#555;margin-top:2px">單位：復原者${esc($('branch').value)}</div></div>
+      <div style="text-align:right;font-size:20px;font-weight:800">${dt.getFullYear()} 年 ${dt.getMonth() + 1} 月 ${dt.getDate()} 日（${WD[dt.getDay()]}）</div></div>
+    <div style="display:flex;gap:10px;margin-bottom:12px">
+      ${[['前日結餘', carry + before], ['銷售收入', sales], ['支出／退修', exp], ['本日合計', sum], ['本日毛利', prof], ['本日結餘', carry + before + sum]].map(([k, v], i) =>
+        `<div style="flex:1;border:1px solid #ddd;border-radius:8px;padding:7px 10px;${i === 5 ? 'background:#16181d;color:#fff;border-color:#16181d' : ''}"><div style="font-size:12px;opacity:.75">${k}</div><div style="font-size:21px;font-weight:800;${v < 0 && i !== 5 ? 'color:#c00' : ''}">${fmt(v)}</div></div>`).join('')}
+    </div>
+    <table style="border-collapse:collapse;width:100%;font-size:14px">
+      <tr style="background:#f1f1f1;font-weight:700;text-align:center">${['#', '售出品項', '金額', '接待', '經手', '備註', '成本', '毛利', '連絡電話', '單號'].map(x => c(x)).join('')}</tr>
+      ${rs.map((r, i) => { const a = num(r.amount); return `<tr>${c(i + 1, 'text-align:center;color:#888')}${c(r.item)}${c(m(a), 'text-align:right;' + (a < 0 ? 'color:#c00' : ''))}${c(r.recv, 'text-align:center')}${c(r.handler, 'text-align:center')}${c(r.note)}${c(m(num(r.cost)), 'text-align:right')}${c(m(profit(r)), 'text-align:right')}${c(mask ? maskPhone(r.phone) : r.phone)}${c(r.ticket)}</tr>`; }).join('')}
+      <tr style="font-weight:800;background:#fafafa">${c('合計', 'text-align:center')}${c(rs.length + ' 筆')}${c(fmt(sum), 'text-align:right')}${c('')}${c('')}${c('')}${c('')}${c(fmt(prof), 'text-align:right')}${c('')}${c('')}</tr>
+    </table>
+    <div style="font-size:12px;color:#888;margin-top:10px;text-align:right">復原者 每日登打系統產生　${new Date().toLocaleString('zh-TW', { hour12: false })}</div></div>`;
+}
+$('snapBtn').onclick = () => {
+  const days = daysList().filter(d => dayRows(d).length);
+  const today = ymd(new Date());
+  const def = days.includes(today) ? today : (days.at(-1) || today);
+  const canShare = !!(navigator.canShare && navigator.share);
+  const m = document.createElement('div'); m.className = 'modal';
+  m.innerHTML = `<div class="box"><h3>📷 日報圖片（${esc($('branch').value)}）</h3>
+    <label>日期 <input type="date" id="snD" value="${def}" style="border:1px solid #ccc;border-radius:6px;padding:4px"></label>
+    <label><input type="checkbox" id="snM" checked> 遮蔽客人電話（例：0912***678）</label>
+    <p class="hint" style="margin:8px 0 12px">${canShare ? '按「分享」可直接選 LINE → 會計群組傳送。' : '下載後再到 LINE 群組上傳圖片。'}</p>
+    <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"><button class="btn ghost" id="snNo">取消</button>
+      <button class="btn ghost" id="snDl">⬇ 下載圖片</button>${canShare ? '<button class="btn" id="snSh">分享到 LINE</button>' : ''}</div></div>`;
+  document.body.appendChild(m);
+  m.querySelector('#snNo').onclick = () => m.remove();
+  const make = async () => {
+    const d = m.querySelector('#snD').value;
+    if (d.slice(0, 7) !== $('month').value) { toast('請先在右上角切到該月份'); return null; }
+    if (!dayRows(d).length) { toast('這天沒有資料'); return null; }
+    if (!window.html2canvas) { toast('⚠️ 圖片工具載入中，請稍候'); return null; }
+    $('snap').innerHTML = snapHTML(d, m.querySelector('#snM').checked);
+    const cv = await html2canvas($('snap').firstElementChild, { scale: 2, backgroundColor: '#ffffff' });
+    const blob = await new Promise(r => cv.toBlob(r, 'image/png'));
+    return { blob, name: `銷售日報_${$('branch').value}_${d}.png` };
+  };
+  m.querySelector('#snDl').onclick = async () => {
+    const f = await make(); if (!f) return;
+    const a = document.createElement('a'); a.href = URL.createObjectURL(f.blob); a.download = f.name; a.click();
+    toast('✅ 已下載'); m.remove();
+  };
+  if (canShare) m.querySelector('#snSh').onclick = async () => {
+    const f = await make(); if (!f) return;
+    const file = new File([f.blob], f.name, { type: 'image/png' });
+    try {
+      if (navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: f.name }); m.remove(); }
+      else { const a = document.createElement('a'); a.href = URL.createObjectURL(f.blob); a.download = f.name; a.click(); m.remove(); }
+    } catch (er) { if (er.name !== 'AbortError') toast('⚠️ 分享失敗，請改用下載'); }
+  };
+};
 
 /* ─── 列印／匯出：照原本 Excel「銷售報表」格式 ─── */
 const PER_PAGE = 55;   // 每頁內容列數（加上表頭、承前、合計、零用金 = 63 格）
