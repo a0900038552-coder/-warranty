@@ -130,7 +130,7 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
     <input type="month" id="month">
     <span class="status" id="sync">已同步</span>
     <button class="hbtn" id="statBtn">📊 月統計</button>
-    <button class="hbtn pri" id="snapBtn">📷 日報圖片</button>
+    <button class="hbtn pri" id="snapBtn">📷 報表下載</button>
     <button class="hbtn" id="printBtn">🖨 列印</button>
     <button class="hbtn" id="xlsxBtn">⬇ 匯出 Excel</button>
     <button class="hbtn" id="impBtn">📥 匯入舊報表</button><input type="file" id="impFile" accept=".xlsx,.xls" class="hidden">
@@ -706,21 +706,135 @@ function snapHTML(d, mask) {
     </table>
     <div style="font-size:12px;color:#888;margin-top:10px;text-align:right">復原者 每日登打系統產生　${new Date().toLocaleString('zh-TW', { hour12: false })}</div></div>`;
 }
+// 匯總（月報：每天一列；年報：每月一列），含分類統計
+function summarize(rowsArr) {
+  const sales = rowsArr.filter(r => !isExpense(r) && !isRefund(r) && (num(r.amount) ?? 0) > 0 && statCat(r.item) !== '其他收入');
+  const other = rowsArr.filter(r => !isExpense(r) && !isRefund(r) && (num(r.amount) ?? 0) > 0 && statCat(r.item) === '其他收入');
+  const out = rowsArr.filter(r => isExpense(r) || isRefund(r));
+  const S = a => a.reduce((x, r) => x + (num(r.amount) ?? 0), 0);
+  const P = a => a.reduce((x, r) => x + (profit(r) ?? 0), 0);
+  return { n: sales.length, rev: S(sales), other: S(other), exp: S(out), net: S(rowsArr), prof: P(sales) + P(out.filter(isRefund)) };
+}
+function catTable(rowsArr) {
+  const g = {};
+  rowsArr.filter(r => !isExpense(r) && !isRefund(r) && (num(r.amount) ?? 0) > 0).forEach(r => {
+    const c = statCat(r.item); if (c === '其他收入') return;
+    (g[c] ||= { c, n: 0, rev: 0, prof: 0 }); g[c].n++; g[c].rev += num(r.amount) ?? 0; g[c].prof += profit(r) ?? 0;
+  });
+  return Object.values(g).sort((a, b) => b.rev - a.rev);
+}
+function reportHTML(title, period, unit, lines, totals, cats, open) {
+  const c = (v, st = '') => `<td style="border:1px solid #333;padding:5px 8px;${st}">${esc(v ?? '')}</td>`;
+  const R = 'text-align:right';
+  const pct = (a, b) => b ? Math.round(a / b * 100) + '%' : '—';
+  return `<div style="width:1100px;background:#fff;padding:28px 30px;font-family:'Noto Sans TC','PingFang TC','Microsoft JhengHei',sans-serif;color:#111;font-size:15px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:4px solid #d71920;padding-bottom:10px;margin-bottom:12px">
+      <div><div style="font-size:28px;font-weight:900;letter-spacing:6px">${esc(title)}</div><div style="font-size:15px;color:#555;margin-top:2px">單位：${esc(unit)}</div></div>
+      <div style="font-size:20px;font-weight:800">${esc(period)}</div></div>
+    <div style="display:flex;gap:10px;margin-bottom:14px">
+      ${[['銷售收入', totals.rev], ['毛利', totals.prof], ['毛利率', pct(totals.prof, totals.rev)], ['支出／退修', totals.exp], ['其他收入', totals.other], ['銷售筆數', totals.n]].map(([k, v]) =>
+        `<div style="flex:1;border:1px solid #ddd;border-radius:8px;padding:7px 10px"><div style="font-size:12px;color:#666">${k}</div><div style="font-size:21px;font-weight:800">${typeof v === 'number' ? fmt(v) : v}</div></div>`).join('')}
+    </div>
+    <table style="border-collapse:collapse;width:100%;font-size:14px">
+      <tr style="background:#f1f1f1;font-weight:700;text-align:center">${['期間', '筆數', '銷售收入', '支出／退修', '其他收入', '收支合計', '毛利', '毛利率', '結餘'].map(x => c(x)).join('')}</tr>
+      ${lines.map(l => `<tr>${c(l.label, 'text-align:center')}${c(l.n, 'text-align:center')}${c(fmt(l.rev), R)}${c(fmt(l.exp), R + (l.exp < 0 ? ';color:#c00' : ''))}${c(l.other ? fmt(l.other) : '', R)}${c(fmt(l.net), R)}${c(fmt(l.prof), R)}${c(pct(l.prof, l.rev), R)}${c(l.bal == null ? '' : fmt(l.bal), R)}</tr>`).join('')}
+      <tr style="font-weight:800;background:#fafafa">${c('合計', 'text-align:center')}${c(totals.n, 'text-align:center')}${c(fmt(totals.rev), R)}${c(fmt(totals.exp), R)}${c(totals.other ? fmt(totals.other) : '', R)}${c(fmt(totals.net), R)}${c(fmt(totals.prof), R)}${c(pct(totals.prof, totals.rev), R)}${c(open == null ? '' : fmt(open + totals.net), R)}</tr>
+    </table>
+    ${cats.length ? `<div style="font-size:17px;font-weight:800;margin:16px 0 6px">品項分類</div>
+    <table style="border-collapse:collapse;width:100%;font-size:14px"><tr style="background:#f1f1f1;font-weight:700;text-align:center">${['分類', '件數', '銷售收入', '佔營收', '毛利', '毛利率'].map(x => c(x)).join('')}</tr>
+      ${cats.map(k => `<tr>${c(k.c)}${c(k.n, 'text-align:center')}${c(fmt(k.rev), R)}${c(pct(k.rev, totals.rev), R)}${c(fmt(k.prof), R)}${c(pct(k.prof, k.rev), R)}</tr>`).join('')}</table>` : ''}
+    <div style="font-size:12px;color:#888;margin-top:10px;text-align:right">復原者 每日登打系統產生　${new Date().toLocaleString('zh-TW', { hour12: false })}</div></div>`;
+}
+async function fetchMonth(branch, ym) {
+  if (branch === $('branch').value && ym === $('month').value) return { rows: Object.values(rows), carry: num($('carry').value) };
+  const [snap, meta] = await Promise.all([getDocs(query(collection(db, 'ledger'), where('bm', '==', `${branch}_${ym}`))), getDoc(doc(db, 'ledger_meta', `${branch}_${ym}`))]);
+  return { rows: snap.docs.map(d => d.data()), carry: meta.exists() ? Number(meta.data().carry || 0) : null };
+}
+async function buildReport(kind, branchSel, ym, year) {
+  const brs = branchSel === 'both' ? ['楠梓店', '德賢店'] : [$('branch').value];
+  const unit = branchSel === 'both' ? '復原者楠梓店＋德賢店' : '復原者' + $('branch').value;
+  if (kind === 'month') {
+    const data = await Promise.all(brs.map(b => fetchMonth(b, ym)));
+    const all = data.flatMap(d => d.rows).filter(r => String(r.item || '').trim() || num(r.amount) != null);
+    if (!all.length) return null;
+    const open = data.every(d => d.carry != null) ? data.reduce((a, d) => a + d.carry, 0) : null;
+    let bal = open;
+    const days = [...new Set(all.map(r => r.date))].sort();
+    const lines = days.map(d => { const t = summarize(all.filter(r => r.date === d)); if (bal != null) bal += t.net; const dt = new Date(d + 'T00:00:00');
+      return { label: `${dt.getMonth() + 1}/${dt.getDate()}（${WD[dt.getDay()]}）`, ...t, bal }; });
+    const [y, m] = ym.split('-').map(Number);
+    return { html: reportHTML('銷售月報', `${y} 年 ${m} 月`, unit, lines, summarize(all), catTable(all), open), name: `銷售月報_${branchSel === 'both' ? '兩店' : $('branch').value}_${ym}`, lines, all };
+  }
+  const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
+  const data = await Promise.all(months.map(async ym2 => ({ ym: ym2, list: await Promise.all(brs.map(b => fetchMonth(b, ym2))) })));
+  const all = [], lines = [];
+  data.forEach(({ ym: ym2, list }) => {
+    const rs = list.flatMap(d => d.rows).filter(r => String(r.item || '').trim() || num(r.amount) != null);
+    if (!rs.length) return;
+    all.push(...rs);
+    const open = list.every(d => d.carry != null) ? list.reduce((a, d) => a + d.carry, 0) : null;
+    const t = summarize(rs);
+    lines.push({ label: `${Number(ym2.slice(5))} 月`, ...t, bal: open == null ? null : open + t.net });
+  });
+  if (!all.length) return null;
+  return { html: reportHTML('銷售年報', `${year} 年`, unit, lines, summarize(all), catTable(all), null), name: `銷售年報_${branchSel === 'both' ? '兩店' : $('branch').value}_${year}`, lines, all };
+}
+function reportXlsx(rep, kind) {
+  const wb = XLSX.utils.book_new();
+  const head = ['期間', '筆數', '銷售收入', '支出／退修', '其他收入', '收支合計', '毛利', '毛利率', '結餘'];
+  const t = summarize(rep.all);
+  const A = [head, ...rep.lines.map(l => [l.label, l.n, l.rev, l.exp, l.other, l.net, l.prof, l.rev ? Math.round(l.prof / l.rev * 1000) / 10 + '%' : '', l.bal ?? '']),
+    ['合計', t.n, t.rev, t.exp, t.other, t.net, t.prof, t.rev ? Math.round(t.prof / t.rev * 1000) / 10 + '%' : '']];
+  const ws1 = XLSX.utils.aoa_to_sheet(A); ws1['!cols'] = [{ wch: 12 }, { wch: 6 }, ...Array(7).fill({ wch: 11 })];
+  XLSX.utils.book_append_sheet(wb, ws1, kind === 'month' ? '每日彙總' : '每月彙總');
+  const C = [['分類', '件數', '銷售收入', '毛利'], ...catTable(rep.all).map(k => [k.c, k.n, k.rev, k.prof])];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(C), '品項分類');
+  const D = [['日期', '分店', '售出品項', '金額', '接待', '經手', '備註', '成本', '毛利', '連絡電話', '單號'],
+    ...rep.all.slice().sort((a, b) => (a.date + (a.order || 0)).localeCompare(b.date + (b.order || 0))).map(r => [r.date, r.branch, r.item, num(r.amount) ?? '', r.recv, r.handler, r.note, num(r.cost) ?? '', profit(r) ?? '', r.phone, r.ticket])];
+  const ws3 = XLSX.utils.aoa_to_sheet(D); ws3['!cols'] = [{ wch: 11 }, { wch: 7 }, { wch: 50 }, ...Array(8).fill({ wch: 10 })];
+  XLSX.utils.book_append_sheet(wb, ws3, '明細');
+  XLSX.writeFile(wb, rep.name + '.xlsx');
+}
+
 $('snapBtn').onclick = () => {
   const days = daysList().filter(d => dayRows(d).length);
   const today = ymd(new Date());
   const def = days.includes(today) ? today : (days.at(-1) || today);
   const canShare = !!(navigator.canShare && navigator.share);
   const m = document.createElement('div'); m.className = 'modal';
-  m.innerHTML = `<div class="box"><h3>📷 日報圖片（${esc($('branch').value)}）</h3>
-    <label>日期 <input type="date" id="snD" value="${def}" style="border:1px solid #ccc;border-radius:6px;padding:4px"></label>
-    <label><input type="checkbox" id="snM" checked> 遮蔽客人電話（例：0912***678）</label>
+  const yNow = Number($('month').value.slice(0, 4));
+  m.innerHTML = `<div class="box"><h3>📷 報表下載</h3>
+    <div class="seg" id="snK" style="margin-bottom:8px"><button data-k="day" class="on">日報</button><button data-k="month">月報</button><button data-k="year">年報</button></div>
+    <label id="snDayL">日期 <input type="date" id="snD" value="${def}" style="border:1px solid #ccc;border-radius:6px;padding:4px"></label>
+    <label id="snMonL" class="hidden">月份 <input type="month" id="snMo" value="${$('month').value}" style="border:1px solid #ccc;border-radius:6px;padding:4px"></label>
+    <label id="snYrL" class="hidden">年度 <input type="number" id="snY" value="${yNow}" style="width:90px;border:1px solid #ccc;border-radius:6px;padding:4px"></label>
+    <label id="snBrL" class="hidden">範圍 <select id="snB" style="border:1px solid #ccc;border-radius:6px;padding:4px"><option value="one">${esc($('branch').value)}</option><option value="both">兩店合計</option></select></label>
+    <label id="snML"><input type="checkbox" id="snM" checked> 遮蔽客人電話（例：0912***678）</label>
     <p class="hint" style="margin:8px 0 12px">${canShare ? '按「分享」可直接選 LINE → 會計群組傳送。' : '下載後再到 LINE 群組上傳圖片。'}</p>
     <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"><button class="btn ghost" id="snNo">取消</button>
-      <button class="btn ghost" id="snDl">⬇ 下載圖片</button>${canShare ? '<button class="btn" id="snSh">分享到 LINE</button>' : ''}</div></div>`;
+      <button class="btn ghost hidden" id="snXl">⬇ Excel</button><button class="btn ghost" id="snDl">⬇ 下載圖片</button>${canShare ? '<button class="btn" id="snSh">分享到 LINE</button>' : ''}</div></div>`;
   document.body.appendChild(m);
   m.querySelector('#snNo').onclick = () => m.remove();
+  let kind = 'day';
+  m.querySelector('#snK').onclick = e => { const b = e.target.closest('button'); if (!b) return; kind = b.dataset.k;
+    [...m.querySelector('#snK').children].forEach(x => x.classList.toggle('on', x === b));
+    m.querySelector('#snDayL').classList.toggle('hidden', kind !== 'day'); m.querySelector('#snML').classList.toggle('hidden', kind !== 'day');
+    m.querySelector('#snMonL').classList.toggle('hidden', kind !== 'month'); m.querySelector('#snYrL').classList.toggle('hidden', kind !== 'year');
+    m.querySelector('#snBrL').classList.toggle('hidden', kind === 'day'); m.querySelector('#snXl').classList.toggle('hidden', kind === 'day'); };
+  const shoot = async (html, name) => {
+    if (!window.html2canvas) { toast('⚠️ 圖片工具載入中，請稍候'); return null; }
+    $('snap').innerHTML = html;
+    const cv = await html2canvas($('snap').firstElementChild, { scale: 2, backgroundColor: '#ffffff' });
+    return { blob: await new Promise(r => cv.toBlob(r, 'image/png')), name: name + '.png' };
+  };
+  const getRep = async () => {
+    toast('產生中…');
+    const rep = await buildReport(kind, m.querySelector('#snB').value, m.querySelector('#snMo').value, m.querySelector('#snY').value);
+    if (!rep) toast('這段期間沒有登打資料'); return rep;
+  };
+  m.querySelector('#snXl').onclick = async () => { const rep = await getRep(); if (!rep) return; reportXlsx(rep, kind); toast('✅ 已下載 Excel'); m.remove(); };
   const make = async () => {
+    if (kind !== 'day') { const rep = await getRep(); return rep ? shoot(rep.html, rep.name) : null; }
     const d = m.querySelector('#snD').value;
     if (d.slice(0, 7) !== $('month').value) { toast('請先在右上角切到該月份'); return null; }
     if (!dayRows(d).length) { toast('這天沒有資料'); return null; }
