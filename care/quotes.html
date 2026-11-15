@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>復原者 報價查詢｜報價小幫手</title>
+<style>
+:root{--ink:#16181d;--mute:#6b7280;--line:#e5e7eb;--bg:#f4f5f7;--red:#d71920;--green:#15803d;--blue:#2a78d6;--amber:#b45309}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.5}
+button,input,select,textarea{font:inherit}
+.hidden{display:none!important}
+#login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.login-box{background:#fff;border-radius:14px;padding:28px 24px;width:100%;max-width:360px}
+.login-box input{width:100%;border:1px solid #d1d5db;border-radius:8px;padding:9px 10px;margin-bottom:10px}
+header{background:var(--ink);color:#fff;padding:10px 16px;border-bottom:4px solid var(--red);position:sticky;top:0;z-index:20}
+.hd{display:flex;align-items:center;gap:10px;flex-wrap:wrap;max-width:1100px;margin:0 auto}
+.logo{font-weight:900;font-size:16px;margin-right:auto}.logo small{display:block;font-weight:400;font-size:11px;color:#a1a6b0;letter-spacing:2px}
+.hbtn{background:none;border:1px solid #555;color:#ddd;border-radius:8px;padding:5px 11px;cursor:pointer;text-decoration:none;font-size:13px}
+main{max-width:1100px;margin:0 auto;padding:12px 12px 60px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.bar input[type=search]{flex:1;min-width:220px;border:1px solid #d1d5db;border-radius:10px;padding:10px 12px;font-size:16px}
+.seg{display:inline-flex;border:1px solid #d1d5db;border-radius:8px;overflow:hidden;background:#fff}
+.seg button{border:0;background:#fff;padding:7px 12px;cursor:pointer}.seg button.on{background:var(--ink);color:#fff}
+.panel{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:12px}
+.panel h3{font-size:15px;margin-bottom:8px}
+table{border-collapse:collapse;width:100%}
+th{font-size:12px;color:var(--mute);text-align:left;font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line)}
+td{padding:7px 8px;border-bottom:1px solid #f0f0f0;vertical-align:top}
+td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+tr.item{cursor:pointer}tr.item:hover{background:#f7f8fa}
+.me{color:var(--red);font-weight:800}.peer{color:var(--blue);font-weight:700}
+.tag{font-size:11px;padding:1px 7px;border-radius:99px;white-space:nowrap}
+.tag.me{background:#fde8e8}.tag.peer{background:#e6f0fb}.tag.rv{background:#fef3c7;color:var(--amber)}
+.hist td{background:#fafafa;font-size:13px}
+.mute{color:var(--mute);font-size:12px}
+textarea{width:100%;min-height:70px;border:1px solid #d1d5db;border-radius:8px;padding:8px}
+.btn{border:0;border-radius:8px;padding:7px 14px;font-weight:700;cursor:pointer;background:var(--ink);color:#fff}
+.btn.ghost{background:#fff;color:var(--ink);border:1px solid #d1d5db}
+.x{border:0;background:none;color:#c4c7cc;cursor:pointer}.x:hover{color:var(--red)}
+td input{width:100%;border:1px solid #e5e7eb;border-radius:6px;padding:3px 6px}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#fff;padding:10px 16px;border-radius:10px;transition:.25s;z-index:99}
+#toast.show{transform:translateX(-50%) translateY(0)}
+@media(max-width:700px){.hide-m{display:none}}
+</style>
+</head>
+<body>
+<section id="login" class="hidden">
+  <form class="login-box" id="loginForm"><h3 style="margin-bottom:12px">復原者 報價查詢</h3>
+    <input name="email" type="email" placeholder="帳號（Email）" required><input name="pw" type="password" placeholder="密碼" required>
+    <button class="btn" style="width:100%">登入</button></form>
+</section>
+<section id="app" class="hidden">
+  <header><div class="hd">
+    <div class="logo">💰 報價查詢<small>QUOTE HELPER</small></div>
+    <a class="hbtn" href="ledger.html">📝 每日登打</a><a class="hbtn" href="./">← 保固系統</a>
+  </div></header>
+  <main>
+    <div class="bar">
+      <input type="search" id="q" placeholder="搜尋機型或零件，例：13 pro 感應排線、S23 液晶">
+      <span class="seg" id="who"><button data-k="" class="on">全部</button><button data-k="me">我的報價</button><button data-k="peer">同行報價</button></span>
+    </div>
+    <div class="panel">
+      <h3>報價總表 <span class="mute" id="cnt"></span></h3>
+      <p class="mute" style="margin-bottom:6px">每個「機型＋零件」顯示最新價格；點一下看歷史紀錄。資料來自 LINE 群組（報價小幫手自動記錄）與下方手動新增。</p>
+      <table><thead><tr><th>機型</th><th>零件</th><th class="n">我的報價</th><th class="n">同行報價</th><th class="hide-m">最近更新</th><th class="n hide-m">筆數</th></tr></thead><tbody id="list"></tbody></table>
+      <div style="text-align:center;margin-top:8px"><button class="btn ghost" id="older">載入一年以前的紀錄</button></div>
+    </div>
+    <div class="panel">
+      <h3>✍️ 手動新增（記成「我的報價」）</h3>
+      <textarea id="paste" placeholder="一行一項，例：&#10;13 pro 感應排線 3000&#10;14 電池 1200"></textarea>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:6px"><button class="btn" id="addBtn">新增</button><span class="mute" id="pv"></span></div>
+    </div>
+    <div class="panel">
+      <h3>🕑 最近記錄 <span class="mute">（可直接修改；黃色＝讀不出機型或零件，請補上）</span></h3>
+      <table><thead><tr><th>時間</th><th>來源</th><th>機型</th><th>零件</th><th class="n">價格</th><th class="hide-m">原文</th><th></th></tr></thead><tbody id="recent"></tbody></table>
+    </div>
+  </main>
+</section>
+<div id="toast"></div>
+<script>
+/* ═══ 報價解析（GAS 與報價頁共用；改這段請兩邊一起更新）═══
+ * 一則訊息可多行，每行一項：「13 pro 感應排線 3000 元」「i14PM 電池 1200」「S23U 液晶 $5,800」
+ */
+function parseQuoteLines_(text) {
+  var out = [];
+  String(text || '').split(/\n+/).forEach(function (line) {
+    var raw = line.trim();
+    if (!raw || raw.length > 60) return;
+    if (/[?？]|多少|幾錢|嗎|有沒有|請問|報價一下|收不收/.test(raw)) return;          // 問句不是報價
+    var m = raw.match(/(?:NT\$?|\$)?\s*(\d{1,3}(?:,\d{3})+|\d{2,6})\s*(?:元|塊|圓|\$|nt)?\s*(?:\/?\s*(?:個|顆|片|支|組))?\s*$/i);
+    if (!m) return;
+    var price = Number(m[1].replace(/,/g, ''));
+    if (!(price >= 50 && price <= 200000)) return;
+    var rest = raw.slice(0, m.index).replace(/[:：=＝\-－~～]+\s*$/, '').trim();
+    if (!rest) return;
+    var mm = modelOf_(rest);
+    var part = (mm ? rest.replace(mm.raw, ' ') : rest).replace(/^[\s,，、\/]+|[\s,，、\/]+$/g, '').replace(/\s+/g, ' ');
+    if (!part && !mm) return;
+    out.push({ raw: raw, model: mm ? mm.name : '', part: part, price: price, review: !mm || !part });
+  });
+  return out;
+}
+
+function modelOf_(s) {
+  var t = String(s), m;
+  // iPhone：13 pro、i14pm、iPhone 15 Pro Max、SE3、XR、XS Max、8P
+  if ((m = t.match(/(?:^|\s)((?:iphone\s*|ip\s*|i)?(1[0-9]|[6-9])\s*(pro\s*max|promax|pm|pro|plus|mini|max|p|e)?(?=\s|$|[^\da-z]))/i))) {
+    var suf = (m[3] || '').toLowerCase().replace(/\s+/g, '');
+    var map = { promax: 'Pro Max', pm: 'Pro Max', pro: 'Pro', plus: 'Plus', p: 'Plus', mini: 'mini', max: 'Max', e: 'e' };
+    if (!(Number(m[2]) <= 9 && suf === 'pro'))
+      return { raw: m[1], name: 'iPhone ' + m[2] + (suf ? ' ' + map[suf] : '') };
+  }
+  if ((m = t.match(/(?:^|\s)((?:iphone\s*)?(xs\s*max|xsmax|xr|xs|x|se\s*[23]|se))(?=\s|$|[^\da-z])/i)))
+    return { raw: m[1], name: 'iPhone ' + m[2].toUpperCase().replace(/\s+/g, ' ').replace('XSMAX', 'XS Max').replace('XS MAX', 'XS Max') };
+  // 其他品牌：OPPO A77、Redmi Note 12、ZF12U、Pixel 7
+  if ((m = t.match(/(?:^|\s)((oppo|vivo|redmi|紅米|小米|mi|pixel|sony|xperia|zf|zenfone|asus|realme|nokia|htc)\s*[a-z]*\s*\d+[a-z]*(?:\s*(?:pro|plus|ultra|lite|5g))?)(?=\s|$)/i)))
+    return { raw: m[1], name: m[1].replace(/\s+/g, ' ').toUpperCase() };
+  // Samsung：S23U、S24 Ultra、A52s、Note20、Z Flip5
+  if ((m = t.match(/(?:^|\s)((?:samsung\s*|三星\s*)?(s|a|m|note\s*)(\d{1,2})\s*(ultra|u|plus|\+|fe|s|5g)?)(?=\s|$|[^\da-z])/i))) {
+    var sx = (m[4] || '').toLowerCase(), smap = { ultra: ' Ultra', u: ' Ultra', plus: '+', '+': '+', fe: ' FE', s: 's', '5g': ' 5G' };
+    return { raw: m[1], name: 'Samsung ' + m[2].replace(/\s+/g, '').replace(/^note$/i, 'Note').toUpperCase().replace('NOTE', 'Note') + m[3] + (smap[sx] || '') };
+  }
+  if ((m = t.match(/(?:^|\s)((?:z\s*)?(flip|fold)\s*(\d))(?=\s|$)/i)))
+    return { raw: m[1], name: 'Samsung Z ' + m[2][0].toUpperCase() + m[2].slice(1).toLowerCase() + m[3] };
+  return null;
+}
+
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+const app = initializeApp({ apiKey: "AIzaSyD04ZMXIt8Oo3hjm5qsMaKiLXYzp_9YKwA", authDomain: "care-warranty.firebaseapp.com", projectId: "care-warranty",
+  storageBucket: "care-warranty.firebasestorage.app", messagingSenderId: "29512690431", appId: "1:29512690431:web:f0c2dd1cd6acb03d197aca" });
+const auth = getAuth(app), db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) });
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmt = n => n == null || n === '' ? '' : '$' + Number(n).toLocaleString('en-US');
+const ymd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const norm = s => String(s || '').toLowerCase().replace(/\s+/g, '').replace(/iphone/g, '');
+function toast(m) { const t = $('toast'); t.textContent = m; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2400); }
+
+let quotes = new Map(), who = '', open = null, older = false;
+onAuthStateChanged(auth, u => { $('login').classList.toggle('hidden', !!u); $('app').classList.toggle('hidden', !u); if (u) start(); });
+$('loginForm').onsubmit = async e => { e.preventDefault(); try { await signInWithEmailAndPassword(auth, e.target.email.value.trim(), e.target.pw.value); } catch { toast('⚠️ 登入失敗'); } };
+
+function start() {
+  const since = ymd(new Date(Date.now() - 365 * 86400000));
+  onSnapshot(query(collection(db, 'quotes'), where('date', '>=', since)), s => {
+    s.docChanges().forEach(c => { if (c.type === 'removed') quotes.delete(c.doc.id); else quotes.set(c.doc.id, { id: c.doc.id, ...c.doc.data() }); });
+    render();
+  }, er => toast('⚠️ 讀取失敗：' + er.message));
+}
+$('older').onclick = async () => {
+  const since = ymd(new Date(Date.now() - 365 * 86400000));
+  (await getDocs(query(collection(db, 'quotes'), where('date', '<', since)))).forEach(d => quotes.set(d.id, { id: d.id, ...d.data() }));
+  $('older').remove(); render();
+};
+
+function render() {
+  const all = [...quotes.values()].sort((a, b) => String(b.ts).localeCompare(String(a.ts)));
+  const q = norm($('q').value);
+  const hit = r => !q || norm(r.model + r.part).includes(q) || norm(r.part + r.model).includes(q) || norm(r.raw).includes(q);
+  const rows = all.filter(r => (!who || r.who === who) && hit(r));
+  // 依 機型＋零件 分組
+  const g = new Map();
+  rows.forEach(r => {
+    const k = norm(r.model) + '|' + norm(r.part);
+    if (!g.has(k)) g.set(k, { k, model: r.model, part: r.part, list: [] });
+    g.get(k).list.push(r);
+  });
+  const groups = [...g.values()];
+  $('cnt').textContent = `（${groups.length} 項、${rows.length} 筆）`;
+  $('list').innerHTML = groups.slice(0, 300).map(x => {
+    const me = x.list.find(r => r.who === 'me'), peer = x.list.find(r => r.who === 'peer');
+    const head = `<tr class="item" data-k="${esc(x.k)}"><td>${esc(x.model) || '<span class="tag rv">機型？</span>'}</td><td>${esc(x.part) || '<span class="tag rv">零件？</span>'}</td>
+      <td class="n me">${me ? fmt(me.price) : ''}</td><td class="n peer">${peer ? fmt(peer.price) + `<div class="mute">${esc(peer.speaker)}</div>` : ''}</td>
+      <td class="hide-m mute">${esc(x.list[0].date)}</td><td class="n hide-m mute">${x.list.length}</td></tr>`;
+    const hist = open === x.k ? x.list.map(r => `<tr class="hist"><td class="mute">${esc(r.date)}</td><td><span class="tag ${r.who}">${r.who === 'me' ? '我' : esc(r.speaker)}</span> <span class="mute">${esc(r.group || '')}</span></td>
+      <td class="n ${r.who}">${fmt(r.price)}</td><td colspan="3" class="mute">${esc(r.raw)}</td></tr>`).join('') : '';
+    return head + hist;
+  }).join('') || '<tr><td colspan="6" class="mute">沒有符合的報價</td></tr>';
+  $('recent').innerHTML = all.filter(r => !who || r.who === who).slice(0, 40).map(r => `<tr data-id="${r.id}" style="${r.review ? 'background:#fffbeb' : ''}">
+    <td class="mute">${esc(String(r.ts || '').slice(5, 16).replace('T', ' '))}</td>
+    <td><span class="tag ${r.who}">${r.who === 'me' ? '我' : esc(r.speaker)}</span><div class="mute">${esc(r.group || '')}</div></td>
+    <td><input data-f="model" value="${esc(r.model)}"></td><td><input data-f="part" value="${esc(r.part)}"></td>
+    <td class="n"><input data-f="price" value="${esc(r.price)}" style="width:80px;text-align:right" inputmode="numeric"></td>
+    <td class="hide-m mute">${esc(r.raw)}</td><td><button class="x" data-del="${r.id}" title="刪除">✕</button></td></tr>`).join('') || '<tr><td colspan="7" class="mute">還沒有紀錄</td></tr>';
+}
+$('list').onclick = e => { const tr = e.target.closest('tr.item'); if (!tr) return; open = open === tr.dataset.k ? null : tr.dataset.k; render(); };
+let qT; $('q').oninput = () => { clearTimeout(qT); qT = setTimeout(render, 150); };
+$('who').onclick = e => { const b = e.target.closest('button'); if (!b) return; who = b.dataset.k; [...$('who').children].forEach(x => x.classList.toggle('on', x === b)); render(); };
+
+$('recent').addEventListener('change', async e => {
+  const i = e.target.closest('input[data-f]'); if (!i) return;
+  const id = i.closest('tr').dataset.id, f = i.dataset.f;
+  const v = f === 'price' ? Number(String(i.value).replace(/[^\d.]/g, '')) : i.value.trim();
+  const r = quotes.get(id); const upd = { [f]: v };
+  const nr = { ...r, ...upd }; upd.review = !nr.model || !nr.part;
+  try { await updateDoc(doc(db, 'quotes', id), upd); toast('已更新'); } catch (er) { toast('⚠️ ' + er.message); }
+});
+$('recent').addEventListener('click', async e => {
+  const b = e.target.closest('[data-del]'); if (!b) return;
+  const r = quotes.get(b.dataset.del); if (!confirm(`刪除這筆？\n${r.model} ${r.part} ${fmt(r.price)}`)) return;
+  try { await deleteDoc(doc(db, 'quotes', r.id)); toast('已刪除'); } catch (er) { toast('⚠️ ' + er.message); }
+});
+$('paste').oninput = () => { const it = parseQuoteLines_($('paste').value); $('pv').textContent = it.length ? '讀到：' + it.map(q => `${q.model || '機型？'} ${q.part || '零件？'} $${q.price}`).join('、') : ''; };
+$('addBtn').onclick = async () => {
+  const it = parseQuoteLines_($('paste').value); if (!it.length) return toast('沒有讀到報價（格式：機型 零件 價格）');
+  const now = new Date();
+  try {
+    for (const q of it) await addDoc(collection(db, 'quotes'), { ts: now.toISOString(), date: ymd(now), who: 'me', speaker: '我', group: '手動新增', groupId: '',
+      model: q.model, part: q.part, price: q.price, raw: q.raw, review: q.review, by: auth.currentUser.email });
+    $('paste').value = ''; $('pv').textContent = ''; toast(`✅ 已新增 ${it.length} 筆`);
+  } catch (er) { toast('⚠️ ' + er.message); }
+};
+</script>
+</body>
+</html>

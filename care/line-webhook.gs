@@ -56,6 +56,7 @@ function doPost(e) {
   try {
     var p = (e && e.parameter) || {};
     if (p.action === 'staff') return json_(staffAction_(JSON.parse(e.postData.contents || '{}')));
+    if (p.store === 'quote') { handleQuoteWebhook_(p, JSON.parse(e.postData.contents || '{}')); return ok_(); }
     var store = STORES[p.store];
     if (!store) return ok_();
     var token = prop_(store.tokenProp);
@@ -588,4 +589,125 @@ function setupBookingSheet() {
   sh.setColumnWidths(1, 9, 130);
   props.setProperty('BOOKING_SHEET_ID', ss.getId());
   console.log('預約試算表已建立：' + ss.getUrl());
+}
+
+
+/* ═════════ 報價小幫手（另一個 LINE 官方帳號，放在同行群組，安靜記錄報價，不在群組發言）═════════
+ * 指令碼屬性：
+ *   QUOTE_TOKEN  小幫手的 Channel access token（自己貼）
+ *   QUOTE_KEY    webhook 網址暗號（執行 setupQuoteHelper 自動產生，防止別人偽造報價）
+ *   QUOTE_OWNER  老闆的 LINE 使用者 ID（老闆私訊小幫手「我是老闆」自動設定）
+ */
+var WEBHOOK_EXEC = 'https://script.google.com/macros/s/AKfycbxBK7c2Oledgo-jT-kRnueuU8grZxVinuocyp2iLI8u-c5Q94fZSeiemH0UkeAqdjfTlw/exec';
+function setupQuoteHelper() {
+  var props = PropertiesService.getScriptProperties();
+  var key = props.getProperty('QUOTE_KEY');
+  if (!key) { key = Utilities.getUuid().replace(/-/g, '').slice(0, 20); props.setProperty('QUOTE_KEY', key); }
+  console.log('報價小幫手 Webhook 網址：' + WEBHOOK_EXEC + '?store=quote&k=' + key);
+}
+function handleQuoteWebhook_(p, body) {
+  var props = PropertiesService.getScriptProperties();
+  var key = props.getProperty('QUOTE_KEY');
+  if (!key || p.k !== key) return;
+  var token = props.getProperty('QUOTE_TOKEN');
+  if (!token) return;
+  (body.events || []).forEach(function (ev) { try { quoteEvent_(ev, token, props); } catch (err) { console.error(err); } });
+}
+function quoteEvent_(ev, token, props) {
+  if (ev.type !== 'message' || !ev.message || ev.message.type !== 'text') return;
+  var src = ev.source || {}, uid = src.userId || '', text = String(ev.message.text || '').trim();
+  var owner = props.getProperty('QUOTE_OWNER') || '';
+  if (src.type === 'user') {
+    if (text === '我是老闆') {
+      if (!owner) { props.setProperty('QUOTE_OWNER', uid); reply_(ev.replyToken, token, '✅ 已設定您為老闆。\n之後您在群組報的價會記成「我的報價」，同行報的價記成「同行報價」。\n\n也可以直接私訊我報價（例：13 pro 感應排線 3000），我會回覆記錄結果。'); }
+      else if (owner === uid) reply_(ev.replyToken, token, '您已經是老闆囉 👍');
+      return;
+    }
+    if (uid !== owner) return;            // 私訊只處理老闆
+  }
+  var mine = !!uid && uid === owner;
+  var items = parseQuoteLines_(text);
+  if (!mine) items = items.filter(function (q) { return !q.review; });   // 同行訊息：機型＋零件＋價格都有才記
+  if (!items.length) {
+    if (src.type === 'user') reply_(ev.replyToken, token, '沒有讀到報價 🤔\n格式例：13 pro 感應排線 3000（一行一項）');
+    return;
+  }
+  var gid = src.groupId || src.roomId || '';
+  var group = src.groupId ? groupName_(src.groupId, token) : (src.roomId ? '多人聊天' : '私訊');
+  var speaker = mine ? '我' : memberName_(src, token);
+  var now = new Date(ev.timestamp || Date.now());
+  items.forEach(function (q, i) {
+    createDoc_('quotes', { ts: now.toISOString(), date: Utilities.formatDate(now, 'Asia/Taipei', 'yyyy-MM-dd'),
+      who: mine ? 'me' : 'peer', speaker: speaker, groupId: gid, group: group,
+      model: q.model, part: q.part, price: q.price, raw: q.raw, review: q.review, msgId: ev.message.id + '_' + i });
+  });
+  if (src.type === 'user') reply_(ev.replyToken, token, '✅ 已記錄 ' + items.length + ' 筆：\n' + items.map(function (q) {
+    return '・' + (q.model || '（機型？）') + ' ' + (q.part || '（零件？）') + ' $' + q.price;
+  }).join('\n') + (items.some(function (q) { return q.review; }) ? '\n\n有標「？」的請到報價頁補上。' : ''));
+}
+function lineGet_(url, token) {
+  var r = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true });
+  return r.getResponseCode() === 200 ? JSON.parse(r.getContentText()) : null;
+}
+function groupName_(gid, token) {
+  var c = CacheService.getScriptCache(), k = 'g_' + gid, v = c.get(k);
+  if (v) return v;
+  var j = lineGet_('https://api.line.me/v2/bot/group/' + gid + '/summary', token);
+  v = (j && j.groupName) || '群組'; c.put(k, v, 21600); return v;
+}
+function memberName_(src, token) {
+  if (!src.userId) return '同行';
+  var c = CacheService.getScriptCache(), k = 'm_' + (src.groupId || src.roomId) + '_' + src.userId, v = c.get(k);
+  if (v) return v;
+  var url = src.groupId ? 'https://api.line.me/v2/bot/group/' + src.groupId + '/member/' + src.userId
+          : src.roomId ? 'https://api.line.me/v2/bot/room/' + src.roomId + '/member/' + src.userId : '';
+  var j = url ? lineGet_(url, token) : null;
+  v = (j && j.displayName) || '同行'; c.put(k, v, 21600); return v;
+}
+
+/* ═══ 報價解析（GAS 與報價頁共用；改這段請兩邊一起更新）═══
+ * 一則訊息可多行，每行一項：「13 pro 感應排線 3000 元」「i14PM 電池 1200」「S23U 液晶 $5,800」
+ */
+function parseQuoteLines_(text) {
+  var out = [];
+  String(text || '').split(/\n+/).forEach(function (line) {
+    var raw = line.trim();
+    if (!raw || raw.length > 60) return;
+    if (/[?？]|多少|幾錢|嗎|有沒有|請問|報價一下|收不收/.test(raw)) return;          // 問句不是報價
+    var m = raw.match(/(?:NT\$?|\$)?\s*(\d{1,3}(?:,\d{3})+|\d{2,6})\s*(?:元|塊|圓|\$|nt)?\s*(?:\/?\s*(?:個|顆|片|支|組))?\s*$/i);
+    if (!m) return;
+    var price = Number(m[1].replace(/,/g, ''));
+    if (!(price >= 50 && price <= 200000)) return;
+    var rest = raw.slice(0, m.index).replace(/[:：=＝\-－~～]+\s*$/, '').trim();
+    if (!rest) return;
+    var mm = modelOf_(rest);
+    var part = (mm ? rest.replace(mm.raw, ' ') : rest).replace(/^[\s,，、\/]+|[\s,，、\/]+$/g, '').replace(/\s+/g, ' ');
+    if (!part && !mm) return;
+    out.push({ raw: raw, model: mm ? mm.name : '', part: part, price: price, review: !mm || !part });
+  });
+  return out;
+}
+
+function modelOf_(s) {
+  var t = String(s), m;
+  // iPhone：13 pro、i14pm、iPhone 15 Pro Max、SE3、XR、XS Max、8P
+  if ((m = t.match(/(?:^|\s)((?:iphone\s*|ip\s*|i)?(1[0-9]|[6-9])\s*(pro\s*max|promax|pm|pro|plus|mini|max|p|e)?(?=\s|$|[^\da-z]))/i))) {
+    var suf = (m[3] || '').toLowerCase().replace(/\s+/g, '');
+    var map = { promax: 'Pro Max', pm: 'Pro Max', pro: 'Pro', plus: 'Plus', p: 'Plus', mini: 'mini', max: 'Max', e: 'e' };
+    if (!(Number(m[2]) <= 9 && suf === 'pro'))
+      return { raw: m[1], name: 'iPhone ' + m[2] + (suf ? ' ' + map[suf] : '') };
+  }
+  if ((m = t.match(/(?:^|\s)((?:iphone\s*)?(xs\s*max|xsmax|xr|xs|x|se\s*[23]|se))(?=\s|$|[^\da-z])/i)))
+    return { raw: m[1], name: 'iPhone ' + m[2].toUpperCase().replace(/\s+/g, ' ').replace('XSMAX', 'XS Max').replace('XS MAX', 'XS Max') };
+  // 其他品牌：OPPO A77、Redmi Note 12、ZF12U、Pixel 7
+  if ((m = t.match(/(?:^|\s)((oppo|vivo|redmi|紅米|小米|mi|pixel|sony|xperia|zf|zenfone|asus|realme|nokia|htc)\s*[a-z]*\s*\d+[a-z]*(?:\s*(?:pro|plus|ultra|lite|5g))?)(?=\s|$)/i)))
+    return { raw: m[1], name: m[1].replace(/\s+/g, ' ').toUpperCase() };
+  // Samsung：S23U、S24 Ultra、A52s、Note20、Z Flip5
+  if ((m = t.match(/(?:^|\s)((?:samsung\s*|三星\s*)?(s|a|m|note\s*)(\d{1,2})\s*(ultra|u|plus|\+|fe|s|5g)?)(?=\s|$|[^\da-z])/i))) {
+    var sx = (m[4] || '').toLowerCase(), smap = { ultra: ' Ultra', u: ' Ultra', plus: '+', '+': '+', fe: ' FE', s: 's', '5g': ' 5G' };
+    return { raw: m[1], name: 'Samsung ' + m[2].replace(/\s+/g, '').replace(/^note$/i, 'Note').toUpperCase().replace('NOTE', 'Note') + m[3] + (smap[sx] || '') };
+  }
+  if ((m = t.match(/(?:^|\s)((?:z\s*)?(flip|fold)\s*(\d))(?=\s|$)/i)))
+    return { raw: m[1], name: 'Samsung Z ' + m[2][0].toUpperCase() + m[2].slice(1).toLowerCase() + m[3] };
+  return null;
 }
