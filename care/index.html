@@ -72,6 +72,16 @@ textarea{min-height:60px;resize:vertical}
 .chip-blocked{background:#374151;color:#fff}
 .chip-manual{background:#fef3c7;color:#92400e}
 .chip-legacy{background:#f3f4f6;color:#6b7280}
+.qb{background:#fff;border:1px solid var(--line);border-left:5px solid #2a78d6;border-radius:12px;padding:10px 14px;margin-bottom:12px}
+.qb h4{font-size:14px;margin-bottom:6px;display:flex;justify-content:space-between;gap:8px}
+.qb h4 a{font-size:12px;font-weight:400;color:#2a78d6;text-decoration:none}
+.qrow{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:6px 0;border-top:1px solid #f0f0f0}
+.qrow:first-of-type{border-top:0}
+.qrow .it{font-weight:700}
+.qrow .pr{font-weight:800;font-size:16px;text-align:right;font-variant-numeric:tabular-nums}
+.qrow .sub{font-size:12px;color:var(--mute)}
+.age{font-size:11px;padding:1px 7px;border-radius:99px;margin-left:4px;white-space:nowrap}
+.age.ok{background:#dcfce7;color:#15803d}.age.mid{background:#fef3c7;color:#b45309}.age.old{background:#fee2e2;color:#b91c1c}
 .chip-refund{background:#ffedd5;color:#9a3412}
 .card.refund{border-left-color:#ea580c;background:#fffaf5}
 .b-refund{background:#ea580c;color:#fff}
@@ -138,7 +148,7 @@ th{color:var(--mute);font-weight:600}
 <section id="app" class="hidden">
 <header>
   <div class="hd-row">
-    <div class="logo">復原者 保固管理<small>REPAIR CARE+ SYSTEM · v2026.11.15d</small></div>
+    <div class="logo">復原者 保固管理<small>REPAIR CARE+ SYSTEM · v2026.11.15e</small></div>
     <div class="hd-right">
       <select id="branchFilter">
         <option value="">全部分店</option>
@@ -165,7 +175,8 @@ th{color:var(--mute);font-weight:600}
   <!-- 查詢 -->
   <div id="tab-search">
     <div class="stats" id="stats"></div>
-    <div class="search"><input id="q" type="search" placeholder="輸入電話、姓名或品項…"></div>
+    <div class="search"><input id="q" type="search" placeholder="輸入電話、姓名、品項，或機型＋零件查報價…"></div>
+    <div id="qbox"></div>
     <div id="list"></div>
   </div>
 
@@ -292,7 +303,38 @@ const $ = id => document.getElementById(id);
 //   found ：搜尋電話／姓名時，直接到資料庫查（多舊都查得到）
 const RECENT_DAYS = 460;
 let recent = [], found = new Map(), totalCount = null;
-let records = [], bindings = [], lineUsers = {}, bookings = [], blocks = new Set();
+let records = [], bindings = [], lineUsers = {}, bookings = [], blocks = new Set(), quotes = [];
+
+/* ── 報價查詢：搜尋框打機型／零件，最上面顯示相關報價與「幾天前」（越舊顏色越警示）── */
+const qNorm = s => String(s || '').toLowerCase().replace(/\s+/g, '').replace(/iphone/g, '');
+function ageTag(q) {
+  const days = Math.floor((Date.now() - new Date(q.ts || q.date).getTime()) / 86400000);
+  const comm = q.kind === 'commission';
+  const cls = days <= (comm ? 3 : 7) ? 'ok' : days <= (comm ? 14 : 30) ? 'mid' : 'old';
+  const txt = days <= 0 ? '今天' : days === 1 ? '昨天' : days + ' 天前';
+  return `<span class="age ${cls}" title="${cls === 'old' ? '很久以前的價格，請先確認再報' : cls === 'mid' ? '有一段時間了，建議確認' : '近期價格'}">${txt}${cls === 'old' ? ' ⚠️' : ''}</span>`;
+}
+function renderQuotes() {
+  const box = $('qbox'); if (!box) return;
+  const raw = $('q').value.trim(), q = qNorm(raw);
+  if (q.length < 2 || /^\d+$/.test(q)) { box.innerHTML = ''; return; }    // 電話查詢時不顯示
+  const terms = raw.toLowerCase().split(/\s+/).map(qNorm).filter(Boolean);
+  const hit = r => { const t = qNorm(r.model + r.part + r.raw + (r.target || '')); return terms.every(w => t.includes(w)); };
+  const hits = quotes.filter(hit).sort((a, b) => String(b.ts).localeCompare(String(a.ts)));
+  if (!hits.length) { box.innerHTML = ''; return; }
+  const g = new Map();
+  hits.forEach(r => { const k = qNorm(r.model) + '|' + qNorm(r.part); if (!g.has(k)) g.set(k, []); g.get(k).push(r); });
+  const show = [...g.values()].slice(0, 6);
+  box.innerHTML = `<div class="qb"><h4><span>💰 相關報價（${g.size} 項）</span><a href="quotes.html?q=${encodeURIComponent(raw)}">看全部 →</a></h4>` +
+    show.map(list => {
+      const me = list.filter(r => r.who === 'me'), peer = list.find(r => r.who === 'peer'), last = me[0];
+      const others = me.slice(1, 3).map(r => `${esc(r.date.slice(5).replace('-', '/'))} ${r.target ? '給' + esc(r.target) + ' ' : ''}$${Number(r.price).toLocaleString()}`).join('　');
+      return `<div class="qrow"><div><span class="it">${esc(list[0].model || '')} ${esc(list[0].part || '')}</span>${list[0].kind === 'commission' ? ' <span class="age mid">門號佣金</span>' : ''}
+        <div class="sub">${last ? `我 ${esc(last.date.slice(5).replace('-', '/'))}${last.target ? ' 給 ' + esc(last.target) : ''} ${ageTag(last)}` : '（我還沒報過）'}${others ? '<br>之前：' + others : ''}
+        ${peer ? `<br>同行 ${esc(peer.speaker || '')} ${esc(peer.date.slice(5).replace('-', '/'))} $${Number(peer.price).toLocaleString()} ${ageTag(peer)}` : ''}</div></div>
+        <div class="pr" style="color:${last ? 'var(--red)' : '#2a78d6'}">${last ? '$' + Number(last.price).toLocaleString() : peer ? '$' + Number(peer.price).toLocaleString() : ''}</div></div>`;
+    }).join('') + '</div>';
+}
 function mergeRecords() {
   const m = new Map(recent.map(r => [r.id, r]));
   found.forEach((r, id) => { if (!m.has(id)) m.set(id, r); });
@@ -322,6 +364,9 @@ onAuthStateChanged(auth, user => {
     recent = s.docs.map(d => ({ id: d.id, ...d.data() })); mergeRecords(); render();
   }, err));
   refreshCount();
+  unsubs.push(onSnapshot(query(collection(db, 'quotes'), where('date', '>=', ymd(new Date(Date.now() - 365 * 86400000)))), s => {
+    quotes = s.docs.map(d => ({ id: d.id, ...d.data() })); renderQuotes();
+  }, () => {}));
   unsubs.push(onSnapshot(collection(db, 'care_bindings'), s => {
     bindings = s.docs.map(d => ({ id: d.id, ...d.data() })); render();
   }, err));
@@ -492,7 +537,7 @@ function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;
 let qTimer, searching = false, qSeq = 0;
 $('q').addEventListener('input', () => {
   clearTimeout(qTimer);
-  qTimer = setTimeout(async () => { showLimit = 50; render(); await serverSearch(); }, 250);
+  qTimer = setTimeout(async () => { showLimit = 50; render(); renderQuotes(); await serverSearch(); }, 250);
 });
 // 到資料庫查：電話（完整或開頭）、姓名（開頭）；品項只在最近 15 個月內比對
 async function serverSearch() {

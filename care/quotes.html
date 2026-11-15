@@ -154,7 +154,13 @@ let quotes = new Map(), who = '', kind = '', open = null, older = false;
 onAuthStateChanged(auth, u => { $('login').classList.toggle('hidden', !!u); $('app').classList.toggle('hidden', !u); if (u) start(); });
 $('loginForm').onsubmit = async e => { e.preventDefault(); try { await signInWithEmailAndPassword(auth, e.target.email.value.trim(), e.target.pw.value); } catch { toast('⚠️ 登入失敗'); } };
 
+function ageTag(q) {
+  const days = Math.floor((Date.now() - new Date(q.ts || q.date).getTime()) / 86400000), comm = q.kind === 'commission';
+  const c = days <= (comm ? 3 : 7) ? ['#dcfce7', '#15803d'] : days <= (comm ? 14 : 30) ? ['#fef3c7', '#b45309'] : ['#fee2e2', '#b91c1c'];
+  return `<span style="font-size:11px;padding:1px 6px;border-radius:99px;background:${c[0]};color:${c[1]};white-space:nowrap">${days <= 0 ? '今天' : days + ' 天前'}${c[1] === '#b91c1c' ? ' ⚠️' : ''}</span>`;
+}
 function start() {
+  const pq = new URLSearchParams(location.search).get('q'); if (pq) $('q').value = pq;
   const since = ymd(new Date(Date.now() - 365 * 86400000));
   onSnapshot(query(collection(db, 'quotes'), where('date', '>=', since)), s => {
     s.docChanges().forEach(c => { if (c.type === 'removed') quotes.delete(c.doc.id); else quotes.set(c.doc.id, { id: c.doc.id, ...c.doc.data() }); });
@@ -185,7 +191,7 @@ function render() {
   $('list').innerHTML = groups.slice(0, 300).map(x => {
     const me = x.list.find(r => r.who === 'me'), peer = x.list.find(r => r.who === 'peer');
     const head = `<tr class="item" data-k="${esc(x.k)}"><td>${esc(x.model) || '<span class="tag rv">機型？</span>'}</td><td>${esc(x.part) || '<span class="tag rv">零件？</span>'}${kOf(x.list[0]) === 'commission' ? ' <span class="tag rv">門號佣金</span>' : ''}</td>
-      <td class="n me">${me ? fmt(me.price) + (me.target ? `<div class="mute">給 ${esc(me.target)}${new Set(x.list.filter(r => r.who === 'me').map(r => r.target)).size > 1 ? ' 等' : ''}</div>` : '') : ''}</td><td class="n peer">${peer ? fmt(peer.price) + `<div class="mute">${esc(peer.speaker)}</div>` : ''}</td>
+      <td class="n me">${me ? ageTag(me) + ' ' + fmt(me.price) + (me.target ? `<div class="mute">給 ${esc(me.target)}${new Set(x.list.filter(r => r.who === 'me').map(r => r.target)).size > 1 ? ' 等' : ''}</div>` : '') : ''}</td><td class="n peer">${peer ? ageTag(peer) + ' ' + fmt(peer.price) + `<div class="mute">${esc(peer.speaker)}</div>` : ''}</td>
       <td class="hide-m mute">${esc(x.list[0].date)}</td><td class="n hide-m mute">${x.list.length}</td></tr>`;
     const hist = open === x.k ? x.list.map(r => `<tr class="hist"><td class="mute">${esc(r.date)}</td><td><span class="tag ${r.who}">${r.who === 'me' ? '我' : esc(r.speaker)}</span> ${r.target ? '→ <b>' + esc(r.target) + '</b>' : ''} <span class="mute">${esc(r.group || '')}</span></td>
       <td class="n ${r.who}">${fmt(r.price)}</td><td colspan="3" class="mute">${esc(r.raw)}</td></tr>`).join('') : '';
