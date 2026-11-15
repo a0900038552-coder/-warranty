@@ -51,6 +51,9 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
 .wty.warn{background:#fef3c7;color:var(--amber)}
 .del{border:0;background:none;color:#c4c7cc;cursor:pointer;font-size:15px;padding:4px 8px}
 .del:hover{color:var(--red)}
+.cash{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 12px;background:#fffdf5;border-top:1px dashed #e5d9a8;font-size:14px}
+.cash b{font-size:16px}.cash input{width:110px;border:1px solid #d1d5db;border-radius:6px;padding:5px 7px;text-align:right;font-size:15px}
+.cash input::placeholder{color:#b6b9bf}.cash .ok{color:var(--green);font-weight:800}.cash .over{color:var(--blue);font-weight:800}.cash .short{color:var(--red);font-weight:800}
 .add-day{display:flex;gap:8px;align-items:center;background:#fff;border:1px dashed #c7cbd1;border-radius:12px;padding:12px;margin-bottom:12px;flex-wrap:wrap}
 .add-day input{border:1px solid #d1d5db;border-radius:8px;padding:6px 8px}
 .btn{border:0;border-radius:8px;padding:8px 14px;font-weight:700;cursor:pointer;background:var(--ink);color:#fff}
@@ -149,7 +152,7 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
     <div id="days"></div>
     <div class="add-day">
       <b>新增日期</b><input type="date" id="newDate"><button class="btn ghost" id="addDayBtn">＋ 加入</button>
-      <span class="hint">打字就會自動儲存；品項有電話的會自動建立保固紀錄。按 Enter 跳到下一列。支出請寫「支出:廠商」，付錢打負數、廠商退貨退錢打正數。退修請寫「退修 10/27 13電池/雄0908」＋電話，原因寫在備註，保固系統會多一筆退修紀錄。</span>
+      <span class="hint">打字就會自動儲存；品項有電話的會自動建立保固紀錄。按 Enter 跳到下一列。支出請寫「支出:廠商」，付錢打負數、廠商退貨退錢打正數。每天下方「點錢」填保險櫃與抽屜現金，會自動比對帳上結餘。退修請寫「退修 10/27 13電池/雄0908」＋電話，原因寫在備註，保固系統會多一筆退修紀錄。</span>
     </div>
   </main>
 </section>
@@ -179,7 +182,7 @@ const FIELDS = ['item', 'amount', 'recv', 'handler', 'note', 'cost', 'phone', 't
 
 let rows = {};            // id → row（目前分店＋月份）
 let extraDays = new Set(); // 新增但還沒有資料的日期
-let meta = null, unsub = null, unsubMeta = null;
+let meta = null, unsub = null, unsubMeta = null, unsubCash = null, cash = {};
 const timers = {}, dirty = new Set();
 
 /* ─── 小工具 ─── */
@@ -223,7 +226,7 @@ function start() {
 
 /* ─── 讀取（即時同步，兩人同時打也會互相看到）─── */
 function load() {
-  if (unsub) unsub(); if (unsubMeta) unsubMeta();
+  if (unsub) unsub(); if (unsubMeta) unsubMeta(); if (unsubCash) unsubCash(); cash = {};
   rows = {}; extraDays = new Set(); meta = null;
   const t = new Date(), cur = ymd(t);
   if (cur.slice(0, 7) === $('month').value && t.getDay() !== 0) extraDays.add(cur);
@@ -241,6 +244,10 @@ function load() {
     if (structural) render(); else totals();
     setSync(snap.metadata.hasPendingWrites ? '儲存中…' : '已同步');
   }, er => toast('⚠️ 讀取失敗：' + er.message));
+  unsubCash = onSnapshot(query(collection(db, 'ledger_cash'), where('bm', '==', bm())), s => {
+    s.docs.forEach(d => { const x = d.data(); cash[x.date] = { safe: x.safe ?? '', drawer: x.drawer ?? '' }; });
+    totals();
+  }, () => {});
   unsubMeta = onSnapshot(doc(db, 'ledger_meta', bm()), async s => {
     meta = s.exists() ? s.data() : null;
     if (document.activeElement !== $('carry')) $('carry').value = meta?.carry ?? '';
@@ -320,7 +327,8 @@ function render() {
         <tr><th>售出品項</th><th>金額</th><th>接待</th><th>經手</th><th>備註</th><th>成本</th><th>毛利</th><th>連絡電話</th><th>單號</th><th>保固</th><th></th></tr>
         ${dayRows(d).map(r => rowHTML(r, false)).join('')}
         ${rowHTML(ghost, true)}
-      </table></div></section>`;
+      </table></div>
+      <div class="cash" data-cash="${d}">💰 <b>點錢</b>　帳上結餘 <b data-bal></b>　＝　保險櫃 <input data-c="safe" inputmode="text"> ＋ 抽屜現金 <input data-c="drawer" inputmode="text"> <span data-diff></span></div></section>`;
   }).join('') || '<p class="hint" style="padding:20px">這個月還沒有資料，從下方「新增日期」開始。</p>';
   totals();
   if (keep) {
@@ -348,6 +356,23 @@ function totals() {
     if (el) el.innerHTML = `${rs.length} 筆　合計<b>${fmt(s)}</b>毛利<b style="color:var(--green)">${fmt(p)}</b>`;
   });
   const carry = num($('carry').value) ?? 0;
+  let run = carry, lastSafe = '';
+  daysList().forEach(d => {
+    run += dayRows(d).reduce((a, r) => a + (num(r.amount) ?? 0), 0);
+    const box = document.querySelector(`[data-cash="${d}"]`); if (!box) return;
+    const c = cash[d] || {}, si = box.querySelector('[data-c=safe]'), di = box.querySelector('[data-c=drawer]');
+    if (document.activeElement !== si) si.value = c.safe ?? '';
+    if (document.activeElement !== di) di.value = c.drawer ?? '';
+    si.placeholder = lastSafe !== '' ? fmt(lastSafe) + '（沿用）' : '金額';
+    di.placeholder = '點完填';
+    box.querySelector('[data-bal]').textContent = fmt(run);
+    const safe = num(si.value) ?? (lastSafe === '' ? null : lastSafe), drawer = num(di.value);
+    if (num(si.value) != null) lastSafe = num(si.value);
+    const df = box.querySelector('[data-diff]');
+    if (drawer == null) { df.innerHTML = ''; return; }
+    const diff = (safe ?? 0) + drawer - run;
+    df.innerHTML = diff === 0 ? '<span class="ok">✓ 正確</span>' : diff > 0 ? `<span class="over">多 ${fmt(diff)} 元</span>` : `<span class="short">少 ${fmt(-diff)} 元</span>`;
+  });
   $('sMonth').textContent = fmt(monthSum);
   $('sBal').textContent = fmt(carry + monthSum);
   $('sProfit').textContent = fmt(prof);
@@ -443,6 +468,23 @@ $('days').addEventListener('focusout', e => {
     i.value = String(-a); i.dispatchEvent(new Event('input', { bubbles: true }));
     toast('退修金額已自動改為負數');
   }
+});
+
+// 點錢：保險櫃（手動，沒填沿用前一天）＋抽屜現金 → 與帳上結餘比對
+const cashTimers = {};
+$('days').addEventListener('input', e => {
+  const i = e.target.closest('input[data-c]'); if (!i) return;
+  const d = i.closest('[data-cash]').dataset.cash;
+  cash[d] = { ...(cash[d] || {}), [i.dataset.c]: i.value.trim() };
+  totals();
+  clearTimeout(cashTimers[d]);
+  cashTimers[d] = setTimeout(async () => {
+    try {
+      await setDoc(doc(db, 'ledger_cash', `${$('branch').value}_${d}`), { bm: bm(), branch: $('branch').value, date: d,
+        safe: cash[d].safe ?? '', drawer: cash[d].drawer ?? '', updatedAt: new Date().toISOString(), updatedBy: auth.currentUser.email });
+      setSync('已同步');
+    } catch (er) { toast('⚠️ 點錢儲存失敗：' + er.message); }
+  }, 700);
 });
 
 // Enter → 下一列同一欄
@@ -680,6 +722,17 @@ async function importXlsx(file) {
 
 /* ─── 日報圖片：產生當天報表圖片，下載或直接分享到 LINE 群組（不扣訊息額度）─── */
 const maskPhone = p => { const d = String(p || '').replace(/\D/g, ''); return d.length >= 7 ? d.slice(0, 4) + '***' + d.slice(-3) : (p || ''); };
+function effSafe(d) {   // 當天保險櫃金額（沒填就沿用前一天）
+  const prev = daysList().filter(x => x <= d).reverse().find(x => num(cash[x]?.safe) != null);
+  return prev ? num(cash[prev].safe) : null;
+}
+function cashLine(d, bal) {
+  const drawer = num(cash[d]?.drawer); if (drawer == null) return '';
+  const safe = effSafe(d) ?? 0, diff = safe + drawer - bal;
+  return `<div style="display:flex;gap:18px;align-items:center;border:1px dashed #c9b26b;background:#fffbea;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:15px">
+    <b>💰 點錢</b><span>保險櫃 <b>${fmt(safe)}</b></span><span>＋ 抽屜現金 <b>${fmt(drawer)}</b></span><span>＝ <b>${fmt(safe + drawer)}</b></span>
+    <span style="margin-left:auto;font-weight:800;color:${diff === 0 ? '#15803d' : diff > 0 ? '#1d4ed8' : '#c00'}">${diff === 0 ? '✓ 與帳上結餘相符' : diff > 0 ? '多 ' + fmt(diff) + ' 元' : '少 ' + fmt(-diff) + ' 元'}</span></div>`;
+}
 function snapHTML(d, mask) {
   const carry = num($('carry').value) ?? 0;
   const before = daysList().filter(x => x < d).reduce((a, x) => a + dayRows(x).reduce((b, r) => b + (num(r.amount) ?? 0), 0), 0);
@@ -699,6 +752,7 @@ function snapHTML(d, mask) {
       ${[['前日結餘', carry + before], ['銷售收入', sales], ['支出／退修', exp], ['本日合計', sum], ['本日毛利', prof], ['本日結餘', carry + before + sum]].map(([k, v], i) =>
         `<div style="flex:1;border:1px solid #ddd;border-radius:8px;padding:7px 10px;${i === 5 ? 'background:#16181d;color:#fff;border-color:#16181d' : ''}"><div style="font-size:12px;opacity:.75">${k}</div><div style="font-size:21px;font-weight:800;${v < 0 && i !== 5 ? 'color:#c00' : ''}">${fmt(v)}</div></div>`).join('')}
     </div>
+    ${cashLine(d, carry + before + sum)}
     <table style="border-collapse:collapse;width:100%;font-size:14px">
       <tr style="background:#f1f1f1;font-weight:700;text-align:center">${['#', '售出品項', '金額', '接待', '經手', '備註', '成本', '毛利', '連絡電話', '單號'].map(x => c(x)).join('')}</tr>
       ${rs.map((r, i) => { const a = num(r.amount); return `<tr>${c(i + 1, 'text-align:center;color:#888')}${c(r.item)}${c(m(a), 'text-align:right;' + (a < 0 ? 'color:#c00' : ''))}${c(r.recv, 'text-align:center')}${c(r.handler, 'text-align:center')}${c(r.note)}${c(m(num(r.cost)), 'text-align:right')}${c(m(profit(r)), 'text-align:right')}${c(mask ? maskPhone(r.phone) : r.phone)}${c(r.ticket)}</tr>`; }).join('')}
@@ -883,7 +937,9 @@ function buildPages(fromDate) {
 }
 function monthLabel() { const [y, m] = $('month').value.split('-'); return { y, m: Number(m) }; }
 
+let pagesRef = [];
 function printHTML(pages) {
+  pagesRef = pages;
   const { y, m } = monthLabel(), br = $('branch').value;
   const pm = m === 1 ? 12 : m - 1;
   const col = '<colgroup><col style="width:8%"><col style="width:37%"><col style="width:7.5%"><col style="width:4.5%"><col style="width:4.5%"><col style="width:8.5%"><col style="width:6%"><col style="width:6%"><col style="width:10%"><col style="width:8%"></colgroup>';
@@ -903,6 +959,11 @@ function printHTML(pages) {
     for (let i = p.lines.length; i < PER_PAGE; i++) h += `<tr>${cell('').repeat(10)}</tr>`;
     h += `<tr class="tot">${cell('合計', 'c')}${cell('')}${cell(money(p.close), 'r')}${cell('').repeat(7)}</tr>`;
     h += `<tr>${cell('零用金', 'c')}${cell('').repeat(9)}</tr>`;
+    const lastD = p.lines.filter(l => l.d).at(-1)?.d;
+    if (p === pagesRef.at(-1) && lastD && num(cash[lastD]?.drawer) != null) {
+      const sf = effSafe(lastD) ?? 0, dr = num(cash[lastD].drawer), df = sf + dr - p.close;
+      h += `<tr>${cell('')}${cell('保險櫃')}${cell(money(sf), 'r')}${cell('').repeat(7)}</tr><tr>${cell('')}${cell('現金')}${cell(money(dr), 'r')}${cell('').repeat(7)}</tr><tr>${cell('')}${cell(df === 0 ? '相符' : df > 0 ? '多錢' : '少錢')}${cell(money(df), 'r')}${cell('').repeat(7)}</tr>`;
+    }
     h += `<tr class="tot">${cell('合計', 'c')}${cell('')}${cell(money(p.close), 'r')}${cell('').repeat(7)}</tr>`;
     return h + '</table></div>';
   }).join('');
