@@ -649,15 +649,28 @@ function quoteEvent_(ev, token, props) {
   var owner = props.getProperty('QUOTE_OWNER') || '';
   if (src.type === 'user') {
     if (text === '我是老闆') {
-      if (!owner) { props.setProperty('QUOTE_OWNER', uid); reply_(ev.replyToken, token, '✅ 已設定您為老闆。\n之後您在群組報的價會記成「我的報價」，對象預設是群組名稱；同行報的價記成「同行報價」。\n\n要指定對象可以寫：13 pro 感應排線 3000（大昌）或 @大昌 13 pro 感應排線 3000\n\n也可以直接私訊我報價，我會回覆記錄結果。'); }
+      if (!owner) { props.setProperty('QUOTE_OWNER', uid); reply_(ev.replyToken, token, '✅ 已設定您為老闆。\n之後您在群組報的價會記成「我的報價」，對象預設是群組名稱；同行報的價記成「同行報價」。\n\n要指定對象可以寫：13 pro 感應排線 3000（大昌）或 @大昌 13 pro 感應排線 3000\n\n也可以直接私訊我報價，我會回覆記錄結果。\n\n店員要加入：請店員私訊我「我是店員' + (props.getProperty('QUOTE_KEY') || '').slice(-4) + '」'); }
       else if (owner === uid) reply_(ev.replyToken, token, '您已經是老闆囉 👍');
       return;
     }
+    var code = (props.getProperty('QUOTE_KEY') || '').slice(-4);
+    if (code && text.replace(/\s+/g, '') === '我是店員' + code) {
+      var team = teamIds_(props); if (team.indexOf(uid) < 0) { team.push(uid); props.setProperty('QUOTE_TEAM', team.join(',')); }
+      reply_(ev.replyToken, token, '✅ 已加入店員。之後您在群組回的價格也會記成「我們的報價」。'); return;
+    }
     if (uid !== owner) return;            // 私訊只處理老闆
   }
-  var mine = !!uid && uid === owner;
+  var mine = !!uid && (uid === owner || teamIds_(props).indexOf(uid) >= 0);
+  var gid0 = src.groupId || src.roomId || '';
+  // 群組裡客人／同行的問題：記下最近問的機型、維修項目，等我們只回「800」時拿來配對
+  if (gid0 && !mine) rememberAsk_(gid0, text, memberName_(src, token));
   var items = parseQuoteLines_(text);
   if (!mine) items = items.filter(function (q) { return !q.review; });   // 同行訊息：機型＋零件＋價格都有才記
+  // 我們在群組只回價格（例：店員問「A71 電池 $?」→ 回「800 要訂」）→ 用前面的問題補上機型／項目
+  if (mine && gid0 && (!items.length || items.every(function (q) { return q.review; }))) {
+    var ctxItems = contextQuotes_(gid0, text);
+    if (ctxItems.length) items = ctxItems;
+  }
   if (!items.length) {
     if (src.type === 'user') reply_(ev.replyToken, token, '沒有讀到報價 🤔\n格式例：13 pro 感應排線 3000（一行一項）');
     return;
@@ -670,11 +683,73 @@ function quoteEvent_(ev, token, props) {
     createDoc_('quotes', { ts: now.toISOString(), date: Utilities.formatDate(now, 'Asia/Taipei', 'yyyy-MM-dd'),
       who: mine ? 'me' : 'peer', speaker: speaker, groupId: gid, group: group,
       model: q.model, part: q.part, price: q.price, raw: q.raw, review: q.review, msgId: ev.message.id + '_' + i,
-      kind: q.kind, target: q.target || (mine && src.groupId ? group : '') });
+      kind: q.kind, target: q.target || (mine && src.groupId ? shortTarget_(group) : ''), asker: q.asker || '' });
   });
   if (src.type === 'user') reply_(ev.replyToken, token, '✅ 已記錄 ' + items.length + ' 筆：\n' + items.map(function (q) {
     return '・' + (q.model || '（機型？）') + ' ' + (q.part || '（零件？）') + ' $' + q.price + (q.target ? '（給 ' + q.target + '）' : '') + (q.kind === 'commission' ? '［門號佣金］' : '');
   }).join('\n') + (items.some(function (q) { return q.review; }) ? '\n\n有標「？」的請到報價頁補上。' : ''));
+  if (mine && gid0) clearAsk_(gid0);
+}
+
+/* ═══ 一問一答配對（客人問、我們只回價格）═══ */
+function teamIds_(props) { return (props.getProperty('QUOTE_TEAM') || '').split(',').filter(String); }
+function shortTarget_(g) { return String(g || '').replace(/[\s\-－_]*(手機)?維修.*$/, '').trim() || g; }
+var Q_PARTS_ = [['電池', /電池|便池|膨脹|耗電|蓄電|掉電/], ['螢幕', /螢幕|銀幕|屏幕|綠線|亮線|閃屏|線條|面板|液晶|總成|觸控|綠屏|黑屏|破屏|內屏|外屏/],
+  ['充電孔', /充電孔|尾插|尾差|充電口|無法充電|不能充電|充不進|充不了/], ['背蓋', /背蓋|背面|後蓋|背板|背玻|後玻|玻璃/], ['鏡頭', /鏡頭|相機|拍照/],
+  ['主板', /主板|主機板|不開機|無服務|基頻|sim/i], ['泡水', /泡水|進水|落水|受潮/], ['重刷', /重刷|刷機/], ['排線', /排線/],
+  ['喇叭/聽筒', /喇叭|聽筒|麥克風|沒聲音|收音|話筒/], ['Face ID', /face ?id|面容/i], ['按鍵', /home ?鍵|開關鍵|按鍵|音量鍵|電源鍵|側鍵/],
+  ['中框', /中框|外框/], ['WiFi/藍牙', /wifi|藍芽|藍牙/i]];
+function partOf_(t) { for (var i = 0; i < Q_PARTS_.length; i++) if (Q_PARTS_[i][1].test(t)) return Q_PARTS_[i][0]; return ''; }
+function ctxModel_(t) {
+  var s = ' ' + String(t).replace(/@\S+/g, ' ').replace(/([\u4e00-\u9fff])([a-z0-9])/gi, '$1 $2').replace(/([a-z0-9])([\u4e00-\u9fff])/gi, '$1 $2')
+    .replace(/[，,。？?！!：:$＄()（）]/g, ' ') + ' ';
+  var m = s.match(/(?:^|\s)((oppo|vivo|redmi|紅米|小米|poco|pixel|sony|xperia|zenfone|asus|realme|nokia|htc|reno|moto|huawei|honor|nothing)\s*(?:reno\s*|note\s*)?[a-z]*\s*\d+[a-z]*(?:\s*(?:pro\+?|plus|ultra|lite|neo|z))?)(?=\s|$)/i);
+  if (m) { var n = m[1].replace(/\s+/g, ' ').trim(); if (/^reno/i.test(n)) n = 'OPPO ' + n; return n.toUpperCase(); }
+  var mm = modelOf_(s);
+  return mm && !/^iPhone 10\b/.test(mm.name) ? mm.name : '';
+}
+function rememberAsk_(gid, text, who) {
+  var c = CacheService.getScriptCache(), k = 'qa_' + gid, o = JSON.parse(c.get(k) || '{}'), now = Date.now();
+  var md = ctxModel_(text), pt = partOf_(text);
+  if (!md && !pt) return;
+  if (md) { o.model = md; o.mt = now; if (!pt) { o.part = ''; } }
+  if (pt) { o.part = pt; o.pt = now; }
+  o.asker = who; c.put(k, JSON.stringify(o), 7200);
+}
+function clearAsk_(gid) { CacheService.getScriptCache().remove('qa_' + gid); }
+function ctxPrices_(t) {
+  t = String(t);
+  if (/[a-z]\d+\s*20[12]\d|20[12]\d\s*(版|年)/i.test(t)) t = t.replace(/20[12]\d/g, ' ');
+  var c = t.replace(/\d+\.\d+/g, ' ').replace(/\d{1,2}[.:]\d\d/g, ' ').replace(/\d+\s*(%|分|點|天|工作天|號|日|月|年|g|小時|h|台|支|個|折)/gi, ' ').replace(/09\d{8}/g, ' ');
+  var re = /(\d{3,5})(?:\s*[-~～到]\s*(\d{3,5}))?/g, m, out = [];
+  while ((m = re.exec(c))) { var a = +m[1], b = m[2] ? +m[2] : 0; if (a >= 200 && a <= 80000 && (!b || b > a)) out.push({ lo: a, txt: b ? a + '-' + b : String(a) }); }
+  return out;
+}
+function contextQuotes_(gid, text) {
+  if (/已收|收到|轉帳|匯款|發票|收款|付款|帳號|總共|合計|找你/.test(text)) return [];
+  var o = JSON.parse(CacheService.getScriptCache().get('qa_' + gid) || '{}'), now = Date.now(), out = [];
+  var cm = o.mt && now - o.mt < 7200000 ? o.model : '', cp = o.pt && now - o.pt < 7200000 ? o.part : '';
+  String(text).split(/\n+/).forEach(function (line) {
+    // 「電池1300 螢幕 原裝9400副廠5500」→ 一段一項
+    var segs = line.split(/(?=原裝|原廠|副廠|拆機|原\s*\d|副\s*\d)|(?=電池|螢幕|尾插|充電孔|背蓋|背板|鏡頭|主板|聽筒|喇叭|排線)/).filter(function (x) { return ctxPrices_(x).length; });
+    if (!segs.length) return;
+    var lastPart = '';
+    segs.forEach(function (seg) {
+      var ps = ctxPrices_(seg); if (!ps.length) return;
+      var part = partOf_(seg) || lastPart || partOf_(line) || cp, model = ctxModel_(seg) || ctxModel_(line) || cm;
+      lastPart = part;
+      if (!model && !part) return;
+      var tags = [];
+      if (/現貨|有貨|有料/.test(line)) tags.push('現貨');
+      if (/要訂|訂貨|客訂|需要訂|調貨|到貨|沒貨/.test(line)) tags.push('需訂貨');
+      if (/副廠|副\s*\d/.test(seg)) tags.push('副廠');
+      if (/原廠|原裝|原\s*\d/.test(seg)) tags.push('原廠');
+      out.push({ raw: (tags.length ? '[' + tags.join('、') + '] ' : '') + line.trim().slice(0, 70) + (ps[0].txt !== String(ps[0].lo) ? ' (' + ps[0].txt + ')' : ''),
+        model: model, part: part, price: ps[0].lo, target: '', kind: /佣金|攜碼|門號|續約|新辦|專案|月租/.test(line) ? 'commission' : 'repair',
+        review: !model || !part, asker: o.asker || '' });
+    });
+  });
+  return out;
 }
 function lineGet_(url, token) {
   var r = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true });
