@@ -72,6 +72,9 @@ textarea{min-height:60px;resize:vertical}
 .chip-blocked{background:#374151;color:#fff}
 .chip-manual{background:#fef3c7;color:#92400e}
 .chip-legacy{background:#f3f4f6;color:#6b7280}
+.chip-refund{background:#ffedd5;color:#9a3412}
+.card.refund{border-left-color:#ea580c;background:#fffaf5}
+.b-refund{background:#ea580c;color:#fff}
 .badge{font-size:12px;font-weight:800;padding:3px 10px;border-radius:99px;white-space:nowrap}
 .b-valid{background:#dcfce7;color:var(--green)}
 .b-expiring{background:#ffedd5;color:var(--orange)}
@@ -135,7 +138,7 @@ th{color:var(--mute);font-weight:600}
 <section id="app" class="hidden">
 <header>
   <div class="hd-row">
-    <div class="logo">復原者 保固管理<small>REPAIR CARE+ SYSTEM · v2026.11.15a</small></div>
+    <div class="logo">復原者 保固管理<small>REPAIR CARE+ SYSTEM · v2026.11.15b</small></div>
     <div class="hd-right">
       <select id="branchFilter">
         <option value="">全部分店</option>
@@ -264,7 +267,7 @@ import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut }
 import { getFirestore, collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-import { BRANCHES, CARE_BIND_WINDOW_DAYS, CATS, autoCategory, parseItems, warrantyFields, recItems, dateFromType, parseD, ymd, normPhone } from './rules.js?v=20261115';
+import { BRANCHES, CARE_BIND_WINDOW_DAYS, CATS, autoCategory, parseItems, warrantyFields, recItems, dateFromType, parseD, ymd, normPhone, refundInfo, refundRecord } from './rules.js?v=20261115b';
 
 /* ════════ 1. Firebase 設定（新專案，與舊系統完全分開）════════ */
 const firebaseConfig = {
@@ -369,9 +372,9 @@ function visible() {
 
 function render() {
   const list = visible();
-  const st = list.map(status);
+  const st = list.filter(r => r.kind !== 'refund').map(status);
   $('stats').innerHTML = `
-    <div class="stat"><b>${list.length}</b><span>總紀錄</span></div>
+    <div class="stat"><b>${st.length}</b><span>總紀錄</span></div>
     <div class="stat"><b style="color:var(--green)">${st.filter(s => s.cls !== 'expired').length}</b><span>保固中</span></div>
     <div class="stat"><b style="color:var(--orange)">${st.filter(s => s.cls === 'expiring').length}</b><span>7 天內到期</span></div>
     <div class="stat"><b style="color:var(--red)">${st.filter(s => s.ci.active).length}</b><span>CARE+ 啟用</span></div>`;
@@ -393,8 +396,39 @@ function render() {
     (total > rows.length ? `<div class="more"><button class="btn btn-ghost btn-sm" data-act="more">顯示更多（共 ${total} 筆）</button></div>` : '');
 }
 
+// 這次維修後來有沒有退修（同電話、同分店，對到原維修日；沒寫日期就對品項）
+const coreItem = t => String(t || '').replace(/^\d{1,2}[\/.]\d{1,2}\s*/, '').replace(/\s+/g, '');
+function refundsOf(r) {
+  return records.filter(x => x.kind === 'refund' && x.phone === r.phone && x.branch === r.branch &&
+    (x.origDate ? x.origDate === r.repairDate : (coreItem(x.origItem) && coreItem(r.type).includes(coreItem(x.origItem)))));
+}
+function refundCard(r) {
+  const orig = records.find(x => x.kind !== 'refund' && x.phone === r.phone && x.branch === r.branch && (r.origDate ? x.repairDate === r.origDate : coreItem(x.type).includes(coreItem(r.origItem))));
+  const amt = Number(String(r.price || '').replace(/[^\d.\-]/g, '') || 0);
+  return `<div class="card refund">
+    <div class="card-top">
+      <div><span class="name">${esc(r.name || '（未填）')}</span>
+        ${r.branch ? `<span class="chip chip-branch">${esc(r.branch)}</span>` : ''}<span class="chip chip-refund">🔁 退修</span>
+        <div class="phone">📞 ${esc(r.phone)}</div></div>
+      <span class="badge b-refund">退修</span>
+    </div>
+    <div class="kv">
+      <div><span>退修日期</span><b>${show(parseD(r.repairDate))}</b></div>
+      <div><span>原維修</span><b>${r.origDate ? show(parseD(r.origDate)) + '　' : ''}${esc(r.origItem || '—')}</b>${orig ? '' : '<span>（系統裡找不到原維修紀錄）</span>'}</div>
+      <div><span>退款金額</span><b>${amt ? 'NT$ ' + Math.abs(amt).toLocaleString() : '未退款'}</b></div>
+    </div>
+    ${r.note ? `<div class="note">📝 處置／原因：${esc(r.note)}</div>` : ''}
+    <div class="row-actions">
+      <button class="btn btn-ghost btn-sm" data-act="edit" data-id="${r.id}">編輯</button>
+      <button class="btn btn-danger btn-sm" data-act="del" data-id="${r.id}">刪除</button>
+    </div>
+  </div>`;
+}
+
 function card(r) {
+  if (r.kind === 'refund') return refundCard(r);
   const s = status(r), ci = s.ci;
+  const rf = refundsOf(r);
   let chips = '';
   if (ci.state === 'line') chips += `<span class="chip chip-care">CARE+ LINE 已綁定</span>`;
   else if (ci.state === 'manual') chips += `<span class="chip chip-manual">CARE+ 人工啟用</span>`;
@@ -426,6 +460,7 @@ function card(r) {
     </div>
     <div class="kv parts">${partRows}</div>
     ${ci.state === 'blocked' ? `<div class="warn">客人目前封鎖了 ${esc(r.branch)} LINE，CARE+ 延長部分暫不適用；客人重新加入好友後自動恢復。一般保固不受影響。</div>` : ''}
+    ${rf.map(x => `<div class="warn" style="background:#fff7ed;border-color:#fdba74;color:#9a3412">🔁 ${show(parseD(x.repairDate))} 退修${x.note ? '：' + esc(x.note) : ''}${Number(String(x.price || '').replace(/[^\d.\-]/g, '') || 0) ? '（退款 NT$ ' + Math.abs(Number(String(x.price).replace(/[^\d.\-]/g, ''))).toLocaleString() + '）' : ''}</div>`).join('')}
     ${r.note ? `<div class="note">📝 ${esc(r.note)}</div>` : ''}
     ${r.followup ? `<div class="note">📌 後續：${esc(r.followup)}</div>` : ''}
     <div class="row-actions">
@@ -548,7 +583,8 @@ function closeEdit() { $('editModal').classList.add('hidden'); editingId = null;
 $('editModal').addEventListener('click', e => { if (e.target.id === 'editModal') closeEdit(); });
 editForm.addEventListener('submit', async e => {
   e.preventDefault();
-  const r = readForm(editForm); if (!r) return;
+  let r = readForm(editForm); if (!r) return;
+  if (records.find(x => x.id === editingId)?.kind === 'refund' || refundInfo(r.type, r.repairDate)) r = refundRecord(r, r.repairDate);
   try {
     await updateDoc(doc(db, 'records', editingId), { ...r, source: 'manual', updatedAt: new Date().toISOString(), updatedBy: auth.currentUser.email });
     toast('✅ 已儲存修改'); closeEdit();
@@ -659,9 +695,10 @@ $('pv-ok').onclick = async () => {
   const toAdd = [];
   pendingRows.forEach(p => {
     if (!p.repairDate) return;
-    const r = { branch: p.branch || fallback, repairDate: p.repairDate, name: p.name || '（未填）', phone: p.phone,
+    let r = { branch: p.branch || fallback, repairDate: p.repairDate, name: p.name || '（未填）', phone: p.phone,
       type: p.type, ...warrantyFields(parseItems(p.type), 0), price: p.price, note: p.note,
       careManual: false, source: 'excel', importFile: pendingFile, bookedDate: p.bookedDate || '', createdAt: new Date().toISOString(), createdBy: auth.currentUser.email };
+    if (refundInfo(p.type, p.bookedDate || p.repairDate)) r = refundRecord(r, p.bookedDate || p.repairDate);
     if (exist.has(key(r))) return;
     exist.add(key(r)); toAdd.push(r);
   });

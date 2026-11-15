@@ -78,3 +78,20 @@ export function dateFromType(type, bookedDate) {
 export function parseD(s) { const [y, m, d] = String(s).slice(0, 10).split('-').map(Number); return new Date(y, m - 1, d); }
 export function ymd(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
 export function normPhone(p) { let s = String(p || '').replace(/\D/g, ''); if (s.length === 9 && s[0] === '9') s = '0' + s; return s; }
+
+// 退修：品項以「退修／退貨／退款」開頭，例「退修 10/27 13電池/雄0908」
+// → 在保固系統多一筆「退修」紀錄（原本的保固不取消），並對到原本那次維修
+export const REFUND_RE = /^\s*(退修|退貨|退款)[\s:：\-]*/;
+export function refundInfo(type, bookedDate) {
+  const s = String(type || '');
+  if (!REFUND_RE.test(s)) return null;
+  const rest = s.replace(REFUND_RE, '').trim();
+  const origDate = dateFromType(rest, bookedDate);
+  const origItem = rest.replace(/^\d{1,2}[\/.]\d{1,2}\s*/, '').trim();
+  return { origDate, origItem };
+}
+export function refundRecord(base, bookedDate) {
+  const info = refundInfo(base.type, bookedDate) || { origDate: '', origItem: '' };
+  return { ...base, kind: 'refund', repairDate: bookedDate, bookedDate, origDate: info.origDate, origItem: info.origItem,
+    category: 'none', baseDays: 0, careDays: 0, items: [{ category: 'none', baseDays: 0, careDays: 0 }], itemsCode: 'none:0:0' };
+}

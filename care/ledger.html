@@ -118,7 +118,7 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
     <div id="days"></div>
     <div class="add-day">
       <b>新增日期</b><input type="date" id="newDate"><button class="btn ghost" id="addDayBtn">＋ 加入</button>
-      <span class="hint">打字就會自動儲存；品項有電話的會自動建立保固紀錄。按 Enter 跳到下一列。支出請寫「支出:廠商」、金額打負數。</span>
+      <span class="hint">打字就會自動儲存；品項有電話的會自動建立保固紀錄。按 Enter 跳到下一列。支出請寫「支出:廠商」、金額打負數。退修請寫「退修 10/27 13電池/雄0908」＋電話，原因寫在備註，保固系統會多一筆退修紀錄。</span>
     </div>
   </main>
 </section>
@@ -131,7 +131,7 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, query, where, getDocs, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { CATS, parseItems, warrantyFields, dateFromType, ymd, normPhone } from './rules.js?v=20261115';
+import { CATS, parseItems, warrantyFields, dateFromType, ymd, normPhone, refundInfo, refundRecord } from './rules.js?v=20261115b';
 
 const app = initializeApp({
   apiKey: "AIzaSyD04ZMXIt8Oo3hjm5qsMaKiLXYzp_9YKwA", authDomain: "care-warranty.firebaseapp.com",
@@ -154,8 +154,9 @@ const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const num = v => { const n = Number(String(v ?? '').replace(/[,\s]/g, '')); return String(v ?? '').trim() === '' || isNaN(n) ? null : n; };
 const fmt = n => n == null ? '' : Number(n).toLocaleString('en-US');
+const isRefund = r => !!refundInfo(r.item, r.date);
 const isExpense = r => /^支出/.test(String(r.item || '').trim()) || (num(r.amount) ?? 0) < 0;
-const profit = r => { const a = num(r.amount); if (a == null || isExpense(r)) return null; return a - Math.abs(num(r.cost) ?? 0); };
+const profit = r => { const a = num(r.amount); if (a == null || isExpense(r) || isRefund(r)) return null; return a - Math.abs(num(r.cost) ?? 0); };
 const bm = () => `${$('branch').value}_${$('month').value}`;
 function toast(m) { const t = $('toast'); t.textContent = m; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2600); }
 function setSync(s) { $('sync').textContent = s; }
@@ -250,6 +251,12 @@ function rowHTML(r, ghost) {
   </tr>`;
 }
 function wtyChip(r) {
+  if (isRefund(r)) {
+    const ph = normPhone(r.phone);
+    if (!/^09\d{8}$/.test(ph)) return '<span class="wty warn">退修：請填電話</span>';
+    const info = refundInfo(r.item, r.date);
+    return `<span class="wty warn">🔁 退修紀錄${info.origDate ? '（原 ' + info.origDate.slice(5).replace('-', '/') + '）' : ''}</span>`;
+  }
   if (isExpense(r) || !String(r.item || '').trim()) return '';
   const ph = normPhone(r.phone);
   if (!ph) return '<span class="wty none">無電話</span>';
@@ -368,17 +375,20 @@ async function save(id) {
 async function syncWarranty(id, r) {
   const ref = doc(db, 'records', 'L' + id);
   const phone = normPhone(r.phone);
-  if (isExpense(r) || !r.item || !/^09\d{8}$/.test(phone)) {
+  const refund = isRefund(r);
+  if ((!refund && isExpense(r)) || !r.item || !/^09\d{8}$/.test(phone)) {
     if (rows[id]?._hadRec !== false) { await deleteDoc(ref); if (rows[id]) rows[id]._hadRec = false; }   // 不存在也不會出錯
     return;
   }
   const repairDate = dateFromType(r.item, r.date) || r.date;
-  await setDoc(ref, {
+  let rec = {
     branch: r.branch, repairDate, bookedDate: r.date, name: (r.ticket || '').replace(/[RS]$/, '') || '（未填）',
     phone, type: r.item, ...warrantyFields(parseItems(r.item), 0), price: r.amount, note: r.note,
     source: 'ledger', ledgerId: id, createdAt: r.createdAt, createdBy: r.createdBy,
-    updatedAt: r.updatedAt, updatedBy: r.updatedBy
-  }, { merge: true });
+    updatedAt: r.updatedAt, updatedBy: r.updatedBy, kind: 'repair'
+  };
+  if (refund) rec = refundRecord(rec, r.date);
+  await setDoc(ref, rec, { merge: true });
   if (rows[id]) rows[id]._hadRec = true;
 }
 
