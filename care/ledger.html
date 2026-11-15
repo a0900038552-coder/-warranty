@@ -156,7 +156,13 @@ const num = v => { const n = Number(String(v ?? '').replace(/[,\s]/g, '')); retu
 const fmt = n => n == null ? '' : Number(n).toLocaleString('en-US');
 const isRefund = r => !!refundInfo(r.item, r.date);
 const isExpense = r => /^支出/.test(String(r.item || '').trim()) || (num(r.amount) ?? 0) < 0;
-const profit = r => { const a = num(r.amount); if (a == null || isExpense(r) || isRefund(r)) return null; return a - Math.abs(num(r.cost) ?? 0); };
+// 毛利：一般銷售 = 金額 − 成本（成本打正負數都可以）；退修 = 金額 ＋ 成本（照 Excel，金額負數、成本正數 → 毛利負數）；支出不算
+const profit = r => {
+  const a = num(r.amount), c = num(r.cost);
+  if (isRefund(r)) return a == null && c == null ? null : (a ?? 0) + (c ?? 0);
+  if (a == null || isExpense(r)) return null;
+  return a - Math.abs(c ?? 0);
+};
 const bm = () => `${$('branch').value}_${$('month').value}`;
 function toast(m) { const t = $('toast'); t.textContent = m; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2600); }
 function setSync(s) { $('sync').textContent = s; }
