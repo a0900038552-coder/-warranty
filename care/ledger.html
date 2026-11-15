@@ -147,7 +147,7 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
     <div id="days"></div>
     <div class="add-day">
       <b>新增日期</b><input type="date" id="newDate"><button class="btn ghost" id="addDayBtn">＋ 加入</button>
-      <span class="hint">打字就會自動儲存；品項有電話的會自動建立保固紀錄。按 Enter 跳到下一列。支出請寫「支出:廠商」、金額打負數。退修請寫「退修 10/27 13電池/雄0908」＋電話，原因寫在備註，保固系統會多一筆退修紀錄。</span>
+      <span class="hint">打字就會自動儲存；品項有電話的會自動建立保固紀錄。按 Enter 跳到下一列。支出請寫「支出:廠商」，金額直接打數字即可（會自動轉負數）。退修請寫「退修 10/27 13電池/雄0908」＋電話，原因寫在備註，保固系統會多一筆退修紀錄。</span>
     </div>
   </main>
 </section>
@@ -274,11 +274,11 @@ function rowHTML(r, ghost) {
   const v = f => esc(r[f] ?? '');
   return `<tr data-id="${r.id}" data-date="${r.date}" class="${ghost ? 'ghost' : ''}${!ghost && isExpense(r) ? ' exp' : ''}">
     <td><input data-f="item" value="${v('item')}" placeholder="${ghost ? '輸入品項…（例：13 電池/雄0915、支出:鴻勝）' : ''}"></td>
-    <td class="num"><input data-f="amount" value="${v('amount')}" inputmode="numeric"></td>
+    <td class="num"><input data-f="amount" value="${v('amount')}" inputmode="text" enterkeyhint="next"></td>
     <td><input data-f="recv" value="${v('recv')}"></td>
     <td><input data-f="handler" value="${v('handler')}"></td>
     <td><input data-f="note" value="${v('note')}"></td>
-    <td class="num"><input data-f="cost" value="${v('cost')}" inputmode="numeric"></td>
+    <td class="num"><input data-f="cost" value="${v('cost')}" inputmode="text" enterkeyhint="next"></td>
     <td class="ro" data-p>${ghost ? '' : fmt(profit(r))}</td>
     <td><input data-f="phone" value="${v('phone')}" inputmode="tel"></td>
     <td><input data-f="ticket" value="${v('ticket')}"></td>
@@ -429,6 +429,17 @@ async function syncWarranty(id, r) {
   await setDoc(ref, rec, { merge: true });
   if (rows[id]) rows[id]._hadRec = true;
 }
+
+// 支出／退修的金額一定是負數：手機鍵盤不好打「-」，離開欄位時自動轉成負數
+$('days').addEventListener('focusout', e => {
+  const i = e.target.closest?.('input[data-f="amount"]'); if (!i) return;
+  const id = i.closest('tr').dataset.id, r = rows[id]; if (!r) return;
+  const a = num(i.value);
+  if (a != null && a > 0 && (/^支出/.test(String(r.item || '').trim()) || isRefund(r))) {
+    i.value = String(-a); i.dispatchEvent(new Event('input', { bubbles: true }));
+    toast('支出／退修金額已自動改為負數');
+  }
+});
 
 // Enter → 下一列同一欄
 $('days').addEventListener('keydown', e => {
