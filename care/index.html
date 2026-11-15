@@ -148,7 +148,7 @@ th{color:var(--mute);font-weight:600}
 <section id="app" class="hidden">
 <header>
   <div class="hd-row">
-    <div class="logo">復原者 保固管理<small>REPAIR CARE+ SYSTEM · v2026.11.15e</small></div>
+    <div class="logo">復原者 保固管理<small>REPAIR CARE+ SYSTEM · v2026.11.15f</small></div>
     <div class="hd-right">
       <select id="branchFilter">
         <option value="">全部分店</option>
@@ -443,7 +443,7 @@ function render() {
 
   const q = $('q').value.trim().toLowerCase();
   let rows = list.filter(r => !q || found.has(r.id) ||
-    (r.phone || '').includes(q.replace(/\D/g, '') || '\u0000') ||
+    (/^[\d\s\-]+$/.test(q) && (r.phone || '').includes(q.replace(/\D/g, '') || '\u0000')) ||   // 只有純數字才比對電話
     (r.name || '').toLowerCase().includes(q) ||
     (r.type || '').toLowerCase().includes(q));
   rows.sort((a, b) => (b.repairDate || '').localeCompare(a.repairDate || ''));
