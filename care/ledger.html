@@ -79,7 +79,7 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
   .pg td{border:.4pt solid #000;height:4.05mm;padding:0 1mm;overflow:hidden;white-space:nowrap;text-overflow:clip;line-height:4mm}
   .pg td.r{text-align:right}
   .pg td.c{text-align:center}
-  .pg tr.hd td{font-weight:700;text-align:center}
+  .pg tr.th td{font-weight:700;text-align:center}
   .pg tr.tot td{font-weight:700}
   .pg .neg{color:#c00}
 }
@@ -443,12 +443,12 @@ function monthLabel() { const [y, m] = $('month').value.split('-'); return { y, 
 function printHTML(pages) {
   const { y, m } = monthLabel(), br = $('branch').value;
   const pm = m === 1 ? 12 : m - 1;
-  const col = '<colgroup><col style="width:9%"><col style="width:41%"><col style="width:8%"><col style="width:4.5%"><col style="width:4.5%"><col style="width:9%"><col style="width:6%"><col style="width:6%"><col style="width:7.5%"><col style="width:6.5%"></colgroup>';
+  const col = '<colgroup><col style="width:8%"><col style="width:37%"><col style="width:7.5%"><col style="width:4.5%"><col style="width:4.5%"><col style="width:8.5%"><col style="width:6%"><col style="width:6%"><col style="width:10%"><col style="width:8%"></colgroup>';
   const cell = (v, cls = '') => `<td class="${cls}">${esc(v ?? '')}</td>`;
   const money = v => v == null || v === '' ? '' : fmt(v);
   return pages.map(p => {
     let h = `<div class="pg"><h1>銷售報表</h1><div class="unit"><span>單位：復原者${esc(br)}</span><span>${y}年${m}月</span></div><table>${col}`;
-    h += `<tr class="hd">${['日期', '售出品項', '金額', '接待人', '經手人', '備註', '成本', '毛利', '連絡電話', '單號'].map(x => cell(x)).join('')}</tr>`;
+    h += `<tr class="th">${['日期', '售出品項', '金額', '接待人', '經手人', '備註', '成本', '毛利', '連絡電話', '單號'].map(x => cell(x, 'c')).join('')}</tr>`;
     h += `<tr>${cell('')}${cell(p.first ? `承${pm}月份金額` : '承前盈餘')}${cell(money(p.open), 'r')}${cell('').repeat(7)}</tr>`;
     p.lines.forEach(l => {
       if (l.k === 'tot') h += `<tr class="tot">${cell('合計', 'c')}${cell('')}${cell('')}${cell('')}${cell('')}${cell(money(l.sum), 'r')}${cell('')}${cell(money(l.prof), 'r')}${cell('')}${cell('')}</tr>`;
