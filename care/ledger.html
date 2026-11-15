@@ -64,6 +64,32 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
 .modal .box h3{margin-bottom:10px}
 .modal label{display:flex;gap:8px;align-items:center;margin:6px 0}
 
+/* ═══ 月統計 ═══ */
+#stats{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px;--s1:#2a78d6;--neg:#eb6834}
+#stats h3{font-size:15px;margin-bottom:8px}
+.st-bar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.seg{display:inline-flex;border:1px solid #d1d5db;border-radius:8px;overflow:hidden}
+.seg button{border:0;background:#fff;padding:5px 12px;cursor:pointer;font-size:13px}
+.seg button.on{background:var(--ink);color:#fff}
+.tiles{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.tiles div{border:1px solid var(--line);border-radius:10px;padding:8px 14px;min-width:120px}
+.tiles b{display:block;font-size:22px}
+.tiles small{color:var(--mute);font-size:12px}
+.cat{display:grid;grid-template-columns:110px 1fr 230px;gap:10px;align-items:center;padding:3px 0;font-size:13px;cursor:default}
+.cat:hover{background:#f7f8fa}
+.cat .lab{font-weight:600;text-align:right}
+.cat .trk{height:16px;position:relative}
+.cat .bar{height:16px;background:var(--s1);border-radius:0 4px 4px 0;min-width:2px}
+.cat .bar.neg{background:var(--neg)}
+.cat .val{color:#374151;font-variant-numeric:tabular-nums;white-space:nowrap}
+.cat .val small{color:var(--mute)}
+.daily{margin-top:16px}
+.daily svg{width:100%;height:170px;display:block}
+.daily .axis{font-size:10px;fill:#6b7280}
+.daily rect.c{fill:var(--s1)}
+.daily rect.hit{fill:transparent;cursor:default}
+.daily rect.hit:hover + rect.c,.daily g:hover rect.c{opacity:.75}
+#tip{position:fixed;pointer-events:none;background:var(--ink);color:#fff;border-radius:8px;padding:7px 10px;font-size:12px;line-height:1.5;z-index:80;display:none;white-space:nowrap}
 /* ═══ 列印：照 Excel「銷售報表」格式，A4 直式，每頁 63 格 ═══ */
 #print{display:none}
 @media print{
@@ -103,6 +129,7 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
     <select id="branch"><option>楠梓店</option><option>德賢店</option></select>
     <input type="month" id="month">
     <span class="status" id="sync">已同步</span>
+    <button class="hbtn" id="statBtn">📊 月統計</button>
     <button class="hbtn" id="printBtn">🖨 列印</button>
     <button class="hbtn" id="xlsxBtn">⬇ 匯出 Excel</button>
     <a class="hbtn" href="./">← 保固系統</a>
@@ -115,6 +142,7 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
       <div><small>本月毛利</small><b id="sProfit" style="color:var(--green)">0</b></div>
       <div><small>今天筆數</small><b id="sToday">0</b></div>
     </div>
+    <div id="stats" class="hidden"></div>
     <div id="days"></div>
     <div class="add-day">
       <b>新增日期</b><input type="date" id="newDate"><button class="btn ghost" id="addDayBtn">＋ 加入</button>
@@ -124,6 +152,7 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
 </section>
 
 <div id="print"></div>
+<div id="tip"></div>
 <div id="toast"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -318,6 +347,7 @@ function totals() {
   $('sBal').textContent = fmt(carry + monthSum);
   $('sProfit').textContent = fmt(prof);
   $('sToday').textContent = dayRows(ymd(new Date())).length;
+  clearTimeout(totals._st); totals._st = setTimeout(renderStats, 400);
 }
 
 /* ─── 編輯：打字即存 ─── */
@@ -430,6 +460,108 @@ $('addDayBtn').onclick = () => {
 // 離開頁面前把還沒存的送出
 window.addEventListener('beforeunload', e => {
   if (dirty.size) { Object.keys(timers).forEach(id => { clearTimeout(timers[id]); save(id); }); e.preventDefault(); e.returnValue = ''; }
+});
+
+/* ─── 月統計：依品項分類（維修零件、手機、配件、服務）─── */
+const REPAIR_LABEL = { used: '中古機', newphone: '新機', screen: '螢幕／液晶', battery: '電池', port: '尾插', board: '主機板', flex: '排線／聽筒／喇叭', camera: '鏡頭維修' };
+const ORDER = ['中古機', '新機', '螢幕／液晶', '電池', '尾插', '主機板', '排線／聽筒／喇叭', '鏡頭維修', '外觀零件', '保護貼', '保護殼', '線材／充電', '服務', '其他'];
+function statCat(item) {
+  let t = String(item || '').replace(/\s+/g, '');
+  if (/回收|進貨退出|退貨給|房租|收入|出貨|借支|還款|零用金/.test(t)) return '其他收入';   // 不算銷售
+  if (/寄賣|收購/.test(t)) return '中古機';
+  t = t.replace(/充電孔清潔|孔清潔/g, '清潔');
+  const rep = parseItems(t).find(k => REPAIR_LABEL[k]);
+  if (rep) return REPAIR_LABEL[rep];
+  if (/背蓋|後蓋|中框|外殼|按鍵|開機鍵|音量鍵/.test(t)) return '外觀零件';
+  if (/滿玻|玻保|保護貼|玻璃貼|鏡頭貼|霧面|抗藍光|藍寶石/.test(t)) return '保護貼';
+  if (/殼|犀牛盾|惡魔盾|皮套/.test(t)) return '保護殼';
+  if (/線|充電頭|旅充|行動電源|掛繩|耳機|充電器|快充/.test(t)) return '線材／充電';
+  if (/資料轉移|轉移|掃毒|清潔|代工|調整|刷機|軟體|升級|檢測|貼膜|移電|備份/.test(t)) return '服務';
+  return '其他';
+}
+let statMetric = 'rev', statScope = 'one', otherRows = [];
+$('statBtn').onclick = async () => {
+  const on = $('stats').classList.toggle('hidden') === false;
+  $('statBtn').classList.toggle('pri', on);
+  if (on) { if (statScope === 'both') await loadOther(); renderStats(); $('stats').scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+};
+async function loadOther() {
+  const other = $('branch').value === '楠梓店' ? '德賢店' : '楠梓店';
+  const snap = await getDocs(query(collection(db, 'ledger'), where('bm', '==', `${other}_${$('month').value}`)));
+  otherRows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+function statRows() { return Object.values(rows).concat(statScope === 'both' ? otherRows : []).filter(r => String(r.item || '').trim()); }
+
+function renderStats() {
+  if ($('stats').classList.contains('hidden')) return;
+  const all = statRows();
+  const pos = all.filter(r => !isExpense(r) && !isRefund(r) && (num(r.amount) ?? 0) > 0);
+  const sales = pos.filter(r => statCat(r.item) !== '其他收入');
+  const otherInc = pos.filter(r => statCat(r.item) === '其他收入');
+  const refunds = all.filter(r => isRefund(r));
+  const sum = (a, f) => a.reduce((s, r) => s + (f(r) ?? 0), 0);
+  const rev = sum(sales, r => num(r.amount)), prof = sum(sales, profit), refAmt = sum(refunds, r => num(r.amount)), refProf = sum(refunds, profit);
+  // 分類
+  const g = {};
+  sales.forEach(r => { const c = statCat(r.item); (g[c] ||= { c, n: 0, rev: 0, prof: 0 }); g[c].n++; g[c].rev += num(r.amount) ?? 0; g[c].prof += profit(r) ?? 0; });
+  const key = { rev: 'rev', prof: 'prof', n: 'n' }[statMetric];
+  const cats = Object.values(g).sort((a, b) => b[key] - a[key] || ORDER.indexOf(a.c) - ORDER.indexOf(b.c));
+  const max = Math.max(1, ...cats.map(c => Math.abs(c[key])));
+  const unit = statMetric === 'n' ? ' 件' : '';
+  const money = v => (statMetric === 'n' ? v : 'NT$ ' + fmt(v)) + unit;
+  // 每日
+  const days = {};
+  sales.forEach(r => { (days[r.date] ||= { rev: 0, prof: 0, n: 0 }); days[r.date].rev += num(r.amount) ?? 0; days[r.date].prof += profit(r) ?? 0; days[r.date].n++; });
+  const [y, m] = $('month').value.split('-').map(Number), dim = new Date(y, m, 0).getDate();
+  const dv = Array.from({ length: dim }, (_, i) => { const d = `${$('month').value}-${String(i + 1).padStart(2, '0')}`; return { d, ...(days[d] || { rev: 0, prof: 0, n: 0 }) }; });
+  const dkey = statMetric === 'n' ? 'n' : statMetric;
+  const dmax = Math.max(1, ...dv.map(x => x[dkey]));
+  const W = 1000, H = 150, pad = 26, bw = (W - pad) / dim;
+  const scopeName = statScope === 'both' ? '兩店合計' : $('branch').value;
+
+  $('stats').innerHTML = `
+    <div class="st-bar"><h3 style="margin:0 10px 0 0">📊 ${y} 年 ${m} 月 銷售統計（${scopeName}）</h3>
+      <span class="seg" id="segM">${[['rev', '營收'], ['prof', '毛利'], ['n', '件數']].map(([k, l]) => `<button data-k="${k}" class="${statMetric === k ? 'on' : ''}">${l}</button>`).join('')}</span>
+      <span class="seg" id="segS">${[['one', '本店'], ['both', '兩店合計']].map(([k, l]) => `<button data-k="${k}" class="${statScope === k ? 'on' : ''}">${l}</button>`).join('')}</span></div>
+    <div class="tiles">
+      <div><small>營收（不含支出）</small><b>${fmt(rev)}</b></div>
+      <div><small>毛利</small><b>${fmt(prof + refProf)}</b></div>
+      <div><small>毛利率</small><b>${rev ? Math.round((prof + refProf) / rev * 100) : 0}%</b></div>
+      <div><small>銷售筆數</small><b>${sales.length}</b></div>
+      ${otherInc.length ? `<div title="${esc(otherInc.map(r => r.item).join('、'))}"><small>其他收入（不算營收）</small><b style="color:#6b7280">${fmt(sum(otherInc, r => num(r.amount)))}</b></div>` : ''}
+      ${refunds.length ? `<div><small>退修 ${refunds.length} 筆</small><b style="color:#c2410c">${fmt(refAmt)}</b></div>` : ''}
+    </div>
+    ${cats.length ? cats.map(c => `<div class="cat" data-tip="${esc(c.c)}｜${c.n} 件｜營收 NT$ ${fmt(c.rev)}｜毛利 NT$ ${fmt(c.prof)}（${c.rev ? Math.round(c.prof / c.rev * 100) : 0}%）">
+        <div class="lab">${esc(c.c)}</div>
+        <div class="trk"><div class="bar${c[key] < 0 ? ' neg' : ''}" style="width:${Math.abs(c[key]) / max * 100}%"></div></div>
+        <div class="val">${money(c[key])} <small>· ${c.n} 件 · 佔營收 ${rev ? Math.round(c.rev / rev * 100) : 0}%</small></div></div>`).join('')
+      : '<p class="hint">這個月還沒有銷售資料。</p>'}
+    <div class="daily"><div class="hint" style="margin-bottom:4px">每日${{ rev: '營收', prof: '毛利', n: '件數' }[statMetric]}</div>
+      <svg viewBox="0 0 ${W} ${H + 18}" preserveAspectRatio="none" role="img" aria-label="每日${{ rev: '營收', prof: '毛利', n: '件數' }[statMetric]}長條圖">
+        <line x1="${pad}" x2="${W}" y1="${H}" y2="${H}" stroke="#d1d5db" stroke-width="1"/>
+        <text class="axis" x="0" y="10">${statMetric === 'n' ? dmax : fmt(Math.round(dmax / 1000)) + 'k'}</text>
+        ${dv.map((x, i) => {
+          const v = Math.max(0, x[dkey]), h = v / dmax * (H - 8), bx = pad + i * bw + 1, w = Math.max(1, bw - 2);
+          const wd = new Date(x.d + 'T00:00:00').getDay();
+          return `<g data-tip="${Number(x.d.slice(8))} 日（${WD[wd]}）｜營收 NT$ ${fmt(x.rev)}｜毛利 NT$ ${fmt(x.prof)}｜${x.n} 筆">
+            <rect class="hit" x="${pad + i * bw}" y="0" width="${bw}" height="${H}"/>
+            ${h > 0 ? `<path class="c" d="M${bx},${H} V${H - h + Math.min(4, h)} q0,-${Math.min(4, h)} ${Math.min(4, w / 2)},-${Math.min(4, h)} H${bx + w - Math.min(4, w / 2)} q${Math.min(4, w / 2)},0 ${Math.min(4, w / 2)},${Math.min(4, h)} V${H} Z" fill="#2a78d6"/>` : ''}
+            ${(i + 1) % 5 === 0 || i === 0 ? `<text class="axis" x="${pad + i * bw + bw / 2}" y="${H + 14}" text-anchor="middle">${i + 1}</text>` : ''}
+          </g>`;
+        }).join('')}
+      </svg></div>
+    <p class="hint" style="margin-top:8px">分類依品項文字自動判斷（維修零件與保固規則相同）；一列含多項時，以維修零件優先歸類。回收、進貨退出、房租等列為「其他收入」，不算營收。只統計已在「每日登打」的資料。</p>`;
+  $('segM').onclick = e => { const b = e.target.closest('button'); if (b) { statMetric = b.dataset.k; renderStats(); } };
+  $('segS').onclick = async e => { const b = e.target.closest('button'); if (!b) return; statScope = b.dataset.k; if (statScope === 'both') await loadOther(); renderStats(); };
+}
+// 滑過顯示數字
+document.addEventListener('mousemove', e => {
+  const t = e.target.closest?.('[data-tip]'), tip = $('tip');
+  if (!t || !$('stats').contains(t)) { tip.style.display = 'none'; return; }
+  tip.innerHTML = t.dataset.tip.split('｜').map((x, i) => i ? x : `<b>${x}</b>`).join('<br>');
+  tip.style.display = 'block';
+  tip.style.left = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8) + 'px';
+  tip.style.top = (e.clientY + 14) + 'px';
 });
 
 /* ─── 列印／匯出：照原本 Excel「銷售報表」格式 ─── */
