@@ -274,6 +274,7 @@ th{color:var(--mute);font-weight:600}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { ask, askText } from './ask.js?v=20261116';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch, query, where, getDocs, getCountFromServer, limit }
@@ -684,7 +685,7 @@ editForm.addEventListener('submit', async e => {
 
 async function delRecord(id) {
   const r = records.find(x => x.id === id); if (!r) return;
-  if (!confirm(`確定刪除「${r.name}／${r.type}」這筆紀錄？刪除後無法復原。`)) return;
+  if (!await ask(`確定刪除「${r.name}／${r.type}」這筆紀錄？刪除後無法復原。`)) return;
   try { await deleteDoc(doc(db, 'records', id)); found.delete(id); mergeRecords(); render(); refreshCount(); toast('已刪除'); }
   catch (er) { toast('⚠️ 刪除失敗：' + er.message); }
 }
@@ -857,7 +858,7 @@ $('legacyFile').onchange = e => {
     });
     if (!toAdd.length) return toast('沒有新的資料需要搬移');
     if (toAdd.length > 18000) return toast('⚠️ 超過單日寫入額度，請把檔案分成兩半分兩天匯入');
-    if (!confirm(`要從舊系統搬入 ${toAdd.length} 筆紀錄嗎？（沒有分店標記的會歸到楠梓店）\n\n筆數多時需要一兩分鐘，請不要關閉頁面。`)) return;
+    if (!await ask(`要從舊系統搬入 ${toAdd.length} 筆紀錄嗎？（沒有分店標記的會歸到楠梓店）\n\n筆數多時需要一兩分鐘，請不要關閉頁面。`)) return;
     try { await batchWrite(toAdd, r => 'LG_' + String(r.legacyId).replace(/[\/\s]/g, '_')); toast(`✅ 已搬入 ${toAdd.length} 筆`); }
     catch (er) { toast('⚠️ 搬移失敗：' + er.message); }
   };
@@ -867,7 +868,7 @@ $('legacyFile').onchange = e => {
 /* ════════ 8b. 依最新規則重新計算 ════════ */
 $('recalcBtn').onclick = async () => {
   const changes = [];
-  if (!confirm('會讀取所有 Excel 匯入的紀錄並依最新規則重算，資料多時會用掉較多讀取額度。確定嗎？')) return;
+  if (!await ask('會讀取所有 Excel 匯入的紀錄並依最新規則重算，資料多時會用掉較多讀取額度。確定嗎？')) return;
   const all = (await getDocs(query(collection(db, 'records'), where('source', '==', 'excel')))).docs.map(d => ({ id: d.id, ...d.data() }));
   all.forEach(r => {
     const booked = r.bookedDate || r.repairDate;
@@ -877,7 +878,7 @@ $('recalcBtn').onclick = async () => {
       changes.push({ id: r.id, data: { repairDate, bookedDate: booked, ...wf } });
   });
   if (!changes.length) return toast('所有紀錄都已是最新規則');
-  if (!confirm(`將更新 ${changes.length} 筆匯入紀錄的保固類別／天數／起算日，確定嗎？`)) return;
+  if (!await ask(`將更新 ${changes.length} 筆匯入紀錄的保固類別／天數／起算日，確定嗎？`)) return;
   try {
     for (let i = 0; i < changes.length; i += 400) {
       const b = writeBatch(db);
@@ -891,7 +892,7 @@ $('recalcBtn').onclick = async () => {
 /* ════════ 9. 匯出 ════════ */
 function download(name, blob) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); }
 $('exJson').onclick = async () => {
-  if (!confirm('完整備份會讀取所有紀錄（筆數多時會用掉較多讀取額度），確定嗎？')) return;
+  if (!await ask('完整備份會讀取所有紀錄（筆數多時會用掉較多讀取額度），確定嗎？')) return;
   const all = (await getDocs(collection(db, 'records'))).docs.map(d => ({ id: d.id, ...d.data() }));
   download(`保固備份_${ymd(new Date())}.json`, new Blob([JSON.stringify({ records: all, care_bindings: bindings, line_users: lineUsers }, null, 2)], { type: 'application/json' }));
 };
@@ -999,15 +1000,15 @@ $('bkList').addEventListener('click', async e => {
   const type = btn.dataset.bk, req = { id: b.id, type };
   if (type === 'confirm') {
     const t = b.proposedTime && b.status === 'proposed' ? b.proposedTime : b.wish;
-    if (!confirm(`確認預約並用 LINE 通知 ${b.name}？\n\n時間：${t}`)) return;
+    if (!await ask(`確認預約並用 LINE 通知 ${b.name}？\n\n時間：${t}`)) return;
     req.time = t;
   } else if (type === 'propose') {
     const r = await pickTime(b.wish); if (!r) return; Object.assign(req, r);
   } else if (type === 'decline') {
-    const r = prompt(`婉拒 ${b.name} 的預約，並用 LINE 通知。\n原因（可空白，會顯示給客人）：`, '');
+    const r = await askText(`婉拒 ${b.name} 的預約，並用 LINE 通知。\n原因（可空白，會顯示給客人）：`, '');
     if (r === null) return; req.reason = r.trim();
   } else if (type === 'cancel') {
-    if (!confirm(`取消 ${b.name} 的預約？\n\n只會改成「已取消」，不會傳 LINE 給客人、不扣訊息額度。`)) return;
+    if (!await ask(`取消 ${b.name} 的預約？\n\n只會改成「已取消」，不會傳 LINE 給客人、不扣訊息額度。`)) return;
   }
   btn.closest('.row-actions').querySelectorAll('button').forEach(x => x.disabled = true);
   try {

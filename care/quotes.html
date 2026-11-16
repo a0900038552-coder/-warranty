@@ -141,6 +141,7 @@ function modelOf_(s) {
 </script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { ask } from './ask.js?v=20261116';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 const app = initializeApp({ apiKey: "AIzaSyD04ZMXIt8Oo3hjm5qsMaKiLXYzp_9YKwA", authDomain: "care-warranty.firebaseapp.com", projectId: "care-warranty",
@@ -223,7 +224,7 @@ $('recent').addEventListener('change', async e => {
 });
 $('recent').addEventListener('click', async e => {
   const b = e.target.closest('[data-del]'); if (!b) return;
-  const r = quotes.get(b.dataset.del); if (!confirm(`刪除這筆？\n${r.model} ${r.part} ${fmt(r.price)}`)) return;
+  const r = quotes.get(b.dataset.del); if (!await ask(`刪除這筆？\n${r.model} ${r.part} ${fmt(r.price)}`)) return;
   try { await deleteDoc(doc(db, 'quotes', r.id)); toast('已刪除'); } catch (er) { toast('⚠️ ' + er.message); }
 });
 $('paste').oninput = () => { const it = parseQuoteLines_($('paste').value); $('pv').textContent = it.length ? '讀到：' + it.map(q => `${q.model || '機型？'} ${q.part || '零件？'} $${q.price}${q.target ? '→' + q.target : ''}`).join('、') : ''; };

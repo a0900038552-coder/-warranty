@@ -166,6 +166,7 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { ask } from './ask.js?v=20261116';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, deleteDoc, onSnapshot, query, where, getDocs, getDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { CATS, parseItems, warrantyFields, dateFromType, ymd, normPhone, refundInfo, refundRecord } from './rules.js?v=20261115b';
@@ -506,7 +507,7 @@ $('days').addEventListener('keydown', e => {
 $('days').addEventListener('click', async e => {
   const b = e.target.closest('[data-del]'); if (!b) return;
   const r = rows[b.dataset.del]; if (!r) return;
-  if (!confirm(`刪除這一列？\n\n${r.item || '（空白）'}　${r.amount || ''}\n\n若有建立保固紀錄也會一起刪除。`)) return;
+  if (!await ask(`刪除這一列？\n\n${r.item || '（空白）'}　${r.amount || ''}\n\n若有建立保固紀錄也會一起刪除。`)) return;
   try {
     clearTimeout(timers[r.id]); dirty.delete(r.id);
     await deleteDoc(doc(db, 'ledger', r.id));
@@ -678,7 +679,7 @@ async function importXlsx(file) {
   const sales = p.rows.filter(r => !isExpense(r)).reduce((a, r) => a + (num(r.amount) ?? 0), 0);
   let msg = `📥 ${file.name}\n\n分店：${branch}${p.branch ? '' : '（偵測不到，使用目前選的分店）'}\n月份：${p.ym}\n共 ${p.rows.length} 列（${new Set(p.rows.map(r => r.date)).size} 天）\n承上月金額：${p.carry ?? '（未偵測到）'}\n營收合計：${fmt(sales)}`;
   if (!existing.empty) msg += `\n\n⚠️ 這個月在登打頁已經有 ${existing.size} 筆資料，按「確定」會先刪除這 ${existing.size} 筆，換成 Excel 的內容。`;
-  if (!confirm(msg + '\n\n確定匯入？')) return;
+  if (!await ask(msg + '\n\n確定匯入？')) return;
   setSync('匯入中…');
   try {
     // 1. 清掉該月舊資料（含它們自動建立的保固紀錄）
