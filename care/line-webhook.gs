@@ -843,7 +843,8 @@ function parseGrid_(html) {
     if (trs.length < 2) return;
     var head = (trs[0].match(/<t[dh][^>]*>[\s\S]*?<\/t[dh]>/gi) || []).map(clean);
     if (head.length < 2) return;
-    var brand = (head[0].match(/^(iphone|samsung|三星|google|pixel|sony|asus|華碩|oppo|vivo|小米|紅米|redmi|realme|huawei|華為|nokia|htc|motorola|moto)/i) || [''])[0];
+    var first = head[0].split(/\s+/)[0];
+    var brand = /^(機型|型號|品牌|項目)$/.test(first) ? '' : (/^[A-Za-z\u4e00-\u9fff]+$/.test(first) ? first : '');
     trs.slice(1).forEach(function (tr) {
       var cells = (tr.match(/<t[dh][^>]*>[\s\S]*?<\/t[dh]>/gi) || []).map(clean);
       if (cells.length < 2 || !cells[0]) return;
@@ -852,6 +853,8 @@ function parseGrid_(html) {
         var withBrand = brand && raw.toLowerCase().indexOf(brand.toLowerCase()) < 0 && !/^iphone/i.test(raw) ? brand + ' ' + raw : raw;
         if (/^samsung$/i.test(brand) && /^(z\s*)?(flip|fold)/i.test(raw)) withBrand = raw;
         var name = ctxModel_(withBrand) || withBrand;
+        // 別的品牌的表格，不能被猜成 iPhone（例：NOKIA X、Samsung J7）
+        if (/^iPhone/.test(name) && brand && !/^(iphone|apple)$/i.test(brand)) name = withBrand.replace(/\s+/g, ' ').toUpperCase();
         for (var i = 1; i < cells.length && i < head.length; i++) {
           var m = cells[i].replace(/,/g, '').match(/(\d{3,6})/);
           if (m && Number(m[1]) >= 100) out.push({ model: name, item: head[i], price: Number(m[1]) });
