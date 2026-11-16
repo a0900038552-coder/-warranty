@@ -1146,7 +1146,11 @@ $('printBtn').onclick = async () => {
   let printedTo = '';
   try { const md = await getDoc(doc(db, 'ledger_meta', bm())); printedTo = md.exists() ? (md.data().printedTo || '') : ''; } catch {}
   const next = printedTo ? ymd(new Date(new Date(printedTo + 'T00:00:00').getTime() + 864e5)) : first;
-  const dFrom = clamp(next > clamp(today) ? first : next), dTo = clamp(today);
+  // 一份＝6 天（週一～週六，週日公休剛好一星期）；結束日不超過今天和月底
+  const PRINT_DAYS = 6;
+  const dFrom = clamp(next > clamp(today) ? first : next);
+  const plus = ymd(new Date(new Date(dFrom + 'T00:00:00').getTime() + (PRINT_DAYS - 1) * 864e5));
+  const dTo = clamp([plus, today].sort()[0] < dFrom ? dFrom : [plus, today].sort()[0]);
   const md2 = d => d ? d.slice(5).replace('-', '/') : '';
   const m = document.createElement('div'); m.className = 'modal';
   m.innerHTML = `<div class="box"><h3>🖨 列印銷售報表</h3>
@@ -1154,7 +1158,7 @@ $('printBtn').onclick = async () => {
       <input type="date" id="prFrom" value="${dFrom}" min="${first}" max="${last}" style="border:1px solid #ccc;border-radius:6px;padding:3px"> ～
       <input type="date" id="prTo" value="${dTo}" min="${first}" max="${last}" style="border:1px solid #ccc;border-radius:6px;padding:3px"></label>
     <label style="display:block;margin:6px 0"><input type="radio" name="pr" value="all"> 整個月（${mon}）</label>
-    <p class="hint" style="margin:8px 0 12px">${printedTo ? `上次印到 ${md2(printedTo)}，已自動從 ${md2(dFrom)} 開始。` : '這個月還沒印過。'}區間前面的天數不會印，金額會算進第一頁的「承前盈餘」。格式與原本 Excel 相同（A4 直式、每頁 63 格、每天有合計）。</p>
+    <p class="hint" style="margin:8px 0 12px">${printedTo ? `上次印到 ${md2(printedTo)}，已自動帶入下一份（${md2(dFrom)}～${md2(dTo)}，一份 6 天）。` : `這個月還沒印過，已帶入第一份（${md2(dFrom)}～${md2(dTo)}，一份 6 天）。`}區間前面的天數不會印，金額會算進第一頁的「承前盈餘」。格式與原本 Excel 相同（A4 直式、每頁 63 格、每天有合計）。</p>
     <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn ghost" id="prNo">取消</button><button class="btn" id="prGo">列印</button></div></div>`;
   document.body.appendChild(m);
   ['#prFrom', '#prTo'].forEach(q => m.querySelector(q).onfocus = () => { m.querySelector('input[value=range]').checked = true; });
