@@ -658,13 +658,13 @@ function quoteEvent_(ev, token, props) {
       var team = teamIds_(props); if (team.indexOf(uid) < 0) { team.push(uid); props.setProperty('QUOTE_TEAM', team.join(',')); }
       reply_(ev.replyToken, token, '✅ 已加入店員。之後您在群組回的價格也會記成「我們的報價」。'); return;
     }
-    if (uid !== owner) return;            // 私訊只處理老闆
+    if (uid !== owner && teamIds_(props).indexOf(uid) < 0) return;   // 私訊只處理老闆和已登記的店員
   }
   var mine = !!uid && (uid === owner || teamIds_(props).indexOf(uid) >= 0);
   var gid0 = src.groupId || src.roomId || '';
   // 群組裡客人／同行的問題：記下最近問的機型、維修項目，等我們只回「800」時拿來配對
   if (gid0 && !mine) rememberAsk_(gid0, text, memberName_(src, token), ev.message.id);
-  var items = parseQuoteLines_(text);
+  var items = parseQuoteLines_(src.type === 'user' ? text.replace(/^\s*(記價|記錄|登記)\s*/, '') : text);
   if (!mine) items = items.filter(function (q) { return !q.review; });   // 同行訊息：機型＋零件＋價格都有才記
   // 我們在群組只回價格（例：店員問「A71 電池 $?」→ 回「800 要訂」）→ 用前面的問題補上機型／項目
   if (mine && gid0 && (!items.length || items.every(function (q) { return q.review; }))) {
@@ -1018,7 +1018,10 @@ function parseQuoteLines_(text) {
 function modelOf_(s) {
   var t = String(s), m;
   // iPhone：13 pro、i14pm、iPhone 15 Pro Max、SE3、XR、XS Max、8P
-  if ((m = t.match(/(?:^|\s)((?:iphone\s*|ip\s*|i)?(1[0-9]|[6-9])\s*(pro\s*max|promax|pm|pro|plus|mini|max|p|e)?(?=\s|$|[^\da-z]))/i))) {
+  // 其他品牌先判斷（避免「紅米 note 10」被當成 iPhone）
+  if ((m = t.match(/(?:^|\s)((oppo|vivo|redmi|紅米|小米|mi|pixel|sony|xperia|zf|zenfone|asus|realme|nokia|htc)\s*[a-z]*\s*\d+[a-z]*(?:\s*(?:pro|plus|ultra|lite|5g))?)(?=\s|$)/i)))
+    return { raw: m[1], name: m[1].replace(/\s+/g, ' ').toUpperCase() };
+  if ((m = t.match(/(?:^|\s)((?:iphone\s*|ip\s*|i)?(1[1-9]|[6-9])\s*(pro\s*max|promax|pm|pro|plus|mini|max|p|e)?(?=\s|$|[^\da-z]))/i))) {
     var suf = (m[3] || '').toLowerCase().replace(/\s+/g, '');
     var map = { promax: 'Pro Max', pm: 'Pro Max', pro: 'Pro', plus: 'Plus', p: 'Plus', mini: 'mini', max: 'Max', e: 'e' };
     if (!(Number(m[2]) <= 9 && suf === 'pro'))

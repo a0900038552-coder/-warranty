@@ -114,7 +114,10 @@ function parseQuoteLines_(text) {
 function modelOf_(s) {
   var t = String(s), m;
   // iPhone：13 pro、i14pm、iPhone 15 Pro Max、SE3、XR、XS Max、8P
-  if ((m = t.match(/(?:^|\s)((?:iphone\s*|ip\s*|i)?(1[0-9]|[6-9])\s*(pro\s*max|promax|pm|pro|plus|mini|max|p|e)?(?=\s|$|[^\da-z]))/i))) {
+  // 其他品牌先判斷（避免「紅米 note 10」被當成 iPhone）
+  if ((m = t.match(/(?:^|\s)((oppo|vivo|redmi|紅米|小米|mi|pixel|sony|xperia|zf|zenfone|asus|realme|nokia|htc)\s*[a-z]*\s*\d+[a-z]*(?:\s*(?:pro|plus|ultra|lite|5g))?)(?=\s|$)/i)))
+    return { raw: m[1], name: m[1].replace(/\s+/g, ' ').toUpperCase() };
+  if ((m = t.match(/(?:^|\s)((?:iphone\s*|ip\s*|i)?(1[1-9]|[6-9])\s*(pro\s*max|promax|pm|pro|plus|mini|max|p|e)?(?=\s|$|[^\da-z]))/i))) {
     var suf = (m[3] || '').toLowerCase().replace(/\s+/g, '');
     var map = { promax: 'Pro Max', pm: 'Pro Max', pro: 'Pro', plus: 'Plus', p: 'Plus', mini: 'mini', max: 'Max', e: 'e' };
     if (!(Number(m[2]) <= 9 && suf === 'pro'))
