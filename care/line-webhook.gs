@@ -705,6 +705,9 @@ var WEB_SOURCES = [
   // 傻傻修的價目是圖片：價格由 Claude 看圖登打在 SASA_DATA；每天只檢查圖片有沒有換，換了就在查價時提醒
   { key: 'sasa', name: '傻傻修', url: 'https://www.sasamobile.com.tw/price.html', layout: 'static', updated: '115/08/19',
     imgs: ['202608191408256517', '202608191408364993'] },
+  // CER 手機急診室（台北）：各品牌一頁，每列一個機型、每欄一個維修項目
+  { key: 'cer', name: 'CER(台北)', layout: 'grid', updated: '',
+    urls: ['apple', 'samsung', 'google', 'sony', 'asus', 'oppo', 'mi', 'huawei_etc'].map(function (b) { return 'https://cerphone.com/index.php/quotation_' + b + '/'; }) },
   { key: 'qg', name: 'Q哥', url: 'https://docs.google.com/spreadsheets/d/1-7xeM1y80unFb8XBMJRci1K22XyK-sXYgPYT5H3DX9Q/htmlembed/sheet?headers=false&gid=0', dateRe: /更新日期\s*(?:<[^>]*>\s*)*([\d\/]+)/ }
 ];
 // 機型｜螢幕｜電池（傻傻修 115/08/19 價目圖）
@@ -741,15 +744,18 @@ function refreshWebPrices() {
   var props = PropertiesService.getScriptProperties();
   WEB_SOURCES.forEach(function (src) {
     try {
-      var res = UrlFetchApp.fetch(src.url, { muteHttpExceptions: true, followRedirects: true });
-      if (res.getResponseCode() !== 200) { console.error(src.name + ' HTTP ' + res.getResponseCode()); return; }
-      var html = res.getContentText('UTF-8');
+      var html = (src.urls || [src.url]).map(function (u) {
+        var res = UrlFetchApp.fetch(u, { muteHttpExceptions: true, followRedirects: true });
+        if (res.getResponseCode() !== 200) { console.error(src.name + ' HTTP ' + res.getResponseCode() + ' ' + u); return ''; }
+        return res.getContentText('UTF-8');
+      }).join('\n');
+      if (!html) return;
       if (src.layout === 'static') {
         var same = src.imgs.every(function (id) { return html.indexOf(id) >= 0; });
         props.setProperty('WEB_STALE_' + src.key, same ? '' : '1');
         if (!same) console.error(src.name + '：價目圖已更換，請找 Claude 重新看圖登打');
       }
-      var rows = src.layout === 'static' ? sasaRows_() : src.layout === 'rows' ? parseRowTable_(html, src.prefix || '') : parseWebPrices_(html);
+      var rows = src.layout === 'static' ? sasaRows_() : src.layout === 'rows' ? parseRowTable_(html, src.prefix || '') : src.layout === 'grid' ? parseGrid_(html) : parseWebPrices_(html);
       if (rows.length < 30) { console.error(src.name + ' 只讀到 ' + rows.length + ' 筆，網頁可能改版，這次不更新'); return; }
       var dm = src.dateRe && html.match(src.dateRe), updated = src.updated || (dm ? dm[1] : '');
       var hash = 'v2' + Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify(rows) + updated, Utilities.Charset.UTF_8));
@@ -779,8 +785,8 @@ function refreshWebPrices() {
 }
 function wkey_(m) { return String(m || '').toLowerCase().replace(/iphone/g, '').replace(/\s+/g, ''); }
 function webPart_(it) {
-  var t = String(it), R = [[/電池/, '電池'], [/螢幕|白屏|綠屏/, '螢幕'], [/鏡頭|攝像頭/, '鏡頭'], [/聽筒|揚聲器|喇叭/, '喇叭/聽筒'], [/face ?id|臉部/i, 'Face ID'],
-    [/主機板|主板|搬板/, '主板'], [/尾插|尾部充電|充電孔/, '充電孔'], [/泡水/, '泡水'], [/開機|音量|home|靜音|相機控制/i, '按鍵'],
+  var t = String(it), R = [[/電池/, '電池'], [/螢幕|白屏|綠屏|玻璃破裂|液晶/, '螢幕'], [/鏡頭|攝像頭/, '鏡頭'], [/聽筒|揚聲器|喇叭/, '喇叭/聽筒'], [/face ?id|臉部/i, 'Face ID'],
+    [/主機板|主板|搬板|機板/, '主板'], [/無線充電/, '無線充電'], [/尾插|尾部充電|充電孔|充電/, '充電孔'], [/泡水/, '泡水'], [/開機|音量|home|靜音|相機控制/i, '按鍵'],
     [/wifi|藍芽|藍牙/i, 'WiFi/藍牙'], [/背蓋|背板|中框/, '背蓋'], [/震動|振動/, '震動器'], [/無線充電/, '無線充電'], [/sim/i, 'SIM']];
   for (var i = 0; i < R.length; i++) if (R[i][0].test(t)) return R[i][1];
   return t;
@@ -824,6 +830,33 @@ function parseRowTable_(html, prefix) {
         var m = cells[i].replace(/,/g, '').match(/^\s*\$?\s*(\d{2,6})/);
         if (m) out.push({ model: cells[0], item: (/原廠/.test(head[i]) ? '' : prefix) + head[i], price: Number(m[1]) });
       }
+    });
+  });
+  return out;
+}
+// 通用格子表：第一列＝表頭（第一格是品牌，其餘是維修項目），之後每列＝機型＋各項價格
+// 機型格可能寫「小米 9T／9T Pro」→ 拆成兩個機型；價格格可能寫「3500／2800」「京東方8000/三星11000」→ 取第一個數字
+function parseGrid_(html) {
+  var out = [], clean = function (c) { return c.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&#8211;|&#8212;/g, '-').replace(/\s+/g, ' ').trim(); };
+  (html.match(/<table[\s\S]*?<\/table>/gi) || []).forEach(function (tb) {
+    var trs = tb.match(/<tr[\s\S]*?<\/tr>/gi) || [];
+    if (trs.length < 2) return;
+    var head = (trs[0].match(/<t[dh][^>]*>[\s\S]*?<\/t[dh]>/gi) || []).map(clean);
+    if (head.length < 2) return;
+    var brand = (head[0].match(/^(iphone|samsung|三星|google|pixel|sony|asus|華碩|oppo|vivo|小米|紅米|redmi|realme|huawei|華為|nokia|htc|motorola|moto)/i) || [''])[0];
+    trs.slice(1).forEach(function (tr) {
+      var cells = (tr.match(/<t[dh][^>]*>[\s\S]*?<\/t[dh]>/gi) || []).map(clean);
+      if (cells.length < 2 || !cells[0]) return;
+      var models = cells[0].replace(/[（(][^）)]*[）)]/g, ' ').split(/[／\/、,]/).map(function (x) { return x.trim(); }).filter(String);
+      models.forEach(function (raw) {
+        var withBrand = brand && raw.toLowerCase().indexOf(brand.toLowerCase()) < 0 && !/^iphone/i.test(raw) ? brand + ' ' + raw : raw;
+        if (/^samsung$/i.test(brand) && /^(z\s*)?(flip|fold)/i.test(raw)) withBrand = raw;
+        var name = ctxModel_(withBrand) || withBrand;
+        for (var i = 1; i < cells.length && i < head.length; i++) {
+          var m = cells[i].replace(/,/g, '').match(/(\d{3,6})/);
+          if (m && Number(m[1]) >= 100) out.push({ model: name, item: head[i], price: Number(m[1]) });
+        }
+      });
     });
   });
   return out;
