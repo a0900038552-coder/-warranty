@@ -495,14 +495,29 @@ $('days').addEventListener('input', e => {
   }, 700);
 });
 
-// Enter → 下一列同一欄
+// 鍵盤移動（像 Excel）：Enter／↓ 下一列、Shift+Enter／↑ 上一列（跨天也可以）；
+// ← → 在游標已經在文字最前／最後時，跳到左／右一欄（否則照常移動游標，方便改字）
 $('days').addEventListener('keydown', e => {
-  if (e.key !== 'Enter' || e.isComposing) return;
+  if (e.isComposing || e.altKey || e.ctrlKey || e.metaKey) return;
   const i = e.target.closest('input[data-f]'); if (!i) return;
-  e.preventDefault();
-  const tr = i.closest('tr'), next = tr.nextElementSibling;
-  const target = next?.querySelector(`input[data-f="${i.dataset.f}"]`) || next?.querySelector('input[data-f="item"]');
-  if (target) target.focus();
+  const k = e.key, tr = i.closest('tr');
+  const go = el => { if (!el) return; e.preventDefault(); el.focus(); try { el.select(); } catch {} };
+  if (k === 'Enter' || k === 'ArrowDown' || k === 'ArrowUp') {
+    const up = k === 'ArrowUp' || (k === 'Enter' && e.shiftKey);
+    const trs = [...document.querySelectorAll('#days tr')].filter(t => t.querySelector('input[data-f]'));
+    const n = trs[trs.indexOf(tr) + (up ? -1 : 1)];
+    if (!n) { if (k === 'Enter') e.preventDefault(); return; }
+    go(n.querySelector(`input[data-f="${i.dataset.f}"]`) || n.querySelector('input[data-f="item"]'));
+    return;
+  }
+  if (k === 'ArrowLeft' || k === 'ArrowRight') {
+    const s0 = i.selectionStart, s1 = i.selectionEnd, len = i.value.length;
+    const all = s0 === 0 && s1 === len;                     // 整格反白時也直接跳欄
+    if (k === 'ArrowLeft' && !(s0 === 0 && s1 === 0) && !all) return;
+    if (k === 'ArrowRight' && !(s0 === len && s1 === len) && !all) return;
+    const ins = [...tr.querySelectorAll('input[data-f]')];
+    go(ins[ins.indexOf(i) + (k === 'ArrowLeft' ? -1 : 1)]);
+  }
 });
 
 $('days').addEventListener('click', async e => {
