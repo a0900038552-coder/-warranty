@@ -147,6 +147,7 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
       <div><small>目前結餘</small><b id="sBal">0</b></div>
       <div><small>本月毛利</small><b id="sProfit" style="color:var(--green)">0</b></div>
       <div><small>今天筆數</small><b id="sToday">0</b></div>
+      <div style="flex:1;min-width:260px" title="接待人分毛利 30%、經手人分 70%（同一人＝100%）。人員名單在「📊 月統計 → ⚙️ 人員設定」"><small>本月人員毛利（接待 30%・經手 70%）</small><div id="sStaff" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:3px"></div></div>
     </div>
     <div id="stats" class="hidden"></div>
     <div id="days"></div>
@@ -385,6 +386,7 @@ function totals() {
   $('sBal').textContent = fmt(carry + monthSum + extras);
   $('sProfit').textContent = fmt(prof);
   $('sToday').textContent = dayRows(ymd(new Date())).length;
+  renderStaffTop();
   clearTimeout(totals._st); totals._st = setTimeout(renderStats, 400);
 }
 
@@ -581,7 +583,7 @@ const SPLIT = { recv: 0.3, handler: 0.7 };
 // 員工編號（接待人／經手人欄位填編號；填名字也會對到同一人）。名單存在資料庫，可在月統計的「⚙️ 人員設定」新增／修改
 let STAFF = { '1': '王又祥', '2': '阿賢', '4': 'APPLE' }, staffEdit = false;
 let staffSub = null;
-function listenStaff() { if (staffSub) return; staffSub = onSnapshot(doc(db, 'settings', 'staff'), s => { if (s.exists() && s.data().list) STAFF = s.data().list; renderStats(); }, () => { staffSub = null; }); }
+function listenStaff() { if (staffSub) return; staffSub = onSnapshot(doc(db, 'settings', 'staff'), s => { if (s.exists() && s.data().list) STAFF = s.data().list; renderStats(); renderStaffTop(); }, () => { staffSub = null; }); }
 async function saveStaff(list) {
   try { await setDoc(doc(db, 'settings', 'staff'), { list, updatedAt: new Date().toISOString(), updatedBy: auth.currentUser.email }); }
   catch (e) { toast('⚠️ 人員名單儲存失敗：' + e.message); }
@@ -601,6 +603,17 @@ function staffSplit(list) {
     else add('（未填）', 'handler', pf);
   });
   return Object.values(p).map(o => ({ ...o, t: o.r + o.h })).sort((a, b) => b.t - a.t);
+}
+// 上方即時顯示：這個月（目前分店）每個人分到的毛利
+function renderStaffTop() {
+  const el = $('sStaff'); if (!el) return;
+  const st = staffSplit(Object.values(rows)), by = Object.fromEntries(st.map(o => [o.name, o.t]));
+  const keys = [...new Set([...Object.keys(STAFF).filter(k => STAFF[k]), ...st.map(o => o.name)])]
+    .sort((a, b) => (Number(a) || 999) - (Number(b) || 999) || a.localeCompare(b));
+  el.innerHTML = keys.map(k => `<span style="background:#f3f4f6;border-radius:8px;padding:3px 10px;white-space:nowrap">
+      <span style="color:var(--mute);font-size:12px">${esc(staffLabel(k))}</span>
+      <b style="display:inline;font-size:17px;margin-left:4px;color:${(by[k] || 0) < 0 ? 'var(--red)' : 'var(--green)'}">${fmt(Math.round(by[k] || 0))}</b></span>`).join('')
+    || '<span class="hint">還沒有毛利資料</span>';
 }
 function renderStats() {
   if ($('stats').classList.contains('hidden')) return;
