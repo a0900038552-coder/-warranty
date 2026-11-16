@@ -1173,7 +1173,14 @@ function backupFolder_() {
   var it = DriveApp.getFoldersByName(BACKUP_FOLDER);
   return it.hasNext() ? it.next() : DriveApp.createFolder(BACKUP_FOLDER);
 }
+// 系統用到的全部資料表（若 Google 不允許自動列出，就用這份清單）
+var BACKUP_COLLECTIONS = ['records', 'bookings', 'care_bindings', 'line_users', 'slot_blocks', 'ledger', 'ledger_meta', 'ledger_cash', 'ledger_bak', 'ledger_bak_rows',
+  'quotes', 'web_prices', 'used_stock', 'settings', 'credit', 'todos'];
 function listCollections_() {
+  try { var got = listCollectionsApi_(); BACKUP_COLLECTIONS.forEach(function (c) { if (got.indexOf(c) < 0) got.push(c); }); return got; }
+  catch (e) { return BACKUP_COLLECTIONS.slice(); }
+}
+function listCollectionsApi_() {
   var ids = [], token = '';
   do {
     var res = fsFetch_(fsBase_() + ':listCollectionIds', { method: 'post', payload: JSON.stringify({ pageSize: 100, pageToken: token }) });
