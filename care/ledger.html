@@ -913,7 +913,6 @@ function snapHTML(d, mask) {
       ${[['前日結餘', carry + before], ['銷售收入', sales], ['支出／退修', exp], ['本日合計', sum], ['本日毛利', prof], ['本日結餘', carry + before + sum + extraD]].map(([k, v], i) =>
         `<div style="flex:1;border:1px solid #ddd;border-radius:8px;padding:7px 10px;${i === 5 ? 'background:#16181d;color:#fff;border-color:#16181d' : ''}"><div style="font-size:12px;opacity:.75">${k}</div><div style="font-size:21px;font-weight:800;${v < 0 && i !== 5 ? 'color:#c00' : ''}">${fmt(v)}</div></div>`).join('')}
     </div>
-    ${cashLine(d, carry + before + sum + extraD)}
     <table style="border-collapse:collapse;width:100%;font-size:14px">
       <tr style="background:#f1f1f1;font-weight:700;text-align:center">${['#', '售出品項', '金額', '接待', '經手', '備註', '成本', '毛利', '連絡電話', '單號'].map(x => c(x)).join('')}</tr>
       ${rs.map((r, i) => { const a = num(r.amount); return `<tr>${c(i + 1, 'text-align:center;color:#888')}${c(r.item)}${c(m(a), 'text-align:right;' + (a < 0 ? 'color:#c00' : ''))}${c(r.recv, 'text-align:center')}${c(r.handler, 'text-align:center')}${c(r.note)}${c(m(num(r.cost)), 'text-align:right')}${c(m(profit(r)), 'text-align:right')}${c(mask ? maskPhone(r.phone) : r.phone)}${c(r.ticket)}</tr>`; }).join('')}
