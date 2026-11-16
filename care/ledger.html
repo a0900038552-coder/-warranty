@@ -225,11 +225,11 @@ let notesT = [], notesC = [], notesOn = false;
 function listenNotes() {
   if (notesOn) return; notesOn = true;
   onSnapshot(query(collection(db, 'todos'), where('done', '==', false)), s => { notesT = s.docs.map(d => d.data()); notesBadge(); });
-  onSnapshot(query(collection(db, 'credit'), where('done', '==', false)), s => { notesC = s.docs.map(d => d.data()); notesBadge(); });
+  onSnapshot(collection(db, 'credit'), s => { notesC = s.docs.map(d => d.data()); notesBadge(); totals(); });
 }
 function notesBadge() {
   const br = $('branch').value, g = {};
-  notesC.filter(c => c.branch === br).forEach(c => { const k = c.supplier || ''; g[k] = g[k] || { r: 0, u: 0, n: 0 }; const a = Number(c.amount) || 0; if (c.kind === 'use') g[k].u += a; else { g[k].r += a; g[k].n++; } });
+  notesC.filter(c => c.branch === br && !c.done).forEach(c => { const k = c.supplier || ''; g[k] = g[k] || { r: 0, u: 0, n: 0 }; const a = Number(c.amount) || 0; if (c.kind === 'use') g[k].u += a; else { g[k].r += a; g[k].n++; } });
   const readyN = Object.values(g).filter(x => x.n && x.r - x.u <= 0).length;
   const n = notesT.filter(t => t.branch === br).length + readyN;
   const b = $('notesBadge'); b.textContent = n; b.classList.toggle('hidden', !n);
@@ -266,7 +266,7 @@ function load() {
     setSync(snap.metadata.hasPendingWrites ? '儲存中…' : '已同步');
   }, er => toast('⚠️ 讀取失敗：' + er.message));
   unsubCash = onSnapshot(query(collection(db, 'ledger_cash'), where('bm', '==', bm())), s => {
-    s.docs.forEach(d => { const x = d.data(); cash[x.date] = { safe: x.safe ?? '', drawer: x.drawer ?? '', extra: x.extra ?? '' }; });
+    s.docs.forEach(d => { const x = d.data(); cash[x.date] = { safe: x.safe ?? '', drawer: x.drawer ?? '', extra: x.extra ?? '', credit: x.credit ?? '' }; });
     totals();
   }, () => {});
   unsubMeta = onSnapshot(doc(db, 'ledger_meta', bm()), async s => {
@@ -352,7 +352,7 @@ function render() {
         ${dayRows(d).map(r => rowHTML(r, false)).join('')}
         ${rowHTML(ghost, true)}
       </table></div>
-      <div class="cash" data-cash="${d}">💰 <b>點錢</b>　帳上結餘 <b data-bal></b>　＝　保險櫃 <input data-c="safe" inputmode="text"> ＋ 抽屜現金 <input data-c="drawer" inputmode="text"> <span data-diff></span>
+      <div class="cash" data-cash="${d}">💰 <b>點錢</b>　帳上結餘 <b data-bal></b>　＝　保險櫃 <input data-c="safe" inputmode="text"> ＋ 抽屜現金 <input data-c="drawer" inputmode="text"> <span title="用購物金進貨、退貨還沒登打的金額：這些進貨帳上已扣錢，但現金沒付出去，所以點錢時要扣掉。空白＝自動從「退貨／待辦」計算">－ 購物金 <input data-c="credit" inputmode="text" style="width:96px"></span> <span data-diff></span>
         <span style="margin-left:auto" title="點錢多出來、找不到原因的錢；填了會算進帳上結餘（少錢可打負數）">多錢 <input data-c="extra" inputmode="text" placeholder="手動填" style="width:90px"></span></div></section>`;
   }).join('') || '<p class="hint" style="padding:20px">這個月還沒有資料，從下方「新增日期」開始。</p>';
   totals();
@@ -385,10 +385,12 @@ function totals() {
   daysList().forEach(d => {
     run += dayRows(d).reduce((a, r) => a + (num(r.amount) ?? 0), 0) + extraOf(d);
     const box = document.querySelector(`[data-cash="${d}"]`); if (!box) return;
-    const c = cash[d] || {}, si = box.querySelector('[data-c=safe]'), di = box.querySelector('[data-c=drawer]'), xi = box.querySelector('[data-c=extra]');
+    const c = cash[d] || {}, si = box.querySelector('[data-c=safe]'), di = box.querySelector('[data-c=drawer]'), xi = box.querySelector('[data-c=extra]'), ci = box.querySelector('[data-c=credit]');
     if (document.activeElement !== si) si.value = c.safe ?? '';
     if (document.activeElement !== di) di.value = c.drawer ?? '';
     if (document.activeElement !== xi) xi.value = c.extra ?? '';
+    if (document.activeElement !== ci) ci.value = c.credit ?? '';
+    const ca = creditAuto(d); ci.placeholder = ca ? fmt(ca) + '（自動）' : '0';
     si.placeholder = lastSafe !== '' ? fmt(lastSafe) + '（沿用）' : '金額';
     di.placeholder = '點完填';
     box.querySelector('[data-bal]').textContent = fmt(run);
@@ -396,7 +398,7 @@ function totals() {
     if (num(si.value) != null) lastSafe = num(si.value);
     const df = box.querySelector('[data-diff]');
     if (drawer == null) { df.innerHTML = ''; return; }
-    const diff = (safe ?? 0) + drawer - run;
+    const diff = (safe ?? 0) + drawer - creditOf(d) - run;
     df.innerHTML = diff === 0 ? '<span class="ok">✓ 正確</span>' : diff > 0 ? `<span class="over">多 ${fmt(diff)} 元</span>` : `<span class="short">少 ${fmt(-diff)} 元</span>`;
   });
   $('sMonth').textContent = fmt(monthSum);
@@ -501,6 +503,10 @@ $('days').addEventListener('focusout', e => {
 // 點錢：保險櫃（手動，沒填沿用前一天）＋抽屜現金 → 與帳上結餘比對
 const cashTimers = {};
 const extraOf = d => num(cash[d]?.extra) ?? 0;
+// 購物金（點錢用，不影響帳上結餘）：到這天為止已使用、但退貨還沒登打（還沒歸檔）的購物金；手動填了就用手動的
+const creditAuto = d => notesC.filter(c => c.kind === 'use' && c.branch === $('branch').value && (c.date || '') <= d && (!c.done || ymd(new Date(c.doneAt || 0)) > d))
+  .reduce((a, c) => a + (num(c.amount) ?? 0), 0);
+const creditOf = d => num(cash[d]?.credit) ?? creditAuto(d);
 const extrasUpTo = d => Object.keys(cash).filter(x => x <= d && x.slice(0, 7) === $('month').value).reduce((a, x) => a + extraOf(x), 0);
 $('days').addEventListener('input', e => {
   const i = e.target.closest('input[data-c]'); if (!i) return;
@@ -511,7 +517,7 @@ $('days').addEventListener('input', e => {
   cashTimers[d] = setTimeout(async () => {
     try {
       await setDoc(doc(db, 'ledger_cash', `${$('branch').value}_${d}`), { bm: bm(), branch: $('branch').value, date: d,
-        safe: cash[d].safe ?? '', drawer: cash[d].drawer ?? '', extra: cash[d].extra ?? '', updatedAt: new Date().toISOString(), updatedBy: auth.currentUser.email });
+        safe: cash[d].safe ?? '', drawer: cash[d].drawer ?? '', extra: cash[d].extra ?? '', credit: cash[d].credit ?? '', updatedAt: new Date().toISOString(), updatedBy: auth.currentUser.email });
       setSync('已同步');
     } catch (er) { toast('⚠️ 點錢儲存失敗：' + er.message); }
   }, 700);
@@ -906,9 +912,9 @@ function effSafe(d) {   // 當天保險櫃金額（沒填就沿用前一天）
 }
 function cashLine(d, bal) {
   const drawer = num(cash[d]?.drawer); if (drawer == null) return '';
-  const safe = effSafe(d) ?? 0, diff = safe + drawer - bal;
+  const safe = effSafe(d) ?? 0, cr = creditOf(d), diff = safe + drawer - cr - bal;
   return `<div style="display:flex;gap:18px;align-items:center;border:1px dashed #c9b26b;background:#fffbea;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:15px">
-    <b>💰 點錢</b>${extraOf(d) ? `<span>多錢 <b>${fmt(extraOf(d))}</b></span>` : ''}<span>保險櫃 <b>${fmt(safe)}</b></span><span>＋ 抽屜現金 <b>${fmt(drawer)}</b></span><span>＝ <b>${fmt(safe + drawer)}</b></span>
+    <b>💰 點錢</b>${extraOf(d) ? `<span>多錢 <b>${fmt(extraOf(d))}</b></span>` : ''}<span>保險櫃 <b>${fmt(safe)}</b></span><span>＋ 抽屜現金 <b>${fmt(drawer)}</b></span>${cr ? `<span>－ 購物金 <b>${fmt(cr)}</b></span>` : ''}<span>＝ <b>${fmt(safe + drawer - cr)}</b></span>
     <span style="margin-left:auto;font-weight:800;color:${diff === 0 ? '#15803d' : diff > 0 ? '#1d4ed8' : '#c00'}">${diff === 0 ? '✓ 與帳上結餘相符' : diff > 0 ? '多 ' + fmt(diff) + ' 元' : '少 ' + fmt(-diff) + ' 元'}</span></div>`;
 }
 function snapHTML(d, mask) {
