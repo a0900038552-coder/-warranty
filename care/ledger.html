@@ -136,7 +136,7 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
     <button class="hbtn pri" id="snapBtn">📷 報表下載</button>
     <button class="hbtn" id="printBtn">🖨 列印</button>
     <button class="hbtn" id="xlsxBtn">⬇ 匯出 Excel</button>
-    <button class="hbtn" id="impBtn">📥 匯入舊報表</button><input type="file" id="impFile" accept=".xlsx,.xls" class="hidden">
+    <button class="hbtn" id="impBtn">📥 匯入舊報表</button><button class="hbtn hidden" id="undoImp" title="把這個月恢復成匯入前的樣子">↩️ 還原上次匯入</button><input type="file" id="impFile" accept=".xlsx,.xls" class="hidden">
     <a class="hbtn" href="quotes.html">💰 報價</a>
     <a class="hbtn" href="./">← 保固系統</a>
   </div></header>
@@ -232,6 +232,7 @@ function load() {
   const t = new Date(), cur = ymd(t);
   if (cur.slice(0, 7) === $('month').value && t.getDay() !== 0) extraDays.add(cur);
   render();
+  checkUndo();
   unsub = onSnapshot(query(collection(db, 'ledger'), where('bm', '==', bm())), snap => {
     let structural = false;
     snap.docChanges().forEach(ch => {
@@ -682,6 +683,23 @@ async function importXlsx(file) {
   if (!await ask(msg + '\n\n確定匯入？')) return;
   setSync('匯入中…');
   try {
+    // 0. 先備份：這個月原本的登打資料、它們建立的保固紀錄、承上月金額 → 之後可按「還原上次匯入」
+    setSync('備份中…');
+    const bakId = `${key}_${Date.now()}`, bakNow = new Date().toISOString();
+    const oldMeta = await getDoc(doc(db, 'ledger_meta', key));
+    const bakDocs = existing.docs.map(d => ({ kind: 'row', id: d.id, data: d.data() }));
+    const linked = existing.docs.filter(d => !d.data().imported).map(d => 'L' + d.id);
+    for (let i = 0; i < linked.length; i += 30) {
+      (await Promise.all(linked.slice(i, i + 30).map(id => getDoc(doc(db, 'records', id))))).forEach(r => { if (r.exists()) bakDocs.push({ kind: 'rec', id: r.id, data: r.data() }); });
+    }
+    for (let i = 0; i < bakDocs.length; i += 400) {
+      const b = writeBatch(db);
+      bakDocs.slice(i, i + 400).forEach(x => b.set(doc(db, 'ledger_bak_rows', `${bakId}__${x.kind}__${x.id}`), { bak: bakId, kind: x.kind, id: x.id, json: JSON.stringify(x.data) }));
+      await b.commit();
+    }
+    await setDoc(doc(db, 'ledger_bak', key), { bakId, key, ts: bakNow, by: auth.currentUser.email, file: file.name,
+      hadMeta: oldMeta.exists(), carryBefore: oldMeta.exists() ? (oldMeta.data().carry ?? null) : null, rows: existing.size, recs: bakDocs.length - existing.size, added: [], done: false });
+    setSync('匯入中…');
     // 1. 清掉該月舊資料（含它們自動建立的保固紀錄）
     const del = existing.docs;
     for (let i = 0; i < del.length; i += 200) {
@@ -716,16 +734,61 @@ async function importXlsx(file) {
       const k = `${phone}_${rec.repairDate}_${r.item}`;
       if (have.has(k)) return; have.add(k); toAdd.push(rec);
     });
+    const addedIds = [];
     for (let i = 0; i < toAdd.length; i += 400) {
       const b = writeBatch(db);
-      toAdd.slice(i, i + 400).forEach(rec => b.set(doc(collection(db, 'records')), rec));
+      toAdd.slice(i, i + 400).forEach(rec => { const ref = doc(collection(db, 'records')); addedIds.push(ref.id); b.set(ref, rec); });
       await b.commit();
     }
+    await setDoc(doc(db, 'ledger_bak', key), { added: addedIds, done: true }, { merge: true });
     if ($('branch').value !== branch) { $('branch').value = branch; lsSet('ledgerBranch', branch); }
     $('month').value = p.ym; load();
     toast(`✅ 匯入 ${list.length} 列；保固紀錄新增 ${toAdd.length} 筆（其餘已存在）`);
   } catch (er) { setSync('⚠️ 匯入失敗'); toast('⚠️ 匯入失敗：' + er.message); }
 }
+
+/* ─── 還原上次匯入：把這個月恢復成匯入前的樣子 ─── */
+async function checkUndo() {
+  try { const m = await getDoc(doc(db, 'ledger_bak', bm())); $('undoImp').classList.toggle('hidden', !m.exists()); }
+  catch { $('undoImp').classList.add('hidden'); }
+}
+$('undoImp').onclick = async () => {
+  const key = bm(), m = await getDoc(doc(db, 'ledger_bak', key));
+  if (!m.exists()) { toast('這個月沒有可還原的匯入'); return checkUndo(); }
+  const x = m.data(), when = new Date(x.ts).toLocaleString('zh-TW', { hour12: false });
+  if (!await ask(`↩️ 還原 ${key.replace('_', ' ')} 的匯入？
+
+匯入檔案：${x.file}
+匯入時間：${when}
+
+會刪除匯入進來的資料（含它新增的 ${(x.added || []).length} 筆保固紀錄），
+恢復成匯入前的 ${x.rows} 列登打資料${x.recs ? '與 ' + x.recs + ' 筆保固紀錄' : ''}、承上月金額。
+
+匯入之後在這個月新打的資料也會一起被清掉。`)) return;
+  setSync('還原中…');
+  try {
+    // 1. 刪掉現在這個月的資料（含它們建立的保固紀錄）
+    const cur = await getDocs(query(collection(db, 'ledger'), where('bm', '==', key)));
+    const dels = [];
+    cur.docs.forEach(d => { dels.push(d.ref); if (!d.data().imported) dels.push(doc(db, 'records', 'L' + d.id)); });
+    (x.added || []).forEach(id => dels.push(doc(db, 'records', id)));
+    for (let i = 0; i < dels.length; i += 400) { const b = writeBatch(db); dels.slice(i, i + 400).forEach(r => b.delete(r)); await b.commit(); }
+    // 2. 放回備份
+    const bak = await getDocs(query(collection(db, 'ledger_bak_rows'), where('bak', '==', x.bakId)));
+    for (let i = 0; i < bak.docs.length; i += 400) {
+      const b = writeBatch(db);
+      bak.docs.slice(i, i + 400).forEach(d => { const y = d.data(); b.set(doc(db, y.kind === 'rec' ? 'records' : 'ledger', y.id), JSON.parse(y.json)); });
+      await b.commit();
+    }
+    // 3. 承上月金額
+    if (x.hadMeta) await setDoc(doc(db, 'ledger_meta', key), { carry: x.carryBefore, updatedAt: new Date().toISOString(), updatedBy: auth.currentUser.email }, { merge: true });
+    else await deleteDoc(doc(db, 'ledger_meta', key));
+    // 4. 清掉備份
+    for (let i = 0; i < bak.docs.length; i += 400) { const b = writeBatch(db); bak.docs.slice(i, i + 400).forEach(d => b.delete(d.ref)); await b.commit(); }
+    await deleteDoc(doc(db, 'ledger_bak', key));
+    load(); toast(`✅ 已還原成匯入前（${x.rows} 列）`);
+  } catch (er) { setSync('⚠️ 還原失敗'); toast('⚠️ 還原失敗：' + er.message); }
+};
 
 /* ─── 日報圖片：產生當天報表圖片，下載或直接分享到 LINE 群組（不扣訊息額度）─── */
 const maskPhone = p => { const d = String(p || '').replace(/\D/g, ''); return d.length >= 7 ? d.slice(0, 4) + '***' + d.slice(-3) : (p || ''); };
