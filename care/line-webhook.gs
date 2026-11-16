@@ -715,13 +715,21 @@ function refreshWebPrices() {
       var rows = parseWebPrices_(html);
       if (rows.length < 30) { console.error(src.name + ' 只讀到 ' + rows.length + ' 筆，網頁可能改版，這次不更新'); return; }
       var dm = html.match(src.dateRe), updated = dm ? dm[1] : '';
-      var hash = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify(rows) + updated));
+      var hash = 'v2' + Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify(rows) + updated, Utilities.Charset.UTF_8));
       var run = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd');
       if (props.getProperty('WEB_HASH_' + src.key) === hash) { props.setProperty('WEB_CHECK_' + src.key, run); console.log(src.name + '：價格沒變（' + rows.length + ' 筆）'); return; }
       var writes = rows.map(function (r) {
-        var id = src.key + '_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, r.model + '|' + r.item)).slice(0, 16);
+        var id = src.key + '_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, r.model + '|' + r.item, Utilities.Charset.UTF_8)).slice(0, 16);
         return { update: { name: 'projects/' + FIREBASE_PROJECT_ID + '/databases/(default)/documents/web_prices/' + id,
           fields: toFields_({ src: src.key, site: src.name, model: r.model, modelKey: wkey_(r.model), item: r.item, part: webPart_(r.item), price: r.price, run: run, updated: updated }) } };
+      });
+      // 官網已經拿掉的項目，從資料庫刪掉
+      var keep = {}; writes.forEach(function (w) { keep[w.update.name] = 1; });
+      var old = fsFetch_(fsBase_() + ':runQuery', { method: 'post', payload: JSON.stringify({ structuredQuery: {
+        from: [{ collectionId: 'web_prices' }], select: { fields: [{ fieldPath: 'src' }] },
+        where: { fieldFilter: { field: { fieldPath: 'src' }, op: 'EQUAL', value: { stringValue: src.key } } }, limit: 5000 } }) });
+      if (old.getResponseCode() === 200) JSON.parse(old.getContentText()).forEach(function (x) {
+        if (x.document && !keep[x.document.name]) writes.push({ delete: x.document.name });
       });
       for (var i = 0; i < writes.length; i += 400) {
         var c = fsFetch_(fsBase_().replace(/\/documents$/, '/documents:commit'), { method: 'post', payload: JSON.stringify({ writes: writes.slice(i, i + 400) }) });
