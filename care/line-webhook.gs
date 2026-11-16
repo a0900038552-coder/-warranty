@@ -693,6 +693,86 @@ function quoteEvent_(ev, token, props) {
   if (mine && gid0) clearAsk_(gid0);
 }
 
+/* ═══ 同行官網價目表（每天自動更新，查價時一起顯示）═══
+ * 在編輯器選 setupWebPrices 按「執行」一次：立刻抓一次＋設定每天早上 6 點自動更新
+ */
+var WEB_SOURCES = [
+  { key: 'gs', name: '保衛站', url: 'https://www.guardstation.com.tw/pages/iphone-repair-price', dateRe: /價格更新日期[：:]\s*([\d\/]+)/ },
+  { key: 'qg', name: 'Q哥', url: 'https://docs.google.com/spreadsheets/d/1-7xeM1y80unFb8XBMJRci1K22XyK-sXYgPYT5H3DX9Q/htmlembed/sheet?headers=false&gid=0', dateRe: /更新日期\s*(?:<[^>]*>\s*)*([\d\/]+)/ }
+];
+function setupWebPrices() {
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'refreshWebPrices') ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('refreshWebPrices').timeBased().atHour(6).everyDays(1).inTimezone('Asia/Taipei').create();
+  refreshWebPrices();
+}
+function refreshWebPrices() {
+  var props = PropertiesService.getScriptProperties();
+  WEB_SOURCES.forEach(function (src) {
+    try {
+      var res = UrlFetchApp.fetch(src.url, { muteHttpExceptions: true, followRedirects: true });
+      if (res.getResponseCode() !== 200) { console.error(src.name + ' HTTP ' + res.getResponseCode()); return; }
+      var html = res.getContentText('UTF-8');
+      var rows = parseWebPrices_(html);
+      if (rows.length < 30) { console.error(src.name + ' 只讀到 ' + rows.length + ' 筆，網頁可能改版，這次不更新'); return; }
+      var dm = html.match(src.dateRe), updated = dm ? dm[1] : '';
+      var hash = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify(rows) + updated));
+      var run = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd');
+      if (props.getProperty('WEB_HASH_' + src.key) === hash) { props.setProperty('WEB_CHECK_' + src.key, run); console.log(src.name + '：價格沒變（' + rows.length + ' 筆）'); return; }
+      var writes = rows.map(function (r) {
+        var id = src.key + '_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, r.model + '|' + r.item)).slice(0, 16);
+        return { update: { name: 'projects/' + FIREBASE_PROJECT_ID + '/databases/(default)/documents/web_prices/' + id,
+          fields: toFields_({ src: src.key, site: src.name, model: r.model, modelKey: wkey_(r.model), item: r.item, part: webPart_(r.item), price: r.price, run: run, updated: updated }) } };
+      });
+      for (var i = 0; i < writes.length; i += 400) {
+        var c = fsFetch_(fsBase_().replace(/\/documents$/, '/documents:commit'), { method: 'post', payload: JSON.stringify({ writes: writes.slice(i, i + 400) }) });
+        if (c.getResponseCode() !== 200) throw new Error(c.getContentText().slice(0, 300));
+      }
+      props.setProperty('WEB_HASH_' + src.key, hash); props.setProperty('WEB_RUN_' + src.key, run); props.setProperty('WEB_CHECK_' + src.key, run);
+      console.log(src.name + '：已更新 ' + rows.length + ' 筆（官網標示更新日 ' + updated + '）');
+    } catch (e) { console.error(src.name + ' 更新失敗：' + e); }
+  });
+}
+function wkey_(m) { return String(m || '').toLowerCase().replace(/iphone/g, '').replace(/\s+/g, ''); }
+function webPart_(it) {
+  var t = String(it), R = [[/電池/, '電池'], [/螢幕|白屏|綠屏/, '螢幕'], [/鏡頭|攝像頭/, '鏡頭'], [/聽筒|揚聲器|喇叭/, '喇叭/聽筒'], [/face ?id|臉部/i, 'Face ID'],
+    [/主機板|主板|搬板/, '主板'], [/尾插|尾部充電|充電孔/, '充電孔'], [/泡水/, '泡水'], [/開機|音量|home|靜音|相機控制/i, '按鍵'],
+    [/wifi|藍芽|藍牙/i, 'WiFi/藍牙'], [/背蓋|背板|中框/, '背蓋'], [/震動|振動/, '震動器'], [/無線充電/, '無線充電'], [/sim/i, 'SIM']];
+  for (var i = 0; i < R.length; i++) if (R[i][0].test(t)) return R[i][1];
+  return t;
+}
+// 讀網頁裡所有表格：遇到「機型／維修項目」那一列當表頭（各欄是機型），之後每列＝維修項目＋各機型價格
+function parseWebPrices_(html) {
+  var out = [], ent = function (x) { return x.replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'"); };
+  (html.match(/<table[\s\S]*?<\/table>/gi) || []).forEach(function (tb) {
+    var head = null;
+    (tb.match(/<tr[\s\S]*?<\/tr>/gi) || []).forEach(function (tr) {
+      var cells = (tr.match(/<t[dh][^>]*>[\s\S]*?<\/t[dh]>/gi) || []).map(function (c) {
+        return ent(c.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '')).replace(/[ \t]+/g, ' ').trim();
+      });
+      if (cells.length && /^\d+$/.test(cells[0])) cells.shift();      // Google 試算表的列號
+      if (!cells.length) return;
+      // 表頭：第一格是「機型／維修項目」，或後面幾格大多是 iPhone 型號（對方表格偶爾把表頭打在別列）
+      var mods = cells.slice(1).filter(function (c) { return /^iphone/i.test(c); }).length;
+      if (/^(機型|維修項目)$/.test(cells[0]) || mods >= 2) { head = cells.slice(1).map(function (h) { return h.replace(/\s+/g, ' ').trim(); }); return; }
+      if (!head || !cells[0]) return;
+      for (var i = 1; i < cells.length && i <= head.length; i++) {
+        var m = String(cells[i]).split('\n')[0].replace(/,/g, '').match(/^\s*\$?\s*(\d{2,6})/);
+        if (m && head[i - 1]) out.push({ model: head[i - 1], item: cells[0].replace(/\s+/g, ' '), price: Number(m[1]) });
+      }
+    });
+  });
+  return out;
+}
+function webQuotes_(model, part) {
+  if (!model) return [];
+  var props = PropertiesService.getScriptProperties();
+  var res = fsFetch_(fsBase_() + ':runQuery', { method: 'post', payload: JSON.stringify({ structuredQuery: {
+    from: [{ collectionId: 'web_prices' }], where: { fieldFilter: { field: { fieldPath: 'modelKey' }, op: 'EQUAL', value: { stringValue: wkey_(model) } } }, limit: 300 } }) });
+  if (res.getResponseCode() !== 200) return [];
+  return JSON.parse(res.getContentText()).filter(function (x) { return x.document; }).map(function (x) { return fromFields_(x.document.fields); })
+    .filter(function (r) { return r.run === props.getProperty('WEB_RUN_' + r.src) && (part ? r.part === part : (r.part === '螢幕' || r.part === '電池')); });
+}
+
 /* ═══ 私訊查價 ═══ */
 function runQuery_(where) {
   var res = fsFetch_(fsBase_() + ':runQuery', { method: 'post', payload: JSON.stringify({ structuredQuery: {
@@ -715,7 +795,9 @@ function lookupQuotes_(text) {
   if (part && !rows.length) rows = [];
   // 自由輸入的零件名（例：感應排線）也一起找
   rows = rows.filter(function (r) { return (!model || norm(r.model) === norm(model)) && (!part || r.part === part || partOf_(r.part) === part); });
-  if (!rows.length) return '';
+  var web = [];
+  try { web = webQuotes_(model, part); } catch (e) { console.error(e); }
+  if (!rows.length && !web.length) return '';
   rows.sort(function (a, b) { return String(b.ts).localeCompare(String(a.ts)); });
   var now = Date.now(), day = 86400000;
   var age = function (r) {
@@ -738,6 +820,17 @@ function lookupQuotes_(text) {
     return lines.join('\n');
   });
   if (Object.keys(groups).length > keys.length) out.push('…還有 ' + (Object.keys(groups).length - keys.length) + ' 項，打得更精確一點可縮小範圍');
+  if (web.length) {
+    var bySite = {};
+    web.sort(function (a, b) { return a.price - b.price; }).forEach(function (r) { (bySite[r.site] = bySite[r.site] || []).push(r); });
+    var wl = ['🌐 官網價（' + (web[0].model || model) + (part ? ' ' + part : '') + '）'];
+    Object.keys(bySite).forEach(function (site) {
+      bySite[site].slice(0, part ? 4 : 3).forEach(function (r, i) {
+        wl.push((i ? '　　' : site + ' ') + money(r.price) + '　' + r.item + (i ? '' : '（官網 ' + (r.updated || '?') + ' 更新）'));
+      });
+    });
+    out.push(wl.join('\n'));
+  }
   return out.join('\n\n');
 }
 
