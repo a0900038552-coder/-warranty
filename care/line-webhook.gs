@@ -1154,3 +1154,88 @@ function modelOf_(s) {
     return { raw: m[1], name: 'Samsung Z ' + m[2][0].toUpperCase() + m[2].slice(1).toLowerCase() + m[3] };
   return null;
 }
+
+/* ───────── 每日自動備份：把 Firestore 全部資料存到 Google 雲端硬碟 ─────────
+ * 第一次：在編輯器上方選 setupBackup → 執行（會跳出 Google 授權，允許存取雲端硬碟）。
+ * 之後每天凌晨 3 點自動備份到雲端硬碟「復原者系統備份」資料夾：
+ *   每天一份保留 30 天；每月 1 號那份保留 1 年。失敗會用小幫手 LINE 通知老闆。
+ * 檔案是 .json.gz（原始格式，可以完整還原）。還原請交給 Claude 處理（restoreBackup_）。
+ */
+var BACKUP_FOLDER = '復原者系統備份';
+function setupBackup() {
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'backupFirestore') ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('backupFirestore').timeBased().atHour(3).everyDays(1).inTimezone('Asia/Taipei').create();
+  var r = backupFirestore();
+  notifyOwner_('🗄️ 每日自動備份已開啟（每天凌晨 3 點）\n第一份備份完成：' + r.docs + ' 筆資料、' + r.cols + ' 個資料表\n存在 Google 雲端硬碟「' + BACKUP_FOLDER + '」資料夾。');
+  return r;
+}
+function backupFolder_() {
+  var it = DriveApp.getFoldersByName(BACKUP_FOLDER);
+  return it.hasNext() ? it.next() : DriveApp.createFolder(BACKUP_FOLDER);
+}
+function listCollections_() {
+  var ids = [], token = '';
+  do {
+    var res = fsFetch_(fsBase_() + ':listCollectionIds', { method: 'post', payload: JSON.stringify({ pageSize: 100, pageToken: token }) });
+    if (res.getResponseCode() !== 200) throw new Error('讀取資料表清單失敗：' + res.getContentText().slice(0, 200));
+    var j = JSON.parse(res.getContentText());
+    ids = ids.concat(j.collectionIds || []); token = j.nextPageToken || '';
+  } while (token);
+  return ids;
+}
+function backupFirestore() {
+  try {
+    var out = { project: FIREBASE_PROJECT_ID, at: new Date().toISOString(), collections: {} }, total = 0;
+    var cols = listCollections_();
+    cols.forEach(function (c) {
+      var docs = [], token = '';
+      do {
+        var url = fsBase_() + '/' + encodeURIComponent(c) + '?pageSize=300' + (token ? '&pageToken=' + encodeURIComponent(token) : '');
+        var res = fsFetch_(url);
+        if (res.getResponseCode() !== 200) throw new Error(c + ' 讀取失敗：' + res.getContentText().slice(0, 200));
+        var j = JSON.parse(res.getContentText());
+        (j.documents || []).forEach(function (d) { docs.push({ name: d.name, fields: d.fields || {} }); });
+        token = j.nextPageToken || '';
+      } while (token);
+      out.collections[c] = docs; total += docs.length;
+    });
+    var day = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd');
+    var blob = Utilities.gzip(Utilities.newBlob(JSON.stringify(out), 'application/json', 'backup-' + day + '.json'), 'backup-' + day + '.json.gz');
+    var folder = backupFolder_();
+    var same = folder.getFilesByName(blob.getName()); while (same.hasNext()) same.next().setTrashed(true);
+    folder.createFile(blob);
+    pruneBackups_(folder);
+    PropertiesService.getScriptProperties().setProperty('BACKUP_LAST', day + ' ' + total);
+    return { docs: total, cols: cols.length, file: blob.getName() };
+  } catch (err) {
+    notifyOwner_('⚠️ 系統每日備份失敗\n' + String(err && err.message || err).slice(0, 300) + '\n請告訴 Claude 處理。');
+    throw err;
+  }
+}
+function pruneBackups_(folder) {
+  var now = Date.now(), files = folder.getFiles();
+  while (files.hasNext()) {
+    var f = files.next(), m = f.getName().match(/^backup-(\d{4})-(\d{2})-(\d{2})\.json\.gz$/);
+    if (!m) continue;
+    var age = (now - new Date(m[1] + '-' + m[2] + '-' + m[3] + 'T00:00:00+08:00').getTime()) / 864e5;
+    var keep = age <= 30 || (m[3] === '01' && age <= 370);
+    if (!keep) f.setTrashed(true);
+  }
+}
+/* 還原（只在需要時由 Claude 執行）：fileName 例 'backup-2026-11-16.json.gz'；
+ * onlyCollections 例 ['ledger']，不填＝全部。只會「寫回／覆蓋」備份裡有的文件，不會刪除備份後新增的資料。 */
+function restoreBackup_(fileName, onlyCollections) {
+  var it = backupFolder_().getFilesByName(fileName);
+  if (!it.hasNext()) throw new Error('找不到備份檔：' + fileName);
+  var data = JSON.parse(Utilities.ungzip(it.next().getBlob().setContentType('application/x-gzip')).getDataAsString());
+  var n = 0;
+  Object.keys(data.collections).forEach(function (c) {
+    if (onlyCollections && onlyCollections.indexOf(c) < 0) return;
+    data.collections[c].forEach(function (d) {
+      var res = fsFetch_('https://firestore.googleapis.com/v1/' + d.name, { method: 'patch', payload: JSON.stringify({ fields: d.fields }) });
+      if (res.getResponseCode() !== 200) throw new Error('還原失敗：' + d.name + ' ' + res.getContentText().slice(0, 200));
+      n++;
+    });
+  });
+  return n;
+}
