@@ -118,7 +118,7 @@ onAuthStateChanged(auth, u => { $('login').classList.toggle('hidden', !!u); $('a
 $('loginForm').onsubmit = async e => { e.preventDefault(); try { await signInWithEmailAndPassword(auth, e.target.email.value.trim(), e.target.pw.value); } catch { toast('⚠️ 登入失敗'); } };
 
 async function start() {
-  if (!unsubD) unsubD = onSnapshot(collection(db, 'used_stock'), s => { s.docs.forEach(d => details[d.id] = d.data()); render(); });
+  if (!unsubD) unsubD = onSnapshot(collection(db, 'used_stock'), s => { s.docs.forEach(d => details[d.id] = { ...d.data(), ...(pend[d.id] || {}) }); safeRender(); });
   await loadLedger();
 }
 async function loadLedger() {
@@ -205,15 +205,22 @@ function render() {
 }
 
 // 自動儲存（打字停 0.6 秒、勾選立刻存）
-const timers = {};
+const timers = {}, pend = {};
 function save(id, k, v) {
   details[id] = { ...(details[id] || {}), [k]: v };
+  (pend[id] = pend[id] || {})[k] = v;   // 還沒存完的欄位，別被雲端回傳的舊值蓋掉
   clearTimeout(timers[id + k]);
   timers[id + k] = setTimeout(async () => {
     try { await setDoc(doc(db, 'used_stock', id), { [k]: v, updatedAt: new Date().toISOString(), updatedBy: auth.currentUser.email }, { merge: true }); }
     catch (e) { toast('⚠️ 儲存失敗：' + e.message); }
+    finally { if (pend[id] && pend[id][k] === v) delete pend[id][k]; }
   }, typeof v === 'boolean' || k === 'status' ? 0 : 600);
 }
+// 正在輸入（游標在文字框裡）時不重畫清單，免得打到一半被跳掉；離開欄位後再更新
+let renderLater = false;
+const typing = () => { const a = document.activeElement; return !!a && $('list').contains(a) && (a.tagName === 'TEXTAREA' || (a.tagName === 'INPUT' && a.type !== 'checkbox')); };
+function safeRender() { if (typing()) { renderLater = true; return; } renderLater = false; render(); }
+$('list').addEventListener('focusout', () => setTimeout(() => { if (renderLater && !typing()) { renderLater = false; render(); } }, 0));
 $('list').addEventListener('input', e => { const el = e.target; if (!el.dataset.k || el.type === 'checkbox' || el.tagName === 'SELECT') return; save(el.dataset.id, el.dataset.k, el.value.trim()); });
 $('list').addEventListener('change', e => {
   const el = e.target; if (!el.dataset.k) return;
