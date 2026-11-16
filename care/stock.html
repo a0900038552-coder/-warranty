@@ -35,6 +35,8 @@ td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 td.c{text-align:center}
 tr.row:hover{background:#f9fafb}
 td input[type=text]{width:100%;border:1px solid #e5e7eb;border-radius:6px;padding:4px 6px;min-width:90px}
+td input.px{min-width:84px;width:92px;text-align:right;font-variant-numeric:tabular-nums}
+td .hint{font-size:11.5px;margin-top:2px;white-space:nowrap}
 td input.imei{font-family:ui-monospace,Consolas,monospace;min-width:150px}
 td input[type=checkbox]{width:18px;height:18px;cursor:pointer;accent-color:var(--green)}
 td select{border:1px solid #e5e7eb;border-radius:6px;padding:3px 4px;background:#fff}
@@ -75,9 +77,9 @@ tr.detail td{background:#fafbfc}
     </div>
     <div class="tiles" id="tiles"></div>
     <div class="panel"><table>
-      <thead><tr><th>收購日</th><th>分店</th><th>機型</th><th style="text-align:right">收購成本</th><th>狀態</th>
+      <thead><tr><th>收購日</th><th>分店</th><th>機型</th><th style="text-align:right">收購成本</th><th style="text-align:right">建議售價</th><th style="text-align:right">最低售價</th><th>狀態</th>
         <th>IMEI</th><th>機況</th><th style="text-align:center">氣密</th><th style="text-align:center">盒裝</th><th style="text-align:center">原廠線</th><th></th></tr></thead>
-      <tbody id="list"><tr><td colspan="11" class="mute" style="padding:16px">讀取中…</td></tr></tbody>
+      <tbody id="list"><tr><td colspan="13" class="mute" style="padding:16px">讀取中…</td></tr></tbody>
     </table></div>
     <p class="hint">
       📥 <b>自動進庫存</b>：每日登打寫「支出:中古機回收:機型」（例：支出:中古機回收:14 PRO 256G，金額 -8000）就會出現在這裡，收購成本＝那一列的金額。<br>
@@ -122,7 +124,7 @@ async function start() {
   await loadLedger();
 }
 async function loadLedger() {
-  $('list').innerHTML = '<tr><td colspan="11" class="mute" style="padding:16px">讀取中…</td></tr>';
+  $('list').innerHTML = '<tr><td colspan="13" class="mute" style="padding:16px">讀取中…</td></tr>';
   // 1. 所有收購列（品項開頭「支出:中古機回收」或全形冒號）
   const qs = ['支出:中古機回收', '支出：中古機回收'].map(p => getDocs(query(collection(db, 'ledger'), where('item', '>=', p), where('item', '<', p + ''))));
   buys = (await Promise.all(qs)).flatMap(s => s.docs.map(d => ({ id: d.id, ...d.data() }))).filter(isBuy);
@@ -152,9 +154,15 @@ function match() {
   return res;
 }
 
+// 售價下面的小字：跟收購成本比，賺多少（低於成本顯示紅字）
+function pxHint(v, cost) {
+  const p = num(v); if (p == null) return '';
+  const g = p - cost;
+  return `<div class="hint" style="color:${g >= 0 ? 'var(--green)' : 'var(--red)'}">${g >= 0 ? '賺 ' + money(g) : '⚠️ 低於成本 ' + money(-g)}</div>`;
+}
 const STATUS = { auto: '自動判斷', stock: '在庫', sold: '已售出', returned: '退回／轉賣同行', own: '自用／拆零件' };
 function render() {
-  if (!buys.length && !Object.keys(details).length) { $('list').innerHTML = '<tr><td colspan="11" class="mute" style="padding:16px">還沒有收購紀錄。每日登打寫「支出:中古機回收:機型」就會出現在這裡。</td></tr>'; $('tiles').innerHTML = ''; return; }
+  if (!buys.length && !Object.keys(details).length) { $('list').innerHTML = '<tr><td colspan="13" class="mute" style="padding:16px">還沒有收購紀錄。每日登打寫「支出:中古機回收:機型」就會出現在這裡。</td></tr>'; $('tiles').innerHTML = ''; return; }
   const m = match(), today = ymd(new Date()), q = $('q').value.trim().toLowerCase(), br = $('br').value;
   const rows = buys.map(b => ({ b, d: details[b.id] || {}, m: m[b.id] }))
     .filter(x => !br || x.b.branch === br)
@@ -162,16 +170,18 @@ function render() {
   const inStock = rows.filter(x => x.m.status === 'stock');
   const monthSold = rows.filter(x => x.m.status === 'sold' && x.m.sale && (x.m.sale.date || '').slice(0, 7) === today.slice(0, 7));
   const soldProfit = monthSold.reduce((a, x) => a + (num(x.m.sale.amount) ?? 0) - Math.abs(num(x.b.amount) ?? 0), 0);
+  const priced = inStock.filter(x => num(x.d.price) != null);
   const avgDays = inStock.length ? Math.round(inStock.reduce((a, x) => a + days(x.b.date, today), 0) / inStock.length) : 0;
   $('tiles').innerHTML = `
     <div><small>在庫台數</small><b>${inStock.length}</b></div>
     <div><small>在庫成本合計</small><b>${money(inStock.reduce((a, x) => a + Math.abs(num(x.b.amount) ?? 0), 0))}</b></div>
+    <div><small>在庫預估毛利<br><span style="font-weight:400">依建議售價・${priced.length}/${inStock.length} 台已定價</span></small><b style="color:var(--green)">${money(priced.reduce((a, x) => a + num(x.d.price) - Math.abs(num(x.b.amount) ?? 0), 0))}</b></div>
     <div><small>平均庫存天數</small><b>${avgDays} 天</b></div>
     <div><small>本月售出</small><b>${monthSold.length} 台</b></div>
     <div><small>本月售出毛利</small><b style="color:var(--green)">${money(soldProfit)}</b></div>`;
   const shown = rows.filter(x => scope === 'all' || (scope === 'stock' ? x.m.status === 'stock' : x.m.status === 'sold'))
-    .filter(x => !q || [buyModel(x.b), x.d.imei, x.d.cond, x.d.color, x.d.note, x.m.sale?.item].join(' ').toLowerCase().includes(q));
-  if (!shown.length) { $('list').innerHTML = `<tr><td colspan="11" class="mute" style="padding:16px">${scope === 'stock' ? '目前沒有在庫的中古機。' : '沒有符合的資料。'}</td></tr>`; return; }
+    .filter(x => !q || [buyModel(x.b), x.d.imei, x.d.price, x.d.cond, x.d.color, x.d.note, x.m.sale?.item].join(' ').toLowerCase().includes(q));
+  if (!shown.length) { $('list').innerHTML = `<tr><td colspan="13" class="mute" style="padding:16px">${scope === 'stock' ? '目前沒有在庫的中古機。' : '沒有符合的資料。'}</td></tr>`; return; }
   $('list').innerHTML = shown.map(x => {
     const { b, d, m: mm } = x, cost = Math.abs(num(b.amount) ?? 0), age = days(b.date, today);
     let st;
@@ -181,7 +191,7 @@ function render() {
     } else if (mm.status === 'sold') st = `<span class="pill sold">已售出</span>`;
     else if (mm.status === 'stock') st = `<span class="pill ${age > 30 ? 'old' : 'stock'}">在庫 ${age} 天</span>`;
     else st = `<span class="pill other">${STATUS[mm.status] || mm.status}</span>`;
-    const det = open === b.id ? `<tr class="detail"><td colspan="11"><div class="dgrid">
+    const det = open === b.id ? `<tr class="detail"><td colspan="13"><div class="dgrid">
         <div><label>顏色</label><input data-k="color" data-id="${b.id}" value="${esc(d.color)}" placeholder="例：遠峰藍"></div>
         <div><label>電池健康度（%）</label><input data-k="battery" data-id="${b.id}" value="${esc(d.battery)}" inputmode="numeric" placeholder="例：86"></div>
         <div><label>其他配件</label><input data-k="acc" data-id="${b.id}" value="${esc(d.acc)}" placeholder="例：原廠殼、發票"></div>
@@ -194,6 +204,8 @@ function render() {
       <td>${esc(b.branch || '')}</td>
       <td><span class="model">${esc(buyModel(b))}</span>${d.color ? `<br><span class="mute">${esc(d.color)}</span>` : ''}</td>
       <td class="n">${money(cost)}</td>
+      <td class="n"><input type="text" class="px" data-k="price" data-id="${b.id}" value="${esc(d.price)}" placeholder="建議" inputmode="numeric">${pxHint(d.price, cost)}</td>
+      <td class="n"><input type="text" class="px" data-k="minPrice" data-id="${b.id}" value="${esc(d.minPrice)}" placeholder="最低" inputmode="numeric">${pxHint(d.minPrice, cost)}</td>
       <td>${st}</td>
       <td><input type="text" class="imei" data-k="imei" data-id="${b.id}" value="${esc(d.imei)}" placeholder="IMEI" inputmode="numeric"></td>
       <td><input type="text" data-k="cond" data-id="${b.id}" value="${esc(d.cond)}" placeholder="例：9成新、背蓋小刮"></td>
