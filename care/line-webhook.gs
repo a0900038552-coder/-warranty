@@ -699,8 +699,36 @@ function quoteEvent_(ev, token, props) {
 var WEB_SOURCES = [
   { key: 'gs', name: '保衛站', url: 'https://www.guardstation.com.tw/pages/iphone-repair-price', dateRe: /價格更新日期[：:]\s*([\d\/]+)/ },
   { key: 'gsirp', name: '保衛站', url: 'https://www.guardstation.com.tw/pages/irp-repair-price', dateRe: /價格更新日期[：:]\s*([\d\/]+)/, layout: 'rows', prefix: '原廠' },
+  // 傻傻修的價目是圖片：價格由 Claude 看圖登打在 SASA_DATA；每天只檢查圖片有沒有換，換了就在查價時提醒
+  { key: 'sasa', name: '傻傻修', url: 'https://www.sasamobile.com.tw/price.html', layout: 'static', updated: '115/08/19',
+    imgs: ['202608191408256517', '202608191408364993'] },
   { key: 'qg', name: 'Q哥', url: 'https://docs.google.com/spreadsheets/d/1-7xeM1y80unFb8XBMJRci1K22XyK-sXYgPYT5H3DX9Q/htmlembed/sheet?headers=false&gid=0', dateRe: /更新日期\s*(?:<[^>]*>\s*)*([\d\/]+)/ }
 ];
+// 機型｜螢幕｜電池（傻傻修 115/08/19 價目圖）
+var SASA_DATA = {
+  '螢幕': '17 Pro Max:12000|17:7900|17 Pro:9900|Air:9900|17e:6900|16 Pro Max:9900|16 Pro:8900|16:6500|16 Plus:6500|16e:5900|' +
+        '15 Pro Max:8500|15 Pro:7900|15 Plus:5900|15:5500|14 Pro Max:7500|14 Pro:6500|14 Plus:4900|14:4500|' +
+        '13 Pro Max:5900|13 Pro:5500|13:3900|13 mini:4800|12 Pro Max:4900|12 Pro:3900|12:3500|12 mini:3500|' +
+        '11 Pro Max:3500|11 Pro:3500|11:2900|SE2:2000|SE3:2000|XS Max:2900|XS:2900|XR:2500|X:2500',
+  '電池': '17 Pro Max:1990|17:1990|17 Pro:1990|Air:1990|17e:1890|16 Pro Max:1990|16 Pro:1990|16:1890|16 Plus:1890|16e:1790|' +
+        '15 Pro Max:1690|15 Pro:1690|15 Plus:1690|15:1690|14 Pro Max:1490|14 Pro:1490|14 Plus:1490|14:1490|' +
+        '13 Pro Max:1390|13 Pro:1390|13:1390|13 mini:1390|12 Pro Max:1290|12 Pro:1290|12:1290|12 mini:1290|' +
+        '11 Pro Max:990|11 Pro:990|11:990|SE2:790|SE3:890|XS Max:890|XS:890|XR:890|X:890',
+  '原廠螢幕': '17 Pro Max:16300|17 Pro:14600|Air:14600|17:14200|17e:12000|16 Pro Max:15900|16 Pro:14300|16 Plus:14300|16:12500|16e:12500|' +
+        '15 Pro Max:15900|15 Pro:13900|15 Plus:13900|15:12300|14 Pro Max:15900|14 Pro:13900|14 Plus:13900|14:12300|' +
+        '13 Pro Max:13790|13 Pro:12190|13:12190|13 mini:10000|12 Pro Max:13790|12 Pro:12190|12:12190|12 mini:10000|' +
+        '11 Pro Max:12900|11 Pro:11190|11:7900',
+  '原廠電池': '17 Pro Max:4150|17 Pro:4150|Air:4150|17:3350|17e:3350|16 Pro Max:4150|16 Pro:4150|16 Plus:3350|16:3350|16e:3350|' +
+        '15 Pro Max:3350|15 Pro:3350|15 Plus:3350|15:3350|14 Pro Max:3350|14 Pro:3350|14 Plus:3350|14:3350|' +
+        '13 Pro Max:2990|13 Pro:2990|13:2990|13 mini:2990|12 Pro Max:2990|12 Pro:2990|12:2990|12 mini:2990|11 Pro Max:2990|11 Pro:2990|11:2990'
+};
+function sasaRows_() {
+  var out = [];
+  Object.keys(SASA_DATA).forEach(function (item) {
+    SASA_DATA[item].split('|').forEach(function (kv) { var p = kv.split(':'); out.push({ model: 'iPhone ' + p[0], item: item, price: Number(p[1]) }); });
+  });
+  return out;
+}
 function setupWebPrices() {
   ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'refreshWebPrices') ScriptApp.deleteTrigger(t); });
   ScriptApp.newTrigger('refreshWebPrices').timeBased().atHour(6).everyDays(1).inTimezone('Asia/Taipei').create();
@@ -713,9 +741,14 @@ function refreshWebPrices() {
       var res = UrlFetchApp.fetch(src.url, { muteHttpExceptions: true, followRedirects: true });
       if (res.getResponseCode() !== 200) { console.error(src.name + ' HTTP ' + res.getResponseCode()); return; }
       var html = res.getContentText('UTF-8');
-      var rows = src.layout === 'rows' ? parseRowTable_(html, src.prefix || '') : parseWebPrices_(html);
+      if (src.layout === 'static') {
+        var same = src.imgs.every(function (id) { return html.indexOf(id) >= 0; });
+        props.setProperty('WEB_STALE_' + src.key, same ? '' : '1');
+        if (!same) console.error(src.name + '：價目圖已更換，請找 Claude 重新看圖登打');
+      }
+      var rows = src.layout === 'static' ? sasaRows_() : src.layout === 'rows' ? parseRowTable_(html, src.prefix || '') : parseWebPrices_(html);
       if (rows.length < 30) { console.error(src.name + ' 只讀到 ' + rows.length + ' 筆，網頁可能改版，這次不更新'); return; }
-      var dm = html.match(src.dateRe), updated = dm ? dm[1] : '';
+      var dm = src.dateRe && html.match(src.dateRe), updated = src.updated || (dm ? dm[1] : '');
       var hash = 'v2' + Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify(rows) + updated, Utilities.Charset.UTF_8));
       var run = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd');
       if (props.getProperty('WEB_HASH_' + src.key) === hash) { props.setProperty('WEB_CHECK_' + src.key, run); console.log(src.name + '：價格沒變（' + rows.length + ' 筆）'); return; }
@@ -855,7 +888,8 @@ function lookupQuotes_(text) {
     var wl = ['🌐 官網價（' + (web[0].model || model) + (part ? ' ' + part : '') + '）'];
     Object.keys(bySite).forEach(function (site) {
       bySite[site].slice(0, part ? 4 : 3).forEach(function (r, i) {
-        wl.push((i ? '　　' : site + ' ') + money(r.price) + '　' + r.item + (i ? '' : '（官網 ' + (r.updated || '?') + ' 更新）'));
+        var stale = !i && PropertiesService.getScriptProperties().getProperty('WEB_STALE_' + r.src) ? '⚠️官網已換新價目，這是舊價' : '';
+        wl.push((i ? '　　' : site + ' ') + money(r.price) + '　' + r.item + (i ? '' : '（官網 ' + (r.updated || '?') + ' 更新）' + stale));
       });
     });
     out.push(wl.join('\n'));
