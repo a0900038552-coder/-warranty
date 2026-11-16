@@ -578,12 +578,16 @@ function statRows() { return Object.values(rows).concat(statScope === 'both' ? o
 
 // 毛利分配：接待人 30%、經手人 70%（同一人＝100%；只填一邊＝那個人 100%；退修的負毛利也照比例扣）
 const SPLIT = { recv: 0.3, handler: 0.7 };
+// 員工編號（接待人／經手人欄位填編號；填名字也會對到同一人）。3、5 號目前缺員
+const STAFF = { '1': '王又祥', '2': '阿賢', '4': 'APPLE' };
+const staffKey = v => { const t = String(v || '').trim(); if (!t) return ''; const hit = Object.entries(STAFF).find(([, n]) => n.toLowerCase() === t.toLowerCase()); return hit ? hit[0] : t; };
+const staffLabel = k => STAFF[k] ? `${k} ${STAFF[k]}` : (/^\d+$/.test(k) ? `${k}（未設定）` : k);
 function staffSplit(list) {
   const p = {};
   const add = (name, k, amt) => { const o = (p[name] ||= { name, rn: 0, hn: 0, r: 0, h: 0 }); o[k === 'recv' ? 'rn' : 'hn']++; o[k === 'recv' ? 'r' : 'h'] += amt; };
   list.forEach(row => {
     const pf = profit(row); if (pf == null || pf === 0) return;
-    const r = String(row.recv || '').trim(), h = String(row.handler || '').trim();
+    const r = staffKey(row.recv), h = staffKey(row.handler);
     if (r && h && r !== h) { add(r, 'recv', pf * SPLIT.recv); add(h, 'handler', pf * SPLIT.handler); }
     else if (r && h) { add(r, 'recv', pf * SPLIT.recv); add(h, 'handler', pf * SPLIT.handler); }   // 同一人：兩份都算給他＝100%
     else if (r) add(r, 'recv', pf);
@@ -644,7 +648,7 @@ function renderStats() {
         <table class="staff" style="width:100%;border-collapse:collapse;font-size:14px">
           <tr style="background:#f3f4f6"><th style="text-align:left;padding:6px">人員</th><th style="text-align:right;padding:6px">接待筆數</th><th style="text-align:right;padding:6px">經手筆數</th>
             <th style="text-align:right;padding:6px">接待分（${SPLIT.recv * 100}%）</th><th style="text-align:right;padding:6px">經手分（${SPLIT.handler * 100}%）</th><th style="text-align:right;padding:6px">分得毛利</th><th style="text-align:right;padding:6px">佔比</th></tr>
-          ${st.map(o => `<tr style="border-top:1px solid #e5e7eb"><td style="padding:6px;font-weight:700">${esc(o.name)}</td><td style="text-align:right;padding:6px">${o.rn}</td><td style="text-align:right;padding:6px">${o.hn}</td>
+          ${st.map(o => `<tr style="border-top:1px solid #e5e7eb"><td style="padding:6px;font-weight:700">${esc(staffLabel(o.name))}</td><td style="text-align:right;padding:6px">${o.rn}</td><td style="text-align:right;padding:6px">${o.hn}</td>
             <td style="text-align:right;padding:6px">${r0(o.r)}</td><td style="text-align:right;padding:6px">${r0(o.h)}</td><td style="text-align:right;padding:6px;font-weight:800${o.t < 0 ? ';color:#c00' : ''}">${r0(o.t)}</td>
             <td style="text-align:right;padding:6px">${tot ? Math.round(o.t / tot * 100) : 0}%</td></tr>`).join('')}
           <tr style="border-top:2px solid #9ca3af"><td style="padding:6px;font-weight:700">合計</td><td></td><td></td><td></td><td></td><td style="text-align:right;padding:6px;font-weight:800">${r0(tot)}</td><td></td></tr>
