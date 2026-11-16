@@ -21,6 +21,7 @@ header{background:var(--ink);color:#fff;padding:10px 16px;border-bottom:4px soli
 .logo small{display:block;font-weight:400;font-size:11px;color:#a1a6b0;letter-spacing:2px}
 .hd select,.hd input[type=month]{background:#2a2d35;color:#fff;border:1px solid #444;border-radius:8px;padding:5px 8px}
 .hbtn{background:none;border:1px solid #555;color:#ddd;border-radius:8px;padding:5px 11px;cursor:pointer;white-space:nowrap;text-decoration:none;font-size:13px}
+.nbadge{display:inline-block;min-width:18px;margin-left:5px;padding:0 5px;border-radius:99px;background:var(--red);color:#fff;font-size:11px;font-weight:700;text-align:center;line-height:17px}
 .hbtn.pri{background:var(--red);border-color:var(--red);color:#fff;font-weight:700}
 main{max-width:1280px;margin:0 auto;padding:12px 12px 80px}
 .sum{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
@@ -138,7 +139,7 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
     <button class="hbtn" id="printBtn">🖨 列印</button>
     <button class="hbtn" id="xlsxBtn">⬇ 匯出 Excel</button>
     <button class="hbtn" id="impBtn">📥 匯入舊報表</button><button class="hbtn hidden" id="undoImp" title="把這個月恢復成匯入前的樣子">↩️ 還原上次匯入</button><input type="file" id="impFile" accept=".xlsx,.xls" class="hidden">
-    <a class="hbtn" href="quotes.html">💰 報價</a><a class="hbtn" href="stock.html">📱 中古機庫存</a>
+    <a class="hbtn" href="notes.html" id="notesLink">📒 退貨／待辦<span class="nbadge hidden" id="notesBadge"></span></a><a class="hbtn" href="quotes.html">💰 報價</a><a class="hbtn" href="stock.html">📱 中古機庫存</a>
     <a class="hbtn" href="./">← 保固系統</a>
   </div></header>
   <main>
@@ -212,18 +213,33 @@ const newId = () => doc(collection(db, 'ledger')).id;
 /* ─── 登入 ─── */
 onAuthStateChanged(auth, u => {
   $('login').classList.toggle('hidden', !!u); $('app').classList.toggle('hidden', !u);
-  if (u) { start(); listenStaff(); reportLogin(auth, '每日登打'); }
+  if (u) { start(); listenStaff(); listenNotes(); reportLogin(auth, '每日登打'); }
 });
 $('loginForm').onsubmit = async e => {
   e.preventDefault(); const f = e.target;
   try { await signInWithEmailAndPassword(auth, f.email.value.trim(), f.pw.value); } catch (er) { toast('⚠️ 登入失敗'); }
 };
 
+// 「退貨／待辦」按鈕上的紅色數字：未完成待辦＋購物金已用完、該登打的退貨（只算目前這間店）
+let notesT = [], notesC = [], notesOn = false;
+function listenNotes() {
+  if (notesOn) return; notesOn = true;
+  onSnapshot(query(collection(db, 'todos'), where('done', '==', false)), s => { notesT = s.docs.map(d => d.data()); notesBadge(); });
+  onSnapshot(query(collection(db, 'credit'), where('done', '==', false)), s => { notesC = s.docs.map(d => d.data()); notesBadge(); });
+}
+function notesBadge() {
+  const br = $('branch').value, g = {};
+  notesC.filter(c => c.branch === br).forEach(c => { const k = c.supplier || ''; g[k] = g[k] || { r: 0, u: 0, n: 0 }; const a = Number(c.amount) || 0; if (c.kind === 'use') g[k].u += a; else { g[k].r += a; g[k].n++; } });
+  const readyN = Object.values(g).filter(x => x.n && x.r - x.u <= 0).length;
+  const n = notesT.filter(t => t.branch === br).length + readyN;
+  const b = $('notesBadge'); b.textContent = n; b.classList.toggle('hidden', !n);
+  $('notesLink').title = `未完成待辦 ${notesT.filter(t => t.branch === br).length} 件${readyN ? `、${readyN} 家廠商的退貨可以登打了` : ''}`;
+}
 function start() {
   $('branch').value = lsGet('ledgerBranch') || '楠梓店';
   const t = new Date(); $('month').value = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}`;
   $('newDate').value = ymd(t);
-  $('branch').onchange = () => { lsSet('ledgerBranch', $('branch').value); load(); };
+  $('branch').onchange = () => { lsSet('ledgerBranch', $('branch').value); load(); notesBadge(); };
   $('month').onchange = load;
   load();
 }
