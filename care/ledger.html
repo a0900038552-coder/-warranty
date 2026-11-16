@@ -313,7 +313,9 @@ function wtyChip(r) {
   if (!/^09\d{8}$/.test(ph)) return '<span class="wty warn">電話格式?</span>';
   const its = parseItems(r.item).filter(k => k !== 'none' && k !== 'other');
   if (!its.length) return '<span class="wty none">✓ 已建檔</span>';
-  return '<span class="wty ok">✓ ' + its.map(k => CATS[k].label.replace(/／.*/, '') + ' ' + CATS[k].base + (CATS[k].care ? '+' + CATS[k].care : '')).join('、') + '</span>';
+  // 只顯示一般保固天數；CARE+ 要客人用 LINE 登錄才會加上，放在滑過提示
+  const tip = its.filter(k => CATS[k].care).map(k => `${CATS[k].label}：客人用 LINE 登錄 CARE+ 後再 +${CATS[k].care} 天`).join('\n');
+  return `<span class="wty ok" title="${esc(tip ? '一般保固（未含 CARE+）\n' + tip : '一般保固')}">✓ ` + its.map(k => CATS[k].label.replace(/／.*/, '') + ' ' + CATS[k].base + '天').join('、') + '</span>';
 }
 
 function render() {
