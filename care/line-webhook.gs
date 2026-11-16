@@ -698,6 +698,7 @@ function quoteEvent_(ev, token, props) {
  */
 var WEB_SOURCES = [
   { key: 'gs', name: '保衛站', url: 'https://www.guardstation.com.tw/pages/iphone-repair-price', dateRe: /價格更新日期[：:]\s*([\d\/]+)/ },
+  { key: 'gsirp', name: '保衛站', url: 'https://www.guardstation.com.tw/pages/irp-repair-price', dateRe: /價格更新日期[：:]\s*([\d\/]+)/, layout: 'rows', prefix: '原廠' },
   { key: 'qg', name: 'Q哥', url: 'https://docs.google.com/spreadsheets/d/1-7xeM1y80unFb8XBMJRci1K22XyK-sXYgPYT5H3DX9Q/htmlembed/sheet?headers=false&gid=0', dateRe: /更新日期\s*(?:<[^>]*>\s*)*([\d\/]+)/ }
 ];
 function setupWebPrices() {
@@ -712,7 +713,7 @@ function refreshWebPrices() {
       var res = UrlFetchApp.fetch(src.url, { muteHttpExceptions: true, followRedirects: true });
       if (res.getResponseCode() !== 200) { console.error(src.name + ' HTTP ' + res.getResponseCode()); return; }
       var html = res.getContentText('UTF-8');
-      var rows = parseWebPrices_(html);
+      var rows = src.layout === 'rows' ? parseRowTable_(html, src.prefix || '') : parseWebPrices_(html);
       if (rows.length < 30) { console.error(src.name + ' 只讀到 ' + rows.length + ' 筆，網頁可能改版，這次不更新'); return; }
       var dm = html.match(src.dateRe), updated = dm ? dm[1] : '';
       var hash = 'v2' + Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify(rows) + updated, Utilities.Charset.UTF_8));
@@ -766,6 +767,26 @@ function parseWebPrices_(html) {
       for (var i = 1; i < cells.length && i <= head.length; i++) {
         var m = String(cells[i]).split('\n')[0].replace(/,/g, '').match(/^\s*\$?\s*(\d{2,6})/);
         if (m && head[i - 1]) out.push({ model: head[i - 1], item: cells[0].replace(/\s+/g, ' '), price: Number(m[1]) });
+      }
+    });
+  });
+  return out;
+}
+// 另一種表格：每列一個機型、每欄一個維修項目（保衛站原廠零件頁）
+function parseRowTable_(html, prefix) {
+  var out = [];
+  (html.match(/<table[\s\S]*?<\/table>/gi) || []).forEach(function (tb) {
+    var head = null;
+    (tb.match(/<tr[\s\S]*?<\/tr>/gi) || []).forEach(function (tr) {
+      var cells = (tr.match(/<t[dh][^>]*>[\s\S]*?<\/t[dh]>/gi) || []).map(function (c) {
+        return c.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
+      });
+      if (!cells.length) return;
+      if (/機型/.test(cells[0])) { head = cells; return; }
+      if (!head || !/^iphone/i.test(cells[0])) return;
+      for (var i = 1; i < cells.length && i < head.length; i++) {
+        var m = cells[i].replace(/,/g, '').match(/^\s*\$?\s*(\d{2,6})/);
+        if (m) out.push({ model: cells[0], item: (/原廠/.test(head[i]) ? '' : prefix) + head[i], price: Number(m[1]) });
       }
     });
   });
