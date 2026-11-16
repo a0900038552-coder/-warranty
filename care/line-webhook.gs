@@ -684,7 +684,7 @@ function quoteEvent_(ev, token, props) {
   items.forEach(function (q, i) {
     createDoc_('quotes', { ts: now.toISOString(), date: Utilities.formatDate(now, 'Asia/Taipei', 'yyyy-MM-dd'),
       who: mine ? 'me' : 'peer', speaker: speaker, groupId: gid, group: group,
-      model: q.model, part: q.part, price: q.price, raw: q.raw, review: q.review, msgId: ev.message.id + '_' + i,
+      model: q.model, modelKey: mkey_(q.model), part: partOf_(q.part) || q.part, price: q.price, raw: q.raw, review: q.review, msgId: ev.message.id + '_' + i,
       kind: q.kind, target: q.target || (mine && src.groupId ? shortTarget_(group) : ''), asker: q.asker || '' });
   });
   if (src.type === 'user') reply_(ev.replyToken, token, '✅ 已記錄 ' + items.length + ' 筆：\n' + items.map(function (q) {
@@ -842,17 +842,22 @@ function runQuery_(where) {
   if (res.getResponseCode() !== 200) { console.error(res.getContentText()); return []; }
   return JSON.parse(res.getContentText()).filter(function (x) { return x.document; }).map(function (x) { return fromFields_(x.document.fields); });
 }
+// 機型比對用：不分大小寫、空白、紅米/Redmi、4G/5G
+function mkey_(m) { return String(m || '').toLowerCase().replace(/紅米/g, 'redmi').replace(/iphone/g, '').replace(/(^|\s)[45]g(?=\s|$)/g, ' ').replace(/\s+/g, ''); }
 function lookupQuotes_(text) {
   var q = String(text).replace(/^\s*(幫我)?(查價|查詢|查一下|查)\s*/, '');
   var model = ctxModel_(q), part = partOf_(q);
   if (!model && !part) return '';
-  var norm = function (x) { return String(x || '').toLowerCase().replace(/\s+/g, ''); };
+  var norm = mkey_;
   var rows;
   if (part) rows = runQuery_({ fieldFilter: { field: { fieldPath: 'part' }, op: 'EQUAL', value: { stringValue: part } } });
   else {
     var vars = [model, model.toUpperCase(), model.replace(/^VIVO/, 'vivo').replace(/^REDMI/, 'Redmi').replace(/^PIXEL/, 'Pixel').replace(/^REALME/, 'realme').replace(/^SONY/, 'Sony')]
       .filter(function (v, i, a) { return a.indexOf(v) === i; });
     rows = runQuery_({ fieldFilter: { field: { fieldPath: 'model' }, op: 'IN', value: { arrayValue: { values: vars.map(function (v) { return { stringValue: v }; }) } } } });
+    var seen = {}; rows.forEach(function (r) { seen[r.ts + r.price + r.part] = 1; });
+    runQuery_({ fieldFilter: { field: { fieldPath: 'modelKey' }, op: 'EQUAL', value: { stringValue: mkey_(model) } } })
+      .forEach(function (r) { if (!seen[r.ts + r.price + r.part]) rows.push(r); });
   }
   if (part && !rows.length) rows = [];
   // 自由輸入的零件名（例：感應排線）也一起找
