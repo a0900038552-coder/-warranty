@@ -105,7 +105,8 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
   .pg h1{text-align:center;font-size:15pt;letter-spacing:10px;margin:0 0 1mm}
   .pg .unit{display:flex;justify-content:space-between;font-size:9pt;margin-bottom:1mm;padding:0 2mm}
   .pg table{border-collapse:collapse;width:100%;table-layout:fixed}
-  .pg td{border:.4pt solid #000;height:4.05mm;padding:0 1mm;overflow:hidden;white-space:nowrap;text-overflow:clip;line-height:4mm}
+  .pg{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .pg td{border:.75pt solid #000;height:4.05mm;padding:0 1mm;overflow:hidden;white-space:nowrap;text-overflow:clip;line-height:4mm}
   .pg td.r{text-align:right}
   .pg td.c{text-align:center}
   .pg tr.th td{font-weight:700;text-align:center}
@@ -1079,26 +1080,29 @@ $('snapBtn').onclick = () => {
 
 /* ─── 列印／匯出：照原本 Excel「銷售報表」格式 ─── */
 const PER_PAGE = 55;   // 每頁內容列數（加上表頭、承前、合計、零用金 = 63 格）
-function buildPages(fromDate) {
+// 列印區間：from～to（空白＝整個月）。區間之前的天數只拿來算「承前盈餘」，不印出來
+function buildPages(from, to) {
   const carry = num($('carry').value) ?? 0;
-  const lines = [];
+  const lines = []; let start = carry, skipped = false;
   daysList().forEach(d => {
     const rs = dayRows(d).filter(r => String(r.item || '').trim() || num(r.amount) != null);
+    if (from && d < from) { if (rs.length || extraOf(d)) skipped = true; start += rs.reduce((a, r) => a + (num(r.amount) ?? 0), 0) + extraOf(d); return; }
+    if (to && d > to) return;
     if (!rs.length) return;
     const dt = new Date(d + 'T00:00:00');
     rs.forEach((r, i) => lines.push({ k: 'row', d, date: i === 0 ? `${dt.getMonth() + 1}月${dt.getDate()}日` : '', r }));
     if (extraOf(d)) lines.push({ k: 'row', d, date: '', r: { item: '多錢', amount: String(extraOf(d)), recv: '', handler: '', note: '點錢多出', cost: '', phone: '', ticket: '' }, extraRow: true });
     lines.push({ k: 'tot', d, sum: rs.reduce((a, r) => a + (num(r.amount) ?? 0), 0) + extraOf(d), prof: rs.reduce((a, r) => a + (profit(r) ?? 0), 0) });
   });
-  const pages = []; let bal = carry;
+  const pages = []; let bal = start;
   for (let i = 0; i < lines.length || i === 0; i += PER_PAGE) {
     const chunk = lines.slice(i, i + PER_PAGE);
     const open = bal;
     chunk.forEach(l => { if (l.k === 'row') bal += num(l.r.amount) ?? 0; });
-    pages.push({ open, close: bal, lines: chunk, first: i === 0 });
+    pages.push({ open, close: bal, lines: chunk, first: i === 0 && !skipped });
     if (!lines.length) break;
   }
-  return fromDate ? pages.filter(p => p.lines.some(l => l.d >= fromDate)) : pages;
+  return pages;
 }
 function monthLabel() { const [y, m] = $('month').value.split('-'); return { y, m: Number(m) }; }
 
@@ -1134,20 +1138,37 @@ function printHTML(pages) {
   }).join('');
 }
 
-$('printBtn').onclick = () => {
-  const today = ymd(new Date());
+$('printBtn').onclick = async () => {
+  const mon = $('month').value, today = ymd(new Date()), first = mon + '-01';
+  const last = ymd(new Date(Number(mon.slice(0, 4)), Number(mon.slice(5, 7)), 0));
+  const clamp = d => d < first ? first : d > last ? last : d;
+  // 預設：從上次印到的隔天，印到今天（同一個月內）
+  let printedTo = '';
+  try { const md = await getDoc(doc(db, 'ledger_meta', bm())); printedTo = md.exists() ? (md.data().printedTo || '') : ''; } catch {}
+  const next = printedTo ? ymd(new Date(new Date(printedTo + 'T00:00:00').getTime() + 864e5)) : first;
+  const dFrom = clamp(next > clamp(today) ? first : next), dTo = clamp(today);
+  const md2 = d => d ? d.slice(5).replace('-', '/') : '';
   const m = document.createElement('div'); m.className = 'modal';
   m.innerHTML = `<div class="box"><h3>🖨 列印銷售報表</h3>
-    <label><input type="radio" name="pr" value="all" checked> 整個月（${$('month').value}）</label>
-    <label><input type="radio" name="pr" value="from"> 從這天所在的頁開始：<input type="date" id="prFrom" value="${today}" style="border:1px solid #ccc;border-radius:6px;padding:3px"></label>
-    <p class="hint" style="margin:8px 0 12px">格式與原本 Excel 相同（A4 直式、每頁 63 格、每天有合計、頁尾結餘）。</p>
+    <label style="display:block;margin:6px 0"><input type="radio" name="pr" value="range" checked> 區間：
+      <input type="date" id="prFrom" value="${dFrom}" min="${first}" max="${last}" style="border:1px solid #ccc;border-radius:6px;padding:3px"> ～
+      <input type="date" id="prTo" value="${dTo}" min="${first}" max="${last}" style="border:1px solid #ccc;border-radius:6px;padding:3px"></label>
+    <label style="display:block;margin:6px 0"><input type="radio" name="pr" value="all"> 整個月（${mon}）</label>
+    <p class="hint" style="margin:8px 0 12px">${printedTo ? `上次印到 ${md2(printedTo)}，已自動從 ${md2(dFrom)} 開始。` : '這個月還沒印過。'}區間前面的天數不會印，金額會算進第一頁的「承前盈餘」。格式與原本 Excel 相同（A4 直式、每頁 63 格、每天有合計）。</p>
     <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn ghost" id="prNo">取消</button><button class="btn" id="prGo">列印</button></div></div>`;
   document.body.appendChild(m);
+  ['#prFrom', '#prTo'].forEach(q => m.querySelector(q).onfocus = () => { m.querySelector('input[value=range]').checked = true; });
   m.querySelector('#prNo').onclick = () => m.remove();
-  m.querySelector('#prGo').onclick = () => {
-    const from = m.querySelector('input[name=pr]:checked').value === 'from' ? m.querySelector('#prFrom').value : '';
-    $('print').innerHTML = printHTML(buildPages(from)); m.remove();
+  m.querySelector('#prGo').onclick = async () => {
+    const all = m.querySelector('input[name=pr]:checked').value === 'all';
+    let from = all ? '' : m.querySelector('#prFrom').value, to = all ? '' : m.querySelector('#prTo').value;
+    if (!all && (!from || !to)) return toast('請選擇日期區間');
+    if (!all && from > to) [from, to] = [to, from];
+    $('print').innerHTML = printHTML(buildPages(from, to)); m.remove();
     setTimeout(() => window.print(), 100);
+    // 記住印到哪一天，下次自動接著印
+    const upto = all ? last : to;
+    if (upto > printedTo) try { await setDoc(doc(db, 'ledger_meta', bm()), { printedTo: upto }, { merge: true }); } catch {}
   };
 };
 
