@@ -682,6 +682,15 @@ function handleQuoteWebhook_(p, body) {
   (body.events || []).forEach(function (ev) { try { quoteEvent_(ev, token, props); } catch (err) { console.error(err); } });
 }
 function quoteEvent_(ev, token, props) {
+  // 被邀請進群組／被移出群組：私訊通知老闆（不在群組裡說話，同行不會發現）
+  if (ev.type === 'join' || ev.type === 'leave') {
+    var s0 = ev.source || {};
+    var gname = s0.groupId ? groupName_(s0.groupId, token) : '多人聊天室';
+    notifyOwner_(ev.type === 'join'
+      ? '✅ 復原者Ai機器人已加入「' + gname + '」\n之後這個群組裡的報價會自動記錄（機器人不會在群組裡發言）。'
+      : '👋 復原者Ai機器人已被移出「' + gname + '」');
+    return;
+  }
   if (ev.type !== 'message' || !ev.message || ev.message.type !== 'text') return;
   var src = ev.source || {}, uid = src.userId || '', text = String(ev.message.text || '').trim();
   var owner = props.getProperty('QUOTE_OWNER') || '';
