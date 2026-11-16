@@ -664,7 +664,10 @@ function quoteEvent_(ev, token, props) {
   var gid0 = src.groupId || src.roomId || '';
   // 群組裡客人／同行的問題：記下最近問的機型、維修項目，等我們只回「800」時拿來配對
   if (gid0 && !mine) rememberAsk_(gid0, text, memberName_(src, token), ev.message.id);
-  var items = parseQuoteLines_(src.type === 'user' ? text.replace(/^\s*(記價|記錄|登記)\s*/, '') : text);
+  // 私訊「記價 傻傻修 poco x5 pro 電池 1000」→ 開頭是店名 → 記成同行報價
+  var body = src.type === 'user' ? text.replace(/^\s*(記價|記錄|登記)\s*/, '') : text, peerName = '';
+  if (src.type === 'user') { peerName = peerPrefix_(body); if (peerName) body = body.slice(body.indexOf(peerName) + peerName.length).trim(); }
+  var items = parseQuoteLines_(body);
   if (!mine) items = items.filter(function (q) { return !q.review; });   // 同行訊息：機型＋零件＋價格都有才記
   // 我們在群組只回價格（例：店員問「A71 電池 $?」→ 回「800 要訂」）→ 用前面的問題補上機型／項目
   if (mine && gid0 && (!items.length || items.every(function (q) { return q.review; }))) {
@@ -679,16 +682,16 @@ function quoteEvent_(ev, token, props) {
   }
   var gid = src.groupId || src.roomId || '';
   var group = src.groupId ? groupName_(src.groupId, token) : (src.roomId ? '多人聊天' : '私訊');
-  var speaker = mine ? '我' : memberName_(src, token);
+  var speaker = peerName || (mine ? '我' : memberName_(src, token));
   var now = new Date(ev.timestamp || Date.now());
   items.forEach(function (q, i) {
     createDoc_('quotes', { ts: now.toISOString(), date: Utilities.formatDate(now, 'Asia/Taipei', 'yyyy-MM-dd'),
-      who: mine ? 'me' : 'peer', speaker: speaker, groupId: gid, group: group,
+      who: mine && !peerName ? 'me' : 'peer', speaker: speaker, groupId: gid, group: group,
       model: q.model, modelKey: mkey_(q.model), part: partOf_(q.part) || q.part, price: q.price, raw: q.raw, review: q.review, msgId: ev.message.id + '_' + i,
       kind: q.kind, target: q.target || (mine && src.groupId ? shortTarget_(group) : ''), asker: q.asker || '' });
   });
   if (src.type === 'user') reply_(ev.replyToken, token, '✅ 已記錄 ' + items.length + ' 筆：\n' + items.map(function (q) {
-    return '・' + (q.model || '（機型？）') + ' ' + (q.part || '（零件？）') + ' $' + q.price + (q.target ? '（給 ' + q.target + '）' : '') + (q.kind === 'commission' ? '［門號佣金］' : '');
+    return '・' + (peerName ? '［同行 ' + peerName + '］' : '') + (q.model || '（機型？）') + ' ' + (q.part || '（零件？）') + ' $' + q.price + (q.target ? '（給 ' + q.target + '）' : '') + (q.kind === 'commission' ? '［門號佣金］' : '');
   }).join('\n') + (items.some(function (q) { return q.review; }) ? '\n\n有標「？」的請到報價頁補上。' : ''));
   if (mine && gid0) clearAsk_(gid0);
 }
@@ -833,6 +836,18 @@ function webQuotes_(model, part) {
   if (res.getResponseCode() !== 200) return [];
   return JSON.parse(res.getContentText()).filter(function (x) { return x.document; }).map(function (x) { return fromFields_(x.document.fields); })
     .filter(function (r) { return r.run === props.getProperty('WEB_RUN_' + r.src) && (part ? r.part === part : (r.part === '螢幕' || r.part === '電池')); });
+}
+
+// 開頭第一段不是機型、不是品牌、也不是維修項目，後面接著機型 → 當成同行店名
+function peerPrefix_(t) {
+  var m = String(t).match(/^\s*([^\s\d@＠(（][^\s]{0,19})\s+(.+)$/);
+  if (!m) return '';
+  var name = m[1], rest = m[2];
+  if (/^(三星|samsung|紅米|redmi|小米|apple|iphone|ip|蘋果|oppo|vivo|華碩|asus|sony|google|pixel|realme|poco|htc|nokia|摩托|moto|華為|huawei|榮耀|honor|查|查價)$/i.test(name)) return '';
+  if (ctxModel_(name) || partOf_(name)) return '';
+  var restModel = ctxModel_(rest);
+  if (!restModel || mkey_(ctxModel_(t)) !== mkey_(restModel)) return '';
+  return name;
 }
 
 /* ═══ 私訊查價 ═══ */
@@ -1024,7 +1039,7 @@ function modelOf_(s) {
   var t = String(s), m;
   // iPhone：13 pro、i14pm、iPhone 15 Pro Max、SE3、XR、XS Max、8P
   // 其他品牌先判斷（避免「紅米 note 10」被當成 iPhone）
-  if ((m = t.match(/(?:^|\s)((oppo|vivo|redmi|紅米|小米|mi|pixel|sony|xperia|zf|zenfone|asus|realme|nokia|htc)\s*[a-z]*\s*\d+[a-z]*(?:\s*(?:pro|plus|ultra|lite|5g))?)(?=\s|$)/i)))
+  if ((m = t.match(/(?:^|\s)((oppo|vivo|redmi|紅米|小米|poco|mi|pixel|sony|xperia|zf|zenfone|asus|realme|nokia|htc)\s*[a-z]*\s*\d+[a-z]*(?:\s*(?:pro|plus|ultra|lite|5g))?)(?=\s|$)/i)))
     return { raw: m[1], name: m[1].replace(/\s+/g, ' ').toUpperCase() };
   if ((m = t.match(/(?:^|\s)((?:iphone\s*|ip\s*|i)?(1[1-9]|[6-9])\s*(pro\s*max|promax|pm|pro|plus|mini|max|p|e)?(?=\s|$|[^\da-z]))/i))) {
     var suf = (m[3] || '').toLowerCase().replace(/\s+/g, '');
@@ -1035,7 +1050,7 @@ function modelOf_(s) {
   if ((m = t.match(/(?:^|\s)((?:iphone\s*)?(xs\s*max|xsmax|xr|xs|x|se\s*[23]|se))(?=\s|$|[^\da-z])/i)))
     return { raw: m[1], name: 'iPhone ' + m[2].toUpperCase().replace(/\s+/g, ' ').replace('XSMAX', 'XS Max').replace('XS MAX', 'XS Max') };
   // 其他品牌：OPPO A77、Redmi Note 12、ZF12U、Pixel 7
-  if ((m = t.match(/(?:^|\s)((oppo|vivo|redmi|紅米|小米|mi|pixel|sony|xperia|zf|zenfone|asus|realme|nokia|htc)\s*[a-z]*\s*\d+[a-z]*(?:\s*(?:pro|plus|ultra|lite|5g))?)(?=\s|$)/i)))
+  if ((m = t.match(/(?:^|\s)((oppo|vivo|redmi|紅米|小米|poco|mi|pixel|sony|xperia|zf|zenfone|asus|realme|nokia|htc)\s*[a-z]*\s*\d+[a-z]*(?:\s*(?:pro|plus|ultra|lite|5g))?)(?=\s|$)/i)))
     return { raw: m[1], name: m[1].replace(/\s+/g, ' ').toUpperCase() };
   // Samsung：S23U、S24 Ultra、A52s、Note20、Z Flip5
   if ((m = t.match(/(?:^|\s)((?:samsung\s*|三星\s*)?(s|a|m|note\s*)(\d{1,2})\s*(ultra|u|plus|\+|fe|s|5g)?)(?=\s|$|[^\da-z])/i))) {
