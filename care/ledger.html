@@ -137,7 +137,7 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
     <button class="hbtn" id="printBtn">🖨 列印</button>
     <button class="hbtn" id="xlsxBtn">⬇ 匯出 Excel</button>
     <button class="hbtn" id="impBtn">📥 匯入舊報表</button><button class="hbtn hidden" id="undoImp" title="把這個月恢復成匯入前的樣子">↩️ 還原上次匯入</button><input type="file" id="impFile" accept=".xlsx,.xls" class="hidden">
-    <a class="hbtn" href="quotes.html">💰 報價</a>
+    <a class="hbtn" href="quotes.html">💰 報價</a><a class="hbtn" href="stock.html">📱 中古機庫存</a>
     <a class="hbtn" href="./">← 保固系統</a>
   </div></header>
   <main>
@@ -209,7 +209,7 @@ const newId = () => doc(collection(db, 'ledger')).id;
 /* ─── 登入 ─── */
 onAuthStateChanged(auth, u => {
   $('login').classList.toggle('hidden', !!u); $('app').classList.toggle('hidden', !u);
-  if (u) start();
+  if (u) { start(); listenStaff(); }
 });
 $('loginForm').onsubmit = async e => {
   e.preventDefault(); const f = e.target;
@@ -578,8 +578,14 @@ function statRows() { return Object.values(rows).concat(statScope === 'both' ? o
 
 // 毛利分配：接待人 30%、經手人 70%（同一人＝100%；只填一邊＝那個人 100%；退修的負毛利也照比例扣）
 const SPLIT = { recv: 0.3, handler: 0.7 };
-// 員工編號（接待人／經手人欄位填編號；填名字也會對到同一人）。3、5 號目前缺員
-const STAFF = { '1': '王又祥', '2': '阿賢', '4': 'APPLE' };
+// 員工編號（接待人／經手人欄位填編號；填名字也會對到同一人）。名單存在資料庫，可在月統計的「⚙️ 人員設定」新增／修改
+let STAFF = { '1': '王又祥', '2': '阿賢', '4': 'APPLE' }, staffEdit = false;
+let staffSub = null;
+function listenStaff() { if (staffSub) return; staffSub = onSnapshot(doc(db, 'settings', 'staff'), s => { if (s.exists() && s.data().list) STAFF = s.data().list; renderStats(); }, () => { staffSub = null; }); }
+async function saveStaff(list) {
+  try { await setDoc(doc(db, 'settings', 'staff'), { list, updatedAt: new Date().toISOString(), updatedBy: auth.currentUser.email }); }
+  catch (e) { toast('⚠️ 人員名單儲存失敗：' + e.message); }
+}
 const staffKey = v => { const t = String(v || '').trim(); if (!t) return ''; const hit = Object.entries(STAFF).find(([, n]) => n.toLowerCase() === t.toLowerCase()); return hit ? hit[0] : t; };
 const staffLabel = k => STAFF[k] ? `${k} ${STAFF[k]}` : (/^\d+$/.test(k) ? `${k}（未設定）` : k);
 function staffSplit(list) {
@@ -644,7 +650,15 @@ function renderStats() {
       const st = staffSplit(sales.concat(refunds)), tot = st.reduce((a, o) => a + o.t, 0);
       if (!st.length) return '';
       const r0 = v => fmt(Math.round(v));
-      return `<div style="margin:14px 0 4px"><b>👥 人員毛利分配</b> <span class="hint">接待人 ${SPLIT.recv * 100}%・經手人 ${SPLIT.handler * 100}%（同一人兩邊都是他＝100%；只填一邊＝那人 100%；退修負毛利照比例扣）</span></div>
+      const editor = staffEdit ? `<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px;margin:6px 0">
+          <div class="hint" style="margin-bottom:6px">接待人／經手人欄位填「編號」，業績就會算給對應的人；名字可留空。改完自動儲存。</div>
+          ${Object.keys(STAFF).sort((a, b) => Number(a) - Number(b) || a.localeCompare(b)).map(k => `<div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">
+            <b style="width:44px">${esc(k)} 號</b><input data-staff="${esc(k)}" value="${esc(STAFF[k])}" placeholder="名字（可空白）" style="flex:1;max-width:220px;border:1px solid #d1d5db;border-radius:6px;padding:4px 8px">
+            <button data-staffdel="${esc(k)}" style="border:0;background:none;color:#9ca3af;cursor:pointer" title="移除">✕</button></div>`).join('')}
+          <div style="display:flex;gap:6px;margin-top:6px"><input id="newStaffNo" placeholder="編號" style="width:70px;border:1px solid #d1d5db;border-radius:6px;padding:4px 8px">
+            <input id="newStaffName" placeholder="名字" style="width:160px;border:1px solid #d1d5db;border-radius:6px;padding:4px 8px">
+            <button id="addStaff" style="border:0;border-radius:6px;padding:4px 12px;background:#16181d;color:#fff;cursor:pointer">＋ 新增人員</button></div></div>` : '';
+      return `<div style="margin:14px 0 4px"><b>👥 人員毛利分配</b> <button id="staffEdit" style="border:1px solid #d1d5db;background:#fff;border-radius:6px;padding:1px 8px;cursor:pointer;font-size:12px">⚙️ 人員設定</button> <span class="hint">接待人 ${SPLIT.recv * 100}%・經手人 ${SPLIT.handler * 100}%（同一人兩邊都是他＝100%；只填一邊＝那人 100%；退修負毛利照比例扣）</span></div>
         <table class="staff" style="width:100%;border-collapse:collapse;font-size:14px">
           <tr style="background:#f3f4f6"><th style="text-align:left;padding:6px">人員</th><th style="text-align:right;padding:6px">接待筆數</th><th style="text-align:right;padding:6px">經手筆數</th>
             <th style="text-align:right;padding:6px">接待分（${SPLIT.recv * 100}%）</th><th style="text-align:right;padding:6px">經手分（${SPLIT.handler * 100}%）</th><th style="text-align:right;padding:6px">分得毛利</th><th style="text-align:right;padding:6px">佔比</th></tr>
@@ -652,7 +666,7 @@ function renderStats() {
             <td style="text-align:right;padding:6px">${r0(o.r)}</td><td style="text-align:right;padding:6px">${r0(o.h)}</td><td style="text-align:right;padding:6px;font-weight:800${o.t < 0 ? ';color:#c00' : ''}">${r0(o.t)}</td>
             <td style="text-align:right;padding:6px">${tot ? Math.round(o.t / tot * 100) : 0}%</td></tr>`).join('')}
           <tr style="border-top:2px solid #9ca3af"><td style="padding:6px;font-weight:700">合計</td><td></td><td></td><td></td><td></td><td style="text-align:right;padding:6px;font-weight:800">${r0(tot)}</td><td></td></tr>
-        </table>`;
+        </table>`.replace('<table class="staff"', editor + '<table class="staff"');
     })()}
     <div class="daily"><div class="hint" style="margin-bottom:4px">每日${{ rev: '營收', prof: '毛利', n: '件數' }[statMetric]}</div>
       <svg viewBox="0 0 ${W} ${H + 18}" preserveAspectRatio="none" role="img" aria-label="每日${{ rev: '營收', prof: '毛利', n: '件數' }[statMetric]}長條圖">
@@ -669,6 +683,18 @@ function renderStats() {
         }).join('')}
       </svg></div>
     <p class="hint" style="margin-top:8px">分類依品項文字自動判斷（維修零件與保固規則相同）；一列含多項時，以維修零件優先歸類。回收、進貨退出、房租等列為「其他收入」，不算營收。只統計已在「每日登打」的資料（舊月份可用「📥 匯入舊報表」補進來）。</p>`;
+  if ($('staffEdit')) $('staffEdit').onclick = () => { staffEdit = !staffEdit; renderStats(); };
+  if ($('addStaff')) $('addStaff').onclick = () => {
+    const k = $('newStaffNo').value.trim(), n = $('newStaffName').value.trim();
+    if (!k) return toast('請先填編號');
+    if (STAFF[k] !== undefined) return toast(`${k} 號已經有了`);
+    STAFF = { ...STAFF, [k]: n }; saveStaff(STAFF); renderStats();
+  };
+  $('stats').querySelectorAll('[data-staff]').forEach(i => i.onchange = () => { STAFF = { ...STAFF, [i.dataset.staff]: i.value.trim() }; saveStaff(STAFF); renderStats(); });
+  $('stats').querySelectorAll('[data-staffdel]').forEach(b => b.onclick = async () => {
+    const k = b.dataset.staffdel; if (!await ask(`從名單移除 ${k} 號${STAFF[k] ? '（' + STAFF[k] + '）' : ''}？\n\n以前登打的資料不會被改，統計表會改顯示「${k}（未設定）」。`)) return;
+    const c = { ...STAFF }; delete c[k]; STAFF = c; saveStaff(STAFF); renderStats();
+  });
   $('segM').onclick = e => { const b = e.target.closest('button'); if (b) { statMetric = b.dataset.k; renderStats(); } };
   $('segS').onclick = async e => { const b = e.target.closest('button'); if (!b) return; statScope = b.dataset.k; if (statScope === 'both') await loadOther(); renderStats(); };
 }
