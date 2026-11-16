@@ -945,7 +945,7 @@ function lookupQuotes_(text) {
     Object.keys(bySite).forEach(function (site) {
       bySite[site].slice(0, part ? 4 : 3).forEach(function (r, i) {
         var stale = !i && PropertiesService.getScriptProperties().getProperty('WEB_STALE_' + r.src) ? '⚠️官網已換新價目，這是舊價' : '';
-        wl.push((i ? '　　' : site + ' ') + money(r.price) + '　' + r.item + (i ? '' : '（官網 ' + (r.updated || '?') + ' 更新）' + stale));
+        wl.push((i ? '　　' : site + ' ') + money(r.price) + '　' + r.item + (i ? '' : (r.updated ? '（官網 ' + r.updated + ' 更新）' : '（' + String(r.run || '').slice(5).replace('-', '/') + ' 抓取）') + stale));
       });
     });
     out.push(wl.join('\n'));
