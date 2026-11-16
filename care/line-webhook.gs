@@ -1038,6 +1038,16 @@ function parseQuoteLines_(text) {
 function modelOf_(s) {
   var t = String(s), m;
   // iPhone：13 pro、i14pm、iPhone 15 Pro Max、SE3、XR、XS Max、8P
+  // iPad／Apple Watch／AirPods：iPad 5、iPad Air 4、iPad mini 6、iPad Pro 11、AW S7、Apple Watch Ultra 2、AirPods Pro 2
+  if ((m = t.match(/(?:^|\s)(ipad\s*(pro|air|mini)?\s*(\d{1,2}(?:\.\d)?)?\s*(?:代|th|吋)?)(?=\s|$|[^\da-z])/i))) {
+    var v = (m[2] || '').toLowerCase(), vm = { pro: ' Pro', air: ' Air', mini: ' mini' };
+    return { raw: m[1], name: 'iPad' + (vm[v] || '') + (m[3] ? ' ' + m[3] : '') };
+  }
+  if ((m = t.match(/(?:^|\s)((?:apple\s*watch|aw)\s*(?:series\s*|s)?(\d{1,2}|se\s*\d?|ultra\s*\d?))(?=\s|$|[^\da-z])/i))) {
+    var w = m[2].replace(/\s+/g, ''); return { raw: m[1], name: 'Apple Watch ' + (/^\d/.test(w) ? 'S' + w : w.toUpperCase().replace('ULTRA', 'Ultra ').trim()) };
+  }
+  if ((m = t.match(/(?:^|\s)(airpods?\s*(pro|max)?\s*(\d)?)(?=\s|$|[^\da-z])/i)))
+    return { raw: m[1], name: 'AirPods' + (m[2] ? ' ' + m[2][0].toUpperCase() + m[2].slice(1).toLowerCase() : '') + (m[3] ? ' ' + m[3] : '') };
   // 其他品牌先判斷（避免「紅米 note 10」被當成 iPhone）
   if ((m = t.match(/(?:^|\s)((oppo|vivo|redmi|紅米|小米|poco|mi|pixel|sony|xperia|zf|zenfone|asus|realme|nokia|htc)\s*[a-z]*\s*\d+[a-z]*(?:\s*(?:pro|plus|ultra|lite|5g))?)(?=\s|$)/i)))
     return { raw: m[1], name: m[1].replace(/\s+/g, ' ').toUpperCase() };
