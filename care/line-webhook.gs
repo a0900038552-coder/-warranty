@@ -672,7 +672,9 @@ function quoteEvent_(ev, token, props) {
     if (ctxItems.length) items = ctxItems;
   }
   if (!items.length) {
-    if (src.type === 'user') reply_(ev.replyToken, token, '沒有讀到報價 🤔\n格式例：13 pro 感應排線 3000（一行一項）');
+    // 私訊沒有價格 → 當成查價：「13 pro 電池」「查 A54 螢幕」
+    if (src.type === 'user') reply_(ev.replyToken, token, lookupQuotes_(text) ||
+      '找不到這項的報價紀錄 🤔\n\n查價：直接打機型＋項目，例「13 pro 電池」\n記價：機型＋項目＋價格，例「13 pro 電池 1200」');
     return;
   }
   var gid = src.groupId || src.roomId || '';
@@ -689,6 +691,54 @@ function quoteEvent_(ev, token, props) {
     return '・' + (q.model || '（機型？）') + ' ' + (q.part || '（零件？）') + ' $' + q.price + (q.target ? '（給 ' + q.target + '）' : '') + (q.kind === 'commission' ? '［門號佣金］' : '');
   }).join('\n') + (items.some(function (q) { return q.review; }) ? '\n\n有標「？」的請到報價頁補上。' : ''));
   if (mine && gid0) clearAsk_(gid0);
+}
+
+/* ═══ 私訊查價 ═══ */
+function runQuery_(where) {
+  var res = fsFetch_(fsBase_() + ':runQuery', { method: 'post', payload: JSON.stringify({ structuredQuery: {
+    from: [{ collectionId: 'quotes' }], where: where, limit: 2000 } }) });
+  if (res.getResponseCode() !== 200) { console.error(res.getContentText()); return []; }
+  return JSON.parse(res.getContentText()).filter(function (x) { return x.document; }).map(function (x) { return fromFields_(x.document.fields); });
+}
+function lookupQuotes_(text) {
+  var q = String(text).replace(/^\s*(幫我)?(查價|查詢|查一下|查)\s*/, '');
+  var model = ctxModel_(q), part = partOf_(q);
+  if (!model && !part) return '';
+  var norm = function (x) { return String(x || '').toLowerCase().replace(/\s+/g, ''); };
+  var rows;
+  if (part) rows = runQuery_({ fieldFilter: { field: { fieldPath: 'part' }, op: 'EQUAL', value: { stringValue: part } } });
+  else {
+    var vars = [model, model.toUpperCase(), model.replace(/^VIVO/, 'vivo').replace(/^REDMI/, 'Redmi').replace(/^PIXEL/, 'Pixel').replace(/^REALME/, 'realme').replace(/^SONY/, 'Sony')]
+      .filter(function (v, i, a) { return a.indexOf(v) === i; });
+    rows = runQuery_({ fieldFilter: { field: { fieldPath: 'model' }, op: 'IN', value: { arrayValue: { values: vars.map(function (v) { return { stringValue: v }; }) } } } });
+  }
+  if (part && !rows.length) rows = [];
+  // 自由輸入的零件名（例：感應排線）也一起找
+  rows = rows.filter(function (r) { return (!model || norm(r.model) === norm(model)) && (!part || r.part === part || partOf_(r.part) === part); });
+  if (!rows.length) return '';
+  rows.sort(function (a, b) { return String(b.ts).localeCompare(String(a.ts)); });
+  var now = Date.now(), day = 86400000;
+  var age = function (r) {
+    var d = Math.floor((now - Date.parse(r.ts)) / day), lim = r.kind === 'commission' ? [3, 14] : [7, 30];
+    return (d <= lim[0] ? '🟢' : d <= lim[1] ? '🟡' : '🔴') + (d === 0 ? '今天' : d + '天前');
+  };
+  var md = function (r) { return String(r.date || '').slice(5).replace('-', '/'); };
+  var money = function (n) { return '$' + Number(n).toLocaleString('en-US'); };
+  var groups = {};
+  rows.forEach(function (r) { var k = r.model + '｜' + r.part; (groups[k] = groups[k] || []).push(r); });
+  var keys = Object.keys(groups).slice(0, 4);
+  var out = keys.map(function (k) {
+    var g = groups[k], mine = g.filter(function (r) { return r.who === 'me'; }), peer = g.filter(function (r) { return r.who !== 'me'; });
+    var lines = ['🔎 ' + k.replace('｜', ' ') + '（共 ' + g.length + ' 筆）'];
+    mine.slice(0, 3).forEach(function (r, i) {
+      lines.push((i ? '　　' : '我報 ') + money(r.price) + '　' + md(r) + (r.target ? ' 給' + r.target : '') + '　' + age(r) +
+        (/\[(.*?)\]/.test(r.raw || '') ? '　' + r.raw.match(/\[(.*?)\]/)[1] : ''));
+    });
+    peer.slice(0, 2).forEach(function (r, i) { lines.push((i ? '　　' : '同行 ') + money(r.price) + '　' + md(r) + ' ' + (r.speaker || '') + '　' + age(r)); });
+    return lines.join('\n');
+  });
+  if (Object.keys(groups).length > keys.length) out.push('…還有 ' + (Object.keys(groups).length - keys.length) + ' 項，打得更精確一點可縮小範圍');
+  return out.join('\n\n') + '\n\n完整紀錄：https://a0900038552-coder.github.io/-warranty/care/quotes.html?q=' + encodeURIComponent(q.trim());
 }
 
 /* ═══ 一問一答配對（客人問、我們只回價格）═══ */
