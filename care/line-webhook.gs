@@ -56,6 +56,7 @@ function doPost(e) {
   try {
     var p = (e && e.parameter) || {};
     if (p.action === 'staff') return json_(staffAction_(JSON.parse(e.postData.contents || '{}')));
+    if (p.action === 'login') return json_(loginAlert_(JSON.parse(e.postData.contents || '{}')));
     if (p.store === 'quote') { handleQuoteWebhook_(p, JSON.parse(e.postData.contents || '{}')); return ok_(); }
     var store = STORES[p.store];
     if (!store) return ok_();
@@ -513,6 +514,43 @@ function accessoryCarousel_(k) {
 var STORE_ADDR = { '楠梓店': '高雄市楠梓區楠梓路10號', '德賢店': '高雄市楠梓區德賢路258號' };
 
 /* ───────── 預約管理（員工在保固系統按按鈕） ───────── */
+/* ═══ 登入通知：員工帳號在「沒用過的裝置」登入時，用報價機器人私訊老闆；名單外的帳號登入一律通知 ═══
+ * 名單要跟 firestore.rules 一致（rules 才是真正擋資料的地方，這裡只負責通知）
+ */
+var ALLOWED_EMAILS = ['a0900038552@gmail.com', 'soso770724@gmail.com', 'i0935349954@gmail.com', 'i0935349455@gmail.com', 'linebot@grandmasterfix.com.tw'];
+function loginAlert_(req) {
+  var who = UrlFetchApp.fetch('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' + FIREBASE_API_KEY, {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true, payload: JSON.stringify({ idToken: req.idToken || '' }) });
+  if (who.getResponseCode() !== 200) return { ok: false };
+  var u = (JSON.parse(who.getContentText()).users || [{}])[0], email = String(u.email || '').toLowerCase();
+  var allowed = ALLOWED_EMAILS.indexOf(email) >= 0;
+  var dev = String(req.device || '').slice(0, 64), props = PropertiesService.getScriptProperties();
+  var key = 'LOGIN_DEV_' + email, known = JSON.parse(props.getProperty(key) || '[]');
+  var isNew = known.indexOf(dev) < 0;
+  if (allowed && !isNew) return { ok: true, allowed: true };
+  if (allowed) { known.push(dev); props.setProperty(key, JSON.stringify(known.slice(-30))); }
+  var when = Utilities.formatDate(new Date(), 'Asia/Taipei', 'M/d HH:mm');
+  var msg = allowed
+    ? '🔐 新裝置登入通知\n\n帳號：' + email + '\n時間：' + when + '\n裝置：' + uaShort_(req.ua) + '\n頁面：' + String(req.page || '').slice(0, 30) +
+      '\n\n是你或員工本人就不用理會。\n不是的話：請立刻到 Firebase 改這個帳號的密碼，或請 Claude 協助把它停用。'
+    : '⚠️ 名單外的帳號嘗試登入\n\n帳號：' + (email || '（不明）') + '\n時間：' + when + '\n裝置：' + uaShort_(req.ua) +
+      '\n\n這個帳號看不到任何資料（已被資料庫規則擋下）。如果不是你建立的，可以到 Firebase 把它刪除。';
+  notifyOwner_(msg);
+  return { ok: true, allowed: allowed };
+}
+function uaShort_(ua) {
+  ua = String(ua || '');
+  var os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : /Windows/.test(ua) ? 'Windows 電腦' : /Mac OS/.test(ua) ? 'Mac 電腦' : '其他';
+  var br = /Line\//.test(ua) ? 'LINE 內建瀏覽器' : /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : /Firefox/.test(ua) ? 'Firefox' : '瀏覽器';
+  return os + '・' + br;
+}
+function notifyOwner_(text) {
+  var props = PropertiesService.getScriptProperties(), token = props.getProperty('QUOTE_TOKEN'), owner = props.getProperty('QUOTE_OWNER');
+  if (!token || !owner) return;
+  UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', { method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    headers: { Authorization: 'Bearer ' + token }, payload: JSON.stringify({ to: owner, messages: [{ type: 'text', text: text }] }) });
+}
+
 function staffAction_(req) {
   // 1. 驗證員工：用 Firebase 登入憑證向 Google 確認身分
   var who = UrlFetchApp.fetch('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' + FIREBASE_API_KEY, {

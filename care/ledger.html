@@ -168,6 +168,7 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { reportLogin } from './guard.js?v=20261116';
 import { ask } from './ask.js?v=20261116';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, deleteDoc, onSnapshot, query, where, getDocs, getDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -211,7 +212,7 @@ const newId = () => doc(collection(db, 'ledger')).id;
 /* ─── 登入 ─── */
 onAuthStateChanged(auth, u => {
   $('login').classList.toggle('hidden', !!u); $('app').classList.toggle('hidden', !u);
-  if (u) { start(); listenStaff(); }
+  if (u) { start(); listenStaff(); reportLogin(auth, '每日登打'); }
 });
 $('loginForm').onsubmit = async e => {
   e.preventDefault(); const f = e.target;

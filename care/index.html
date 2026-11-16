@@ -275,6 +275,7 @@ th{color:var(--mute);font-weight:600}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { reportLogin } from './guard.js?v=20261116';
 import { ask, askText } from './ask.js?v=20261116';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
@@ -356,6 +357,7 @@ onAuthStateChanged(auth, user => {
     $('login').classList.remove('hidden'); $('app').classList.add('hidden');
     return;
   }
+  reportLogin(auth, '保固系統');
   $('login').classList.add('hidden'); $('app').classList.remove('hidden');
   $('who').textContent = user.email;
   const saved = localStorageGet('care.branch');
