@@ -738,7 +738,7 @@ function lookupQuotes_(text) {
     return lines.join('\n');
   });
   if (Object.keys(groups).length > keys.length) out.push('…還有 ' + (Object.keys(groups).length - keys.length) + ' 項，打得更精確一點可縮小範圍');
-  return out.join('\n\n') + '\n\n完整紀錄：https://a0900038552-coder.github.io/-warranty/care/quotes.html?q=' + encodeURIComponent(q.trim());
+  return out.join('\n\n');
 }
 
 /* ═══ 一問一答配對（客人問、我們只回價格）═══ */
