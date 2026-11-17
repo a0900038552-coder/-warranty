@@ -198,7 +198,7 @@ function renderTf() {
     const [d, c] = k.split('→');
     return `<div class="sup" style="margin-top:4px"><b class="name">${esc(d)} 欠 ${esc(c)}</b><span class="tag">${arr.length} 筆</span></div>
       <table>${arr.map(t => `<tr><td class="d">${md(t.date)} 調</td><td><b>${esc(t.part)}</b>${(t.qty || 1) > 1 ? ` <span class="tag">共 ${t.qty}，還欠 ${t.left}</span>` : ''}${t.note ? ` <span class="tag">${esc(t.note)}</span>` : ''}</td>
-        <td class="d">${Math.max(0, Math.round((Date.now() - new Date((t.date || '') + 'T00:00:00')) / 864e5))} 天</td>
+        <td class="d">${(n => n > 0 ? n + ' 天' : '今天')(Math.floor((Date.now() - new Date((t.date || '') + 'T00:00:00')) / 864e5))}</td>
         <td class="x"><button class="btn ghost sm" data-tfset="${t.id}" title="已經還了但沒有在登打打還貨時用">手動結清</button></td></tr>`).join('')}</table>`;
   }).join('') : '<div class="empty">兩間店目前互不相欠 👍</div>';
   $('tfOrphan').innerHTML = orp.length ? `<div class="left" style="margin-top:8px">⚠️ 這些「還貨」找不到對應的調貨（可能品名打得不一樣），請到每日登打把品名改成跟調貨時一樣：<br>${orp.map(t => `${md(t.date)}　${esc(t.debtor)}還貨：${esc(t.part)}${t.left > 1 ? ' ×' + t.left : ''}`).join('<br>')}</div>` : '';
