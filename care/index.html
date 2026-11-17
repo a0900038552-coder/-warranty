@@ -281,7 +281,7 @@ import { cachedDocs } from './cache.js?v=20261117';
 import { ask, askText } from './ask.js?v=20261116';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch, query, where, getDocs, getCountFromServer, limit }
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch, query, where, getDocs, getCountFromServer, limit, orderBy }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 import { BRANCHES, CARE_BIND_WINDOW_DAYS, CATS, autoCategory, parseItems, warrantyFields, recItems, dateFromType, parseD, ymd, normPhone, refundInfo, refundRecord } from './rules.js?v=20261115b';
@@ -304,10 +304,10 @@ const db = initializeFirestore(app, { localCache: persistentLocalCache({ tabMana
 const $ = id => document.getElementById(id);
 
 // 讀取策略（資料量上萬筆也不會超過免費額度）：
-//   recent：最近 15 個月的紀錄（還可能在保固內的都在這裡）
-//           其中最近 LIVE_DAYS 天即時同步；更舊的一天只向資料庫拿一次，其餘用電腦裡的副本（省讀取額度）
-//   found ：搜尋電話／姓名時，直接到資料庫查（多舊都查得到、永遠是最新）
-const RECENT_DAYS = 460, LIVE_DAYS = 30;
+//   recent：最近 15 個月的紀錄（還可能在保固內的都在這裡），一天只向資料庫拿一次，其餘用電腦裡的副本
+//           ＋ 即時同步「最新 30 筆」，新登錄的紀錄馬上看得到（省讀取額度）
+//   found ：搜尋電話／姓名時才到資料庫查，最多 30 筆（多舊都查得到、永遠是最新）
+const RECENT_DAYS = 460, LIVE_N = 30, PAGE = 30;
 let recent = [], recentLive = [], recentOld = [], found = new Map(), totalCount = null;
 let quotesLive = [], quotesOld = [];
 const joinById = (...lists) => { const m = new Map(); lists.forEach(l => l.forEach(r => m.set(r.id, r))); return [...m.values()]; };
@@ -356,7 +356,7 @@ async function refreshCount() {
 let unsubs = [];
 let pendingRows = [], pendingFile = '';
 let editingId = null;
-let showLimit = 50;
+let showLimit = PAGE;
 
 onAuthStateChanged(auth, user => {
   unsubs.forEach(u => u()); unsubs = [];
@@ -371,11 +371,10 @@ onAuthStateChanged(auth, user => {
   if (saved !== null) $('branchFilter').value = saved;
   const err = e => toast('⚠️ 讀取失敗：' + e.message);
   const cutoff = ymd(new Date(Date.now() - RECENT_DAYS * 86400000));
-  const liveCut = ymd(new Date(Date.now() - LIVE_DAYS * 86400000));
-  unsubs.push(onSnapshot(query(collection(db, 'records'), where('repairDate', '>=', liveCut)), s => {
+  unsubs.push(onSnapshot(query(collection(db, 'records'), orderBy('repairDate', 'desc'), limit(LIVE_N)), s => {
     recentLive = s.docs.map(d => ({ id: d.id, ...d.data() })); recent = joinById(recentOld, recentLive); mergeRecords(); render();
   }, err));
-  cachedDocs(query(collection(db, 'records'), where('repairDate', '>=', cutoff), where('repairDate', '<', liveCut)), 'records-old')
+  cachedDocs(query(collection(db, 'records'), where('repairDate', '>=', cutoff)), 'records-460')
     .then(s => { recentOld = s.docs.map(d => ({ id: d.id, ...d.data() })); recent = joinById(recentOld, recentLive); mergeRecords(); render(); }).catch(err);
   refreshCount();
   const qLiveCut = ymd(new Date(Date.now() - 14 * 86400000)), qCut = ymd(new Date(Date.now() - 365 * 86400000));
@@ -554,7 +553,7 @@ function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;
 let qTimer, searching = false, qSeq = 0;
 $('q').addEventListener('input', () => {
   clearTimeout(qTimer);
-  qTimer = setTimeout(async () => { showLimit = 50; render(); renderQuotes(); await serverSearch(); }, 250);
+  qTimer = setTimeout(async () => { showLimit = PAGE; render(); renderQuotes(); await serverSearch(); }, 600);   // 停手 0.6 秒才查，打字中不浪費讀取
 });
 // 到資料庫查：電話（完整或開頭）、姓名（開頭）；品項只在最近 15 個月內比對
 async function serverSearch() {
@@ -564,19 +563,19 @@ async function serverSearch() {
   const digits = q.replace(/\D/g, '');
   const qs = [];
   const col = collection(db, 'records');
-  if (digits.length >= 4 && digits === q.replace(/[\s\-]/g, '')) {
+  if (digits.length >= 6 && digits === q.replace(/[\s\-]/g, '')) {
     const ph = digits.length === 9 && digits[0] === '9' ? '0' + digits : digits;
-    qs.push(ph.length >= 10 ? query(col, where('phone', '==', ph)) : query(col, where('phone', '>=', ph), where('phone', '<', ph + '\uf8ff'), limit(100)));
+    qs.push(ph.length >= 10 ? query(col, where('phone', '==', ph), limit(PAGE)) : query(col, where('phone', '>=', ph), where('phone', '<', ph + '\uf8ff'), limit(PAGE)));
   } else if (!/^\d+$/.test(q)) {
-    qs.push(query(col, where('name', '>=', q), where('name', '<', q + '\uf8ff'), limit(100)));
+    qs.push(query(col, where('name', '>=', q), where('name', '<', q + '\uf8ff'), limit(PAGE)));
   }
   if (!qs.length) return;
   searching = true; render();
   try {
     for (const qq of qs) (await getDocs(qq)).forEach(d => found.set(d.id, { id: d.id, ...d.data() }));
     // 把同電話的紀錄都帶出來（例如退修與原維修）
-    const phones = [...new Set([...found.values()].map(r => r.phone).filter(Boolean))].slice(0, 30);
-    if (phones.length && phones.length <= 30) (await getDocs(query(col, where('phone', 'in', phones)))).forEach(d => found.set(d.id, { id: d.id, ...d.data() }));
+    const phones = [...new Set([...found.values()].map(r => r.phone).filter(Boolean))].slice(0, 5);
+    if (phones.length) (await getDocs(query(col, where('phone', 'in', phones), limit(PAGE)))).forEach(d => found.set(d.id, { id: d.id, ...d.data() }));
   } catch (er) { toast('⚠️ 搜尋失敗：' + er.message); }
   if (my !== qSeq) return;
   searching = false; mergeRecords(); render();
@@ -584,7 +583,7 @@ async function serverSearch() {
 $('branchFilter').addEventListener('change', () => { localStorageSet('care.branch', $('branchFilter').value); render(); });
 $('list').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
-  if (b.dataset.act === 'more') { showLimit += 100; render(); }
+  if (b.dataset.act === 'more') { showLimit += PAGE; render(); }
   if (b.dataset.act === 'edit') openEdit(b.dataset.id);
   if (b.dataset.act === 'del') delRecord(b.dataset.id);
 });
