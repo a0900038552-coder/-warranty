@@ -934,9 +934,9 @@ function peerPrefix_(t) {
 }
 
 /* ═══ 私訊查價 ═══ */
-function runQuery_(where) {
+function runQuery_(where, max) {
   var res = fsFetch_(fsBase_() + ':runQuery', { method: 'post', payload: JSON.stringify({ structuredQuery: {
-    from: [{ collectionId: 'quotes' }], where: where, limit: 2000 } }) });
+    from: [{ collectionId: 'quotes' }], where: where, limit: max || 500 } }) });
   if (res.getResponseCode() !== 200) { console.error(res.getContentText()); return []; }
   return JSON.parse(res.getContentText()).filter(function (x) { return x.document; }).map(function (x) { return fromFields_(x.document.fields); });
 }
@@ -948,7 +948,8 @@ function lookupQuotes_(text) {
   if (!model && !part) return '';
   var norm = mkey_;
   var rows;
-  if (part) rows = runQuery_({ fieldFilter: { field: { fieldPath: 'part' }, op: 'EQUAL', value: { stringValue: part } } });
+  // 有機型就先用機型找（筆數少、省讀取額度）；只問零件沒講機型時才用零件找
+  if (!model) rows = runQuery_({ fieldFilter: { field: { fieldPath: 'part' }, op: 'EQUAL', value: { stringValue: part } } }, 300);
   else {
     var vars = [model, model.toUpperCase(), model.replace(/^VIVO/, 'vivo').replace(/^REDMI/, 'Redmi').replace(/^PIXEL/, 'Pixel').replace(/^REALME/, 'realme').replace(/^SONY/, 'Sony')]
       .filter(function (v, i, a) { return a.indexOf(v) === i; });
