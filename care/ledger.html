@@ -156,7 +156,7 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
     <div id="days"></div>
     <div class="add-day">
       <b>新增日期</b><input type="date" id="newDate"><button class="btn ghost" id="addDayBtn">＋ 加入</button>
-      <span class="hint">打字就會自動儲存；品項有電話的會自動建立保固紀錄。按 Enter 跳到下一列。支出請寫「支出:廠商」，付錢打負數、廠商退貨退錢打正數。每天下方「點錢」填保險櫃與抽屜現金，會自動比對帳上結餘。退修請寫「退修 10/27 13電池/雄0908」＋電話，原因寫在備註，保固系統會多一筆退修紀錄。</span>
+      <span class="hint">打字就會自動儲存；品項有電話的會自動建立保固紀錄。按 Enter 跳到下一列。支出請寫「支出:廠商」，付錢打負數、廠商退貨退錢打正數。每天下方「點錢」填保險櫃與抽屜現金，會自動比對帳上結餘。退修請寫「退修 10/27 13電池/雄0908」＋電話，原因寫在備註，保固系統會多一筆退修紀錄。兩店調料件寫「楠梓店調貨：13 電池」（金額空白），還的時候寫「楠梓店還貨：13 電池」，會自動記在「退貨／待辦」的欠條。</span>
     </div>
   </main>
 </section>
@@ -172,6 +172,7 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { reportLogin } from './guard.js?v=20261116';
 import { requirePin, isUnlocked } from './pin.js?v=20261117';
+import { parseTransfer, settle } from './transfer.js?v=20261117';
 import { ask } from './ask.js?v=20261116';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, deleteDoc, onSnapshot, query, where, getDocs, getDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -225,19 +226,21 @@ $('loginForm').onsubmit = async e => {
 };
 
 // 「退貨／待辦」按鈕上的紅色數字：未完成待辦＋購物金已用完、該登打的退貨（只算目前這間店）
-let notesT = [], notesC = [], notesOn = false;
+let notesT = [], notesC = [], notesTf = [], notesOn = false;
 function listenNotes() {
   if (notesOn) return; notesOn = true;
   onSnapshot(query(collection(db, 'todos'), where('done', '==', false)), s => { notesT = s.docs.map(d => d.data()); notesBadge(); });
   onSnapshot(collection(db, 'credit'), s => { notesC = s.docs.map(d => d.data()); notesBadge(); totals(); });
+  onSnapshot(collection(db, 'transfers'), s => { notesTf = s.docs.map(d => ({ id: d.id, ...d.data() })); notesBadge(); }, () => {});
 }
 function notesBadge() {
   const br = $('branch').value, g = {};
   notesC.filter(c => c.branch === br && !c.done).forEach(c => { const k = c.supplier || ''; g[k] = g[k] || { r: 0, u: 0, n: 0 }; const a = Number(c.amount) || 0; if (c.kind === 'use') g[k].u += a; else { g[k].r += a; g[k].n++; } });
   const readyN = Object.values(g).filter(x => x.n && x.r - x.u <= 0).length;
-  const n = notesT.filter(t => t.branch === br).length + readyN;
+  const owe = settle(notesTf).open.filter(t => t.debtor === br).length;
+  const n = notesT.filter(t => t.branch === br).length + readyN + owe;
   const b = $('notesBadge'); b.textContent = n; b.classList.toggle('hidden', !n);
-  $('notesLink').title = `未完成待辦 ${notesT.filter(t => t.branch === br).length} 件${readyN ? `、${readyN} 家廠商的退貨可以登打了` : ''}`;
+  $('notesLink').title = `未完成待辦 ${notesT.filter(t => t.branch === br).length} 件${readyN ? `、${readyN} 家廠商的退貨可以登打了` : ''}${owe ? `、還欠${br === '楠梓店' ? '德賢店' : '楠梓店'} ${owe} 筆調貨` : ''}`;
 }
 function start() {
   $('branch').value = lsGet('ledgerBranch') || '楠梓店';
@@ -463,6 +466,7 @@ async function save(id) {
   try {
     await setDoc(doc(db, 'ledger', id), data);
     await syncWarranty(id, data);
+    await syncTransfer(id, data);
     dirty.delete(id);
     tr()?.classList.remove('saving', 'err');
     setSync('已同步');
@@ -470,6 +474,14 @@ async function save(id) {
     tr()?.classList.add('err'); setSync('⚠️ 儲存失敗');
     toast('⚠️ 儲存失敗，請檢查網路：' + er.message);
   }
+}
+
+// 兩店調貨：「楠梓店調貨：xx」「楠梓店還貨：xx」→ 自動記到「退貨／待辦」的欠條（同一列改掉或刪掉，欠條也跟著改）
+async function syncTransfer(id, r) {
+  const t = parseTransfer(r.item, r.branch), ref = doc(db, 'transfers', id);
+  if (!t) { if (rows[id]?._hadTf !== false) { await deleteDoc(ref); if (rows[id]) rows[id]._hadTf = false; } return; }   // 原本是調貨、被改掉了 → 欠條也拿掉（不存在也不會出錯）
+  await setDoc(ref, { ...t, date: r.date, ledgerId: id, ledgerBranch: r.branch, note: r.note || '', cost: r.cost || '', updatedAt: r.updatedAt, by: r.updatedBy }, { merge: true });
+  if (rows[id]) rows[id]._hadTf = true;
 }
 
 // 有電話的維修品項 → 自動建立／更新保固紀錄（與 Excel 匯入同規則；月初再匯入會自動略過重複）
@@ -572,6 +584,7 @@ $('days').addEventListener('click', async e => {
     clearTimeout(timers[r.id]); dirty.delete(r.id);
     await deleteDoc(doc(db, 'ledger', r.id));
     await deleteDoc(doc(db, 'records', 'L' + r.id));
+    await deleteDoc(doc(db, 'transfers', r.id));
     delete rows[r.id]; render(); toast('已刪除');
   } catch (er) { toast('⚠️ 刪除失敗：' + er.message); }
 });

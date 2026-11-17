@@ -94,6 +94,14 @@ details{margin-top:8px}summary{cursor:pointer;color:var(--mute);font-size:13px}
       <details id="todoDoneBox"><summary>已完成（最近 30 筆）</summary><div id="todosDone"></div></details>
     </div>
 
+    <h2>🔁 兩店調貨（欠條） <span class="cnt" id="tfCnt">0</span></h2>
+    <div class="card">
+      <div id="tfOpen"></div>
+      <div id="tfOrphan"></div>
+      <p class="hint">在每日登打打「<b>楠梓店調貨：iPhone 13 電池</b>」（金額空白）就會記一筆「楠梓店欠德賢店」；還的時候打「<b>楠梓店還貨：iPhone 13 電池</b>」自動銷帳。數量寫在最後，例如「×2」。品名要跟調貨時差不多，對不起來的會在上面提醒。</p>
+      <details id="tfDoneBox"><summary>已還清（最近 50 筆）</summary><table id="tfDone"></table></details>
+    </div>
+
     <h2>↩️ 退貨・購物金 <span class="cnt" id="retCnt">0</span></h2>
     <div class="card">
       <form class="form" id="retForm">
@@ -118,6 +126,7 @@ details{margin-top:8px}summary{cursor:pointer;color:var(--mute);font-size:13px}
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { reportLogin } from './guard.js?v=20261116';
 import { ask, askText } from './ask.js';
+import { settle } from './transfer.js?v=20261117';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, addDoc, updateDoc, deleteDoc, writeBatch, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 const app = initializeApp({ apiKey: "AIzaSyD04ZMXIt8Oo3hjm5qsMaKiLXYzp_9YKwA", authDomain: "care-warranty.firebaseapp.com", projectId: "care-warranty",
@@ -134,7 +143,7 @@ const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
 function toast(m) { const t = $('toast'); t.textContent = m; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2400); }
 const who = () => (auth.currentUser && auth.currentUser.email) || '';
 
-let credit = [], todos = [], started = false;
+let credit = [], todos = [], transfers = [], started = false;
 onAuthStateChanged(auth, u => { $('login').classList.toggle('hidden', !!u); $('app').classList.toggle('hidden', !u); if (u) { start(); reportLogin(auth, '退貨／待辦'); } });
 $('loginForm').onsubmit = async e => { e.preventDefault(); try { await signInWithEmailAndPassword(auth, e.target.email.value.trim(), e.target.pw.value); } catch { toast('⚠️ 登入失敗'); } };
 
@@ -145,8 +154,9 @@ function start() {
   $('rDate').value = ymd(new Date());
   onSnapshot(collection(db, 'credit'), s => { credit = s.docs.map(d => ({ id: d.id, ...d.data() })); renderCredit(); });
   onSnapshot(collection(db, 'todos'), s => { todos = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTodos(); });
+  onSnapshot(collection(db, 'transfers'), s => { transfers = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTf(); });
 }
-$('br').onchange = () => { lsSet('notesBranch', $('br').value); renderCredit(); renderTodos(); };
+$('br').onchange = () => { lsSet('notesBranch', $('br').value); renderCredit(); renderTodos(); renderTf(); };
 const inBr = x => !$('br').value || x.branch === $('br').value;
 
 // ───────── 待辦 ─────────
@@ -176,6 +186,26 @@ document.addEventListener('change', async e => {
   await updateDoc(doc(db, 'todos', id), { done, doneAt: done ? new Date().toISOString() : '', doneBy: done ? who() : '' });
   if (done) toast('✅ 完成！');
 });
+
+// ───────── 兩店調貨（欠條）─────────
+function renderTf() {
+  const br = $('br').value, mine = t => !br || t.debtor === br || t.creditor === br;
+  const { open, settled, orphan } = settle(transfers);
+  const o = open.filter(mine), done = settled.filter(mine).sort((a, b) => (b.returnedOn || '').localeCompare(a.returnedOn || '')).slice(0, 50), orp = orphan.filter(mine);
+  $('tfCnt').textContent = o.length;
+  const groups = {}; o.forEach(t => (groups[t.debtor + '→' + t.creditor] = groups[t.debtor + '→' + t.creditor] || []).push(t));
+  $('tfOpen').innerHTML = Object.keys(groups).length ? Object.entries(groups).map(([k, arr]) => {
+    const [d, c] = k.split('→');
+    return `<div class="sup" style="margin-top:4px"><b class="name">${esc(d)} 欠 ${esc(c)}</b><span class="tag">${arr.length} 筆</span></div>
+      <table>${arr.map(t => `<tr><td class="d">${md(t.date)} 調</td><td><b>${esc(t.part)}</b>${(t.qty || 1) > 1 ? ` <span class="tag">共 ${t.qty}，還欠 ${t.left}</span>` : ''}${t.note ? ` <span class="tag">${esc(t.note)}</span>` : ''}</td>
+        <td class="d">${Math.max(0, Math.round((Date.now() - new Date((t.date || '') + 'T00:00:00')) / 864e5))} 天</td>
+        <td class="x"><button class="btn ghost sm" data-tfset="${t.id}" title="已經還了但沒有在登打打還貨時用">手動結清</button></td></tr>`).join('')}</table>`;
+  }).join('') : '<div class="empty">兩間店目前互不相欠 👍</div>';
+  $('tfOrphan').innerHTML = orp.length ? `<div class="left" style="margin-top:8px">⚠️ 這些「還貨」找不到對應的調貨（可能品名打得不一樣），請到每日登打把品名改成跟調貨時一樣：<br>${orp.map(t => `${md(t.date)}　${esc(t.debtor)}還貨：${esc(t.part)}${t.left > 1 ? ' ×' + t.left : ''}`).join('<br>')}</div>` : '';
+  $('tfDoneBox').classList.toggle('hidden', !done.length);
+  $('tfDone').innerHTML = done.map(t => `<tr><td class="d">${md(t.date)} 調</td><td>${esc(t.debtor)}向${esc(t.creditor)}調 <b>${esc(t.part)}</b>${(t.qty || 1) > 1 ? ' ×' + t.qty : ''}</td>
+    <td class="d">${t.settled ? '手動結清' : '還貨'} ${md(t.returnedOn)}</td><td class="x">${t.settled ? `<button class="btn ghost sm" data-tfun="${t.id}">取消結清</button>` : ''}</td></tr>`).join('');
+}
 
 // ───────── 退貨・購物金 ─────────
 // credit 文件：kind 'return'（退貨，產生購物金）或 'use'（使用購物金）；done=true 代表已登打進每日登打並歸檔
@@ -256,7 +286,7 @@ document.addEventListener('submit', async e => {
 
 // ───────── 點擊：刪除／修改／歸檔／還原 ─────────
 document.addEventListener('click', async e => {
-  const t = e.target.closest('[data-tdel],[data-tedit],[data-cdel],[data-arc],[data-unarc]'); if (!t) return;
+  const t = e.target.closest('[data-tdel],[data-tedit],[data-cdel],[data-arc],[data-unarc],[data-tfset],[data-tfun]'); if (!t) return;
   const d = t.dataset;
   try {
     if (d.tdel) { const x = todos.find(y => y.id === d.tdel); if (await ask(`刪除這筆待辦？\n\n${x ? x.text : ''}`, { ok: '刪除' })) await deleteDoc(doc(db, 'todos', d.tdel)); }
@@ -269,6 +299,8 @@ document.addEventListener('click', async e => {
       arr.forEach(c => b.update(doc(db, 'credit', c.id), { done: true, doneAt: at, doneBy: who() }));
       await b.commit(); toast('已歸檔');
     }
+    else if (d.tfset) { const x = transfers.find(y => y.id === d.tfset); if (await ask(`把這筆調貨標成「已還清」？\n\n${x ? x.debtor + '向' + x.creditor + '調：' + x.part : ''}\n\n（建議還是在每日登打打「還貨」，紀錄比較完整）`, { ok: '標成已還清', danger: false })) await updateDoc(doc(db, 'transfers', d.tfset), { settled: true, settledAt: new Date().toISOString(), settledBy: who() }); }
+    else if (d.tfun) { await updateDoc(doc(db, 'transfers', d.tfun), { settled: false, settledAt: '', settledBy: '' }); toast('已取消結清'); }
     else if (d.unarc) { await updateDoc(doc(db, 'credit', d.unarc), { done: false, doneAt: '', doneBy: '' }); toast('已還原'); }
   } catch (err) { toast('⚠️ 失敗：' + err.message); }
 });
