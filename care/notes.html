@@ -132,6 +132,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { reportLogin } from './guard.js?v=20261116';
 import { ask, askText } from './ask.js';
 import { settle } from './transfer.js?v=20261117';
+import { requirePin } from './pin.js?v=20261117';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, addDoc, updateDoc, deleteDoc, writeBatch, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 const app = initializeApp({ apiKey: "AIzaSyD04ZMXIt8Oo3hjm5qsMaKiLXYzp_9YKwA", authDomain: "care-warranty.firebaseapp.com", projectId: "care-warranty",
@@ -249,7 +250,10 @@ function card(k, arr) {
     : left <= 0
       ? `<div class="ready">✅ <b>購物金已用完${left < 0 ? `（多用了 ${money(-left)}）` : ''}，可以把這 ${rets.length} 筆退貨登打到每日登打了：</b>
           <ol>${rets.map(r => `<li>${esc(r.item)}　${money(num(r.amount))}</li>`).join('')}</ol>
-          <button class="btn green sm" data-arc="${esc(k)}">已登打完成，歸檔</button></div>`
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn green sm" data-post="${esc(k)}">✍️ 一鍵登打到今天每日登打＋歸檔</button>
+            <button class="btn ghost sm" data-arc="${esc(k)}">我自己打好了，只歸檔</button></div>
+          <div class="hint">一鍵登打會在今天的${esc(branch)}每日登打新增一列「支出:${esc(supplier)} 退貨」＋${money(got)}（品項寫在備註），點錢的購物金也會自動歸零。</div></div>`
       : `<div class="left">購物金還剩 <b>${money(left)}</b> 未用完，先不用登打。</div>`;
   return `<div class="card">
     <div class="sup"><b class="name">${esc(supplier || '（未填廠商）')}</b><span class="tag">${esc(branch)}</span>
@@ -291,12 +295,26 @@ document.addEventListener('submit', async e => {
 
 // ───────── 點擊：刪除／修改／歸檔／還原 ─────────
 document.addEventListener('click', async e => {
-  const t = e.target.closest('[data-tdel],[data-tedit],[data-cdel],[data-arc],[data-unarc],[data-tfset],[data-tfun]'); if (!t) return;
+  const t = e.target.closest('[data-tdel],[data-tedit],[data-cdel],[data-arc],[data-unarc],[data-tfset],[data-tfun],[data-post]'); if (!t) return;
   const d = t.dataset;
   try {
     if (d.tdel) { const x = todos.find(y => y.id === d.tdel); if (await ask(`刪除這筆待辦？\n\n${x ? x.text : ''}`, { ok: '刪除' })) await deleteDoc(doc(db, 'todos', d.tdel)); }
     else if (d.tedit) { const x = todos.find(y => y.id === d.tedit); const v = await askText('修改待辦', x ? x.text : ''); if (v != null && v.trim()) await updateDoc(doc(db, 'todos', d.tedit), { text: v.trim() }); }
     else if (d.cdel) { const x = credit.find(y => y.id === d.cdel); if (await ask(`刪除這筆${x && x.kind === 'use' ? '使用紀錄' : '退貨'}？\n\n${x ? (x.item || x.note || '') + '　' + money(num(x.amount)) : ''}`, { ok: '刪除' })) await deleteDoc(doc(db, 'credit', d.cdel)); }
+    else if (d.post) {
+      // 購物金用完 → 在今天的每日登打新增一列退貨（照登打規則：支出:廠商，廠商退貨打正數），同時歸檔
+      const arr = credit.filter(c => !c.done && gkey(c) === d.post);
+      const [branch, supplier] = d.post.split('｜');
+      const rets = arr.filter(c => c.kind === 'return'), total = sum(arr, 'return');
+      const note = rets.map(r => r.item).join('、').slice(0, 200), today = ymd(new Date());
+      if (!await ask(`在今天（${md(today)}）的${branch}每日登打新增：\n\n支出:${supplier} 退貨　＋${total.toLocaleString('en-US')}\n備註：${note}\n\n並把這批退貨歸檔。確定嗎？`, { ok: '登打並歸檔', danger: false })) return;
+      if (!await requirePin(branch, '登打退貨到', { device: true })) return;
+      const b = writeBatch(db), at = new Date().toISOString();
+      b.set(doc(collection(db, 'ledger')), { bm: `${branch}_${today.slice(0, 7)}`, branch, date: today, order: Date.now(), item: `支出:${supplier} 退貨`, amount: String(total),
+        recv: '', handler: '', note, cost: '', phone: '', ticket: '', createdAt: at, createdBy: who(), updatedAt: at, updatedBy: who(), fromCredit: true });
+      arr.forEach(c => b.update(doc(db, 'credit', c.id), { done: true, doneAt: at, doneBy: who() }));
+      await b.commit(); toast('✅ 已登打到今天的每日登打，並歸檔');
+    }
     else if (d.arc) {
       const arr = credit.filter(c => !c.done && gkey(c) === d.arc);
       if (!await ask(`確定這些退貨都已經登打到每日登打了嗎？\n\n歸檔後會移到下方「已歸檔」，需要時可以還原。`, { ok: '歸檔', danger: false })) return;
