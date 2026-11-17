@@ -119,7 +119,7 @@ details{margin-top:8px}summary{cursor:pointer;color:var(--mute);font-size:13px}
         <button class="btn">＋ 新增退貨</button>
       </form>
       <datalist id="supList"></datalist>
-      <p class="hint">退貨後廠商給的購物金記在這裡；之後進貨用掉購物金時，在該廠商下面按「記錄使用」。等購物金用完，這裡會提醒你把退貨一次登打進每日登打，打完按「歸檔」。<br>用購物金進貨時，每日登打照常打支出；那天的「點錢」會自動扣掉已使用、還沒登打的購物金，金額就對得起來。</p>
+      <p class="hint">退貨後廠商給的購物金記在這裡；之後進貨用掉購物金時，在該廠商下面按「記錄使用」。等購物金用完，這裡會提醒你把退貨一次登打進每日登打，打完按「歸檔」。<br>用購物金進貨時，每日登打照常打支出；那天的「點錢」會自動扣掉已使用、還沒登打的購物金，金額就對得起來。購物金用完、退貨入帳那天，在每日登打打「支出:廠商購物金入帳」＋總額，這裡那批就會自動歸檔。</p>
     </div>
     <div id="groups"></div>
     <details id="arcBox"><summary>已歸檔的退貨（最近 50 筆）</summary><div class="card" style="margin-top:8px"><table id="arc"></table></div></details>
@@ -253,7 +253,7 @@ function card(k, arr) {
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button class="btn green sm" data-post="${esc(k)}">✍️ 一鍵登打到今天每日登打＋歸檔</button>
             <button class="btn ghost sm" data-arc="${esc(k)}">我自己打好了，只歸檔</button></div>
-          <div class="hint">一鍵登打會在今天的${esc(branch)}每日登打新增一列「支出:${esc(supplier)} 退貨」＋${money(got)}（品項寫在備註），點錢的購物金也會自動歸零。</div></div>`
+          <div class="hint">也可以直接在每日登打打「<b>支出:${esc(supplier)}購物金入帳</b>」＋${money(got)}，這批會自動歸檔。一鍵登打就是幫你新增這一列（品項寫在備註），點錢的購物金也會自動歸零。</div></div>`
       : `<div class="left">購物金還剩 <b>${money(left)}</b> 未用完，先不用登打。</div>`;
   return `<div class="card">
     <div class="sup"><b class="name">${esc(supplier || '（未填廠商）')}</b><span class="tag">${esc(branch)}</span>
@@ -307,12 +307,12 @@ document.addEventListener('click', async e => {
       const [branch, supplier] = d.post.split('｜');
       const rets = arr.filter(c => c.kind === 'return'), total = sum(arr, 'return');
       const note = rets.map(r => r.item).join('、').slice(0, 200), today = ymd(new Date());
-      if (!await ask(`在今天（${md(today)}）的${branch}每日登打新增：\n\n支出:${supplier} 退貨　＋${total.toLocaleString('en-US')}\n備註：${note}\n\n並把這批退貨歸檔。確定嗎？`, { ok: '登打並歸檔', danger: false })) return;
+      if (!await ask(`在今天（${md(today)}）的${branch}每日登打新增：\n\n支出:${supplier}購物金入帳　＋${total.toLocaleString('en-US')}\n備註：${note}\n\n並把這批退貨歸檔。確定嗎？`, { ok: '登打並歸檔', danger: false })) return;
       if (!await requirePin(branch, '登打退貨到', { device: true })) return;
-      const b = writeBatch(db), at = new Date().toISOString();
-      b.set(doc(collection(db, 'ledger')), { bm: `${branch}_${today.slice(0, 7)}`, branch, date: today, order: Date.now(), item: `支出:${supplier} 退貨`, amount: String(total),
+      const b = writeBatch(db), at = new Date().toISOString(), lref = doc(collection(db, 'ledger'));
+      b.set(lref, { bm: `${branch}_${today.slice(0, 7)}`, branch, date: today, order: Date.now(), item: `支出:${supplier}購物金入帳`, amount: String(total),
         recv: '', handler: '', note, cost: '', phone: '', ticket: '', createdAt: at, createdBy: who(), updatedAt: at, updatedBy: who(), fromCredit: true });
-      arr.forEach(c => b.update(doc(db, 'credit', c.id), { done: true, doneAt: at, doneBy: who() }));
+      arr.forEach(c => b.update(doc(db, 'credit', c.id), { done: true, doneAt: at, doneBy: who(), postId: lref.id }));
       await b.commit(); toast('✅ 已登打到今天的每日登打，並歸檔');
     }
     else if (d.arc) {

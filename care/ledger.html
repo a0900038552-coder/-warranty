@@ -167,7 +167,7 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
     <div id="days"></div>
     <div class="add-day">
       <b>新增日期</b><input type="date" id="newDate"><button class="btn ghost" id="addDayBtn">＋ 加入</button>
-      <span class="hint">打字就會自動儲存；品項有電話的會自動建立保固紀錄。按 Enter 跳到下一列。支出請寫「支出:廠商」，付錢打負數、廠商退貨退錢打正數。每天下方「點錢」填保險櫃與抽屜現金，會自動比對帳上結餘。退修請寫「退修 10/27 13電池/雄0908」＋電話，原因寫在備註，保固系統會多一筆退修紀錄。兩店調料件寫「楠梓店調貨：13 電池」（金額空白），還的時候寫「楠梓店還貨：13 電池」，會自動記在「退貨／待辦」的欠條。</span>
+      <span class="hint">打字就會自動儲存；品項有電話的會自動建立保固紀錄。按 Enter 跳到下一列。支出請寫「支出:廠商」，付錢打負數、廠商退貨退錢打正數。每天下方「點錢」填保險櫃與抽屜現金，會自動比對帳上結餘。退修請寫「退修 10/27 13電池/雄0908」＋電話，原因寫在備註，保固系統會多一筆退修紀錄。購物金用完、退貨入帳時寫「支出:鴻勝購物金入帳」＋總額（正數），退貨／待辦裡那批會自動歸檔。兩店調料件寫「楠梓店調貨：13 電池」（金額空白），還的時候寫「楠梓店還貨：13 電池」，會自動記在「退貨／待辦」的欠條。</span>
     </div>
   </main>
 </section>
@@ -273,7 +273,7 @@ let notesT = [], notesC = [], notesTf = [], notesOn = false;
 function listenNotes() {
   if (notesOn) return; notesOn = true;
   onSnapshot(query(collection(db, 'todos'), where('done', '==', false)), s => { notesT = s.docs.map(d => d.data()); notesBadge(); });
-  onSnapshot(collection(db, 'credit'), s => { notesC = s.docs.map(d => d.data()); notesBadge(); totals(); });
+  onSnapshot(collection(db, 'credit'), s => { notesC = s.docs.map(d => ({ id: d.id, ...d.data() })); notesBadge(); totals(); });
   onSnapshot(collection(db, 'transfers'), s => { notesTf = s.docs.map(d => ({ id: d.id, ...d.data() })); notesBadge(); }, () => {});
 }
 function notesBadge() {
@@ -510,6 +510,7 @@ async function save(id) {
     await setDoc(doc(db, 'ledger', id), data);
     await syncWarranty(id, data);
     await syncTransfer(id, data);
+    await syncCreditPost(id, data);
     dirty.delete(id);
     tr()?.classList.remove('saving', 'err');
     setSync('已同步');
@@ -517,6 +518,26 @@ async function save(id) {
     tr()?.classList.add('err'); setSync('⚠️ 儲存失敗');
     toast('⚠️ 儲存失敗，請檢查網路：' + er.message);
   }
+}
+
+// 購物金入帳：「支出:鴻勝購物金入帳」＋正數 → 「退貨／待辦」裡鴻勝這批購物金自動歸檔（這列改掉或刪掉會自動還原）
+const CP_RE = /^\s*支出\s*[:：]\s*(.+?)\s*購物金\s*入帳/;
+async function syncCreditPost(id, r) {
+  const m = String(r.item || '').match(CP_RE), amt = num(r.amount) ?? 0;
+  const mine = notesC.filter(c => c.postId === id);
+  if (!m || amt <= 0) {                                    // 不是（或不再是）入帳列 → 之前歸檔的還原
+    if (mine.length) { const b = writeBatch(db); mine.forEach(c => b.update(doc(db, 'credit', c.id), { done: false, doneAt: '', doneBy: '', postId: '' })); await b.commit(); toast('已把購物金還原成未歸檔'); }
+    return;
+  }
+  if (mine.length) return;                                 // 已經歸檔過了
+  const sup = m[1].trim(), same = c => { const a = String(c.supplier || '').trim(); return a === sup || a.includes(sup) || sup.includes(a); };
+  const open = notesC.filter(c => !c.done && c.branch === r.branch && c.supplier && same(c));
+  if (!open.length) { toast(`⚠️ 找不到「${sup}」還沒歸檔的購物金（請確認廠商名稱跟退貨／待辦裡一樣）`); return; }
+  const got = open.filter(c => c.kind === 'return').reduce((a, c) => a + (num(c.amount) ?? 0), 0);
+  const b = writeBatch(db), at = `${r.date}T12:00:00+08:00`;
+  open.forEach(c => b.update(doc(db, 'credit', c.id), { done: true, doneAt: at, doneBy: auth.currentUser.email, postId: id }));
+  await b.commit();
+  toast(amt === got ? `✅ ${sup}的購物金已入帳，${open.filter(c => c.kind === 'return').length} 筆退貨已歸檔` : `✅ ${sup}已歸檔；⚠️ 入帳 ${fmt(amt)} 跟退貨總額 ${fmt(got)} 不一樣，請確認`);
 }
 
 // 兩店調貨：「楠梓店調貨：xx」「楠梓店還貨：xx」→ 自動記到「退貨／待辦」的欠條（同一列改掉或刪掉，欠條也跟著改）
@@ -628,7 +649,9 @@ $('days').addEventListener('click', async e => {
     await deleteDoc(doc(db, 'ledger', r.id));
     await deleteDoc(doc(db, 'records', 'L' + r.id));
     await deleteDoc(doc(db, 'transfers', r.id));
-    delete rows[r.id]; render(); toast('已刪除');
+    const posted = notesC.filter(c => c.postId === r.id);
+    if (posted.length) { const b = writeBatch(db); posted.forEach(c => b.update(doc(db, 'credit', c.id), { done: false, doneAt: '', doneBy: '', postId: '' })); await b.commit(); }
+    delete rows[r.id]; render(); toast(posted.length ? '已刪除，購物金已還原成未歸檔' : '已刪除');
   } catch (er) { toast('⚠️ 刪除失敗：' + er.message); }
 });
 
