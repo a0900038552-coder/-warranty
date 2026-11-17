@@ -278,6 +278,7 @@ th{color:var(--mute);font-weight:600}
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { reportLogin } from './guard.js?v=20261116';
 import { cachedDocs } from './cache.js?v=20261117';
+import { requirePin } from './pin.js?v=20261117';
 import { ask, askText } from './ask.js?v=20261116';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
@@ -584,7 +585,7 @@ $('branchFilter').addEventListener('change', () => { localStorageSet('care.branc
 $('list').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   if (b.dataset.act === 'more') { showLimit += PAGE; render(); }
-  if (b.dataset.act === 'edit') openEdit(b.dataset.id);
+  if (b.dataset.act === 'edit') { const r = records.find(x => x.id === b.dataset.id); if (r) requirePin(r.branch, '編輯', { minutes: 5 }).then(ok => ok && openEdit(r.id)); }
   if (b.dataset.act === 'del') delRecord(b.dataset.id);
 });
 
@@ -691,6 +692,8 @@ $('editModal').addEventListener('click', e => { if (e.target.id === 'editModal')
 editForm.addEventListener('submit', async e => {
   e.preventDefault();
   let r = readForm(editForm); if (!r) return;
+  const old = records.find(x => x.id === editingId);
+  if (old && r.branch && r.branch !== old.branch && !await requirePin(r.branch, '把紀錄改到', { minutes: 5 })) return;   // 改到另一間店也要那間店的密碼
   if (records.find(x => x.id === editingId)?.kind === 'refund' || refundInfo(r.type, r.repairDate)) r = refundRecord(r, r.repairDate);
   try {
     await updateDoc(doc(db, 'records', editingId), { ...r, source: 'manual', updatedAt: new Date().toISOString(), updatedBy: auth.currentUser.email });
@@ -700,6 +703,7 @@ editForm.addEventListener('submit', async e => {
 
 async function delRecord(id) {
   const r = records.find(x => x.id === id); if (!r) return;
+  if (!await requirePin(r.branch, '刪除')) return;
   if (!await ask(`確定刪除「${r.name}／${r.type}」這筆紀錄？刪除後無法復原。`)) return;
   try { await deleteDoc(doc(db, 'records', id)); found.delete(id); mergeRecords(); render(); refreshCount(); toast('已刪除'); }
   catch (er) { toast('⚠️ 刪除失敗：' + er.message); }

@@ -132,7 +132,7 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
 <section id="app" class="hidden">
   <header><div class="hd">
     <div class="logo">每日登打 · 銷售報表<small>GRANDMASTER FIX LEDGER</small></div>
-    <select id="branch"><option>楠梓店</option><option>德賢店</option></select>
+    <select id="branch"><option>楠梓店</option><option>德賢店</option></select><span id="lockNote" class="hidden" title="點進格子輸入這間店的密碼後，這台裝置就能登打" style="font-size:12px;color:#fbbf24;white-space:nowrap">🔒 未解鎖</span>
     <input type="month" id="month">
     <span class="status" id="sync">已同步</span>
     <button class="hbtn" id="statBtn">📊 月統計</button>
@@ -171,6 +171,7 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { reportLogin } from './guard.js?v=20261116';
+import { requirePin, isUnlocked } from './pin.js?v=20261117';
 import { ask } from './ask.js?v=20261116';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, deleteDoc, onSnapshot, query, where, getDocs, getDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -242,7 +243,8 @@ function start() {
   $('branch').value = lsGet('ledgerBranch') || '楠梓店';
   const t = new Date(); $('month').value = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}`;
   $('newDate').value = ymd(t);
-  $('branch').onchange = () => { lsSet('ledgerBranch', $('branch').value); load(); notesBadge(); };
+  $('branch').onchange = () => { lsSet('ledgerBranch', $('branch').value); load(); notesBadge(); lockNote(); };
+  lockNote();
   $('month').onchange = load;
   load();
 }
@@ -551,9 +553,20 @@ $('days').addEventListener('keydown', e => {
   }
 });
 
+// 分店密碼：游標點進格子時，這台裝置還沒解鎖這間店就先要密碼（解鎖後這台記住，不會每次問）
+async function guardEdit(e) {
+  const i = e.target.closest && e.target.closest('input'); if (!i) return;
+  const br = $('branch').value; if (isUnlocked(br)) return;
+  e.preventDefault(); i.blur();
+  if (await requirePin(br, '登打', { device: true })) { i.focus(); lockNote(); }
+}
+['focusin', 'beforeinput'].forEach(t => { $('days').addEventListener(t, guardEdit, true); $('carry').addEventListener(t, guardEdit, true); });
+function lockNote() { const n = $('lockNote'); if (n) n.classList.toggle('hidden', isUnlocked($('branch').value)); }
+
 $('days').addEventListener('click', async e => {
   const b = e.target.closest('[data-del]'); if (!b) return;
   const r = rows[b.dataset.del]; if (!r) return;
+  if (!await requirePin($('branch').value, '刪除', { minutes: 2 })) return;
   if (!await ask(`刪除這一列？\n\n${r.item || '（空白）'}　${r.amount || ''}\n\n若有建立保固紀錄也會一起刪除。`)) return;
   try {
     clearTimeout(timers[r.id]); dirty.delete(r.id);
@@ -749,7 +762,7 @@ document.addEventListener('mousemove', e => {
 });
 
 /* ─── 匯入舊的 Excel 銷售報表（匯整1、匯整2…）→ 登打頁；同時補上缺的保固紀錄（與保固系統匯入同規則、自動去重）─── */
-$('impBtn').onclick = () => $('impFile').click();
+$('impBtn').onclick = async () => { if (await requirePin($('branch').value, '匯入報表到')) $('impFile').click(); };
 $('impFile').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) importXlsx(f); };
 
 function parseLedgerXlsx(buf) {
@@ -870,6 +883,7 @@ async function checkUndo() {
   catch { $('undoImp').classList.add('hidden'); }
 }
 $('undoImp').onclick = async () => {
+  if (!await requirePin($('branch').value, '還原')) return;
   const key = bm(), m = await getDoc(doc(db, 'ledger_bak', key));
   if (!m.exists()) { toast('這個月沒有可還原的匯入'); return checkUndo(); }
   const x = m.data(), when = new Date(x.ts).toLocaleString('zh-TW', { hour12: false });
