@@ -63,15 +63,15 @@ td input{width:100%;border:1px solid #e5e7eb;border-radius:6px;padding:3px 6px}
       <span class="seg" id="kind"><button data-k="" class="on">全部</button><button data-k="repair">維修</button><button data-k="commission">門號佣金</button></span>
     </div>
     <div class="panel">
-      <h3>報價總表 <span class="mute" id="cnt"></span></h3>
-      <p class="mute" style="margin-bottom:6px">每個「機型＋零件」顯示最新價格；點一下看歷史紀錄。資料來自 LINE 群組（報價小幫手自動記錄）與下方手動新增。</p>
-      <table><thead><tr><th>機型</th><th>零件</th><th class="n">我的報價</th><th class="n">同行報價</th><th class="hide-m">最近更新</th><th class="n hide-m">筆數</th></tr></thead><tbody id="list"></tbody></table>
-      <div style="text-align:center;margin-top:8px"><button class="btn ghost" id="older">載入一年以前的紀錄</button></div>
-    </div>
-    <div class="panel">
       <h3>✍️ 手動新增（記成「我的報價」）</h3>
       <textarea id="paste" placeholder="一行一項，可加對象，例：&#10;13 pro 感應排線 3000（大昌）&#10;@小林 14 電池 1200"></textarea>
       <div style="display:flex;gap:8px;align-items:center;margin-top:6px"><button class="btn" id="addBtn">新增</button><span class="mute" id="pv"></span></div>
+    </div>
+    <div class="panel">
+      <h3>報價總表 <span class="mute" id="cnt"></span></h3>
+      <p class="mute" style="margin-bottom:6px">在上方搜尋框輸入機型或零件就會列出；每個「機型＋零件」顯示最新價格，點一下看歷史紀錄。資料來自 LINE 群組（報價小幫手自動記錄）與手動新增。</p>
+      <table><thead><tr><th>機型</th><th>零件</th><th class="n">我的報價</th><th class="n">同行報價</th><th class="hide-m">最近更新</th><th class="n hide-m">筆數</th></tr></thead><tbody id="list"></tbody></table>
+      <div style="text-align:center;margin-top:8px"><button class="btn ghost" id="older">載入一年以前的紀錄</button></div>
     </div>
     <div class="panel">
       <h3>🕑 最近記錄 <span class="mute">（可直接修改；黃色＝讀不出機型或零件，請補上）</span></h3>
@@ -206,7 +206,12 @@ function render() {
     g.get(k).list.push(r);
   });
   const groups = [...g.values()];
-  $('cnt').textContent = `（${groups.length} 項、${rows.length} 筆）`;
+  // 沒搜尋就不列（幾百項往下滑很久）；只顯示總數，請用搜尋找
+  if (!q) {
+    $('cnt').textContent = `（共 ${groups.length} 項）`;
+    $('list').innerHTML = `<tr><td colspan="6" class="mute" style="padding:14px">🔍 請在上方輸入機型或零件搜尋，例如「13 pro 電池」「S23 液晶」</td></tr>`;
+  } else {
+  $('cnt').textContent = `（找到 ${groups.length} 項、${rows.length} 筆）`;
   $('list').innerHTML = groups.slice(0, 300).map(x => {
     const me = x.list.find(r => r.who === 'me'), peer = x.list.find(r => r.who === 'peer');
     const head = `<tr class="item" data-k="${esc(x.k)}"><td>${esc(x.model) || '<span class="tag rv">機型？</span>'}</td><td>${esc(x.part) || '<span class="tag rv">零件？</span>'}${kOf(x.list[0]) === 'commission' ? ' <span class="tag rv">門號佣金</span>' : ''}</td>
@@ -216,6 +221,7 @@ function render() {
       <td class="n ${r.who}">${fmt(r.price)}</td><td colspan="3" class="mute">${esc(r.raw)}</td></tr>`).join('') : '';
     return head + hist;
   }).join('') || '<tr><td colspan="6" class="mute">沒有符合的報價</td></tr>';
+  }
   $('recent').innerHTML = all.filter(r => !who || r.who === who).slice(0, 40).map(r => `<tr data-id="${r.id}" style="${r.review ? 'background:#fffbeb' : ''}">
     <td class="mute">${esc(String(r.ts || '').slice(5, 16).replace('T', ' '))}</td>
     <td><span class="tag ${r.who}">${r.who === 'me' ? '我' : esc(r.speaker)}</span><div class="mute">${esc(r.group || '')}</div></td>

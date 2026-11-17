@@ -113,6 +113,7 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
   .pg tr.th td{font-weight:700;text-align:center}
   .pg tr.tot td{font-weight:700}
   .pg .neg{color:#c00}
+  .pg tr.red td{color:#c00}
 }
 </style>
 </head>
@@ -198,6 +199,8 @@ const num = v => { const n = Number(String(v ?? '').replace(/[,\s]/g, '')); retu
 const fmt = n => n == null ? '' : Number(n).toLocaleString('en-US');
 const isRefund = r => !!refundInfo(r.item, r.date);
 const isExpense = r => /^支出/.test(String(r.item || '').trim()) || (num(r.amount) ?? 0) < 0;
+// 列印／日報圖片用紅字標出：支出與出貨
+const isRedRow = r => isExpense(r) || /^\s*出貨/.test(String(r.item || ''));
 // 毛利：一般銷售 = 金額 − 成本（成本打正負數都可以）；退修 = 金額 ＋ 成本（照 Excel，金額負數、成本正數 → 毛利負數）；支出不算
 const profit = r => {
   const a = num(r.amount), c = num(r.cost);
@@ -939,7 +942,7 @@ function snapHTML(d, mask) {
     </div>
     <table style="border-collapse:collapse;width:100%;font-size:14px">
       <tr style="background:#f1f1f1;font-weight:700;text-align:center">${['#', '售出品項', '金額', '接待', '經手', '備註', '成本', '毛利', '連絡電話', '單號'].map(x => c(x)).join('')}</tr>
-      ${rs.map((r, i) => { const a = num(r.amount); return `<tr>${c(i + 1, 'text-align:center;color:#888')}${c(r.item)}${c(m(a), 'text-align:right;' + (a < 0 ? 'color:#c00' : ''))}${c(r.recv, 'text-align:center')}${c(r.handler, 'text-align:center')}${c(r.note)}${c(m(num(r.cost)), 'text-align:right')}${c(m(profit(r)), 'text-align:right')}${c(mask ? maskPhone(r.phone) : r.phone)}${c(r.ticket)}</tr>`; }).join('')}
+      ${rs.map((r, i) => { const a = num(r.amount); return `<tr${isRedRow(r) ? ' style="color:#c00"' : ''}>${c(i + 1, 'text-align:center;color:#888')}${c(r.item)}${c(m(a), 'text-align:right;' + (a < 0 ? 'color:#c00' : ''))}${c(r.recv, 'text-align:center')}${c(r.handler, 'text-align:center')}${c(r.note)}${c(m(num(r.cost)), 'text-align:right')}${c(m(profit(r)), 'text-align:right')}${c(mask ? maskPhone(r.phone) : r.phone)}${c(r.ticket)}</tr>`; }).join('')}
       <tr style="font-weight:800;background:#fafafa">${c('合計', 'text-align:center')}${c(rs.length + ' 筆')}${c(fmt(sum), 'text-align:right')}${c('')}${c('')}${c('')}${c('')}${c(fmt(prof), 'text-align:right')}${c('')}${c('')}</tr>
     </table>
     <div style="font-size:12px;color:#888;margin-top:10px;text-align:right">復原者 每日登打系統產生　${new Date().toLocaleString('zh-TW', { hour12: false })}</div></div>`;
@@ -1134,29 +1137,30 @@ function printHTML(pages) {
   pagesRef = pages;
   const { y, m } = monthLabel(), br = $('branch').value;
   const pm = m === 1 ? 12 : m - 1;
-  const col = '<colgroup><col style="width:8%"><col style="width:37%"><col style="width:7.5%"><col style="width:4.5%"><col style="width:4.5%"><col style="width:8.5%"><col style="width:6%"><col style="width:6%"><col style="width:10%"><col style="width:8%"></colgroup>';
+  // 會計用：不印客人電話與姓名（單號欄），空間留給品項與備註
+  const col = '<colgroup><col style="width:8%"><col style="width:45%"><col style="width:8.5%"><col style="width:5%"><col style="width:5%"><col style="width:14.5%"><col style="width:7%"><col style="width:7%"></colgroup>';
   const cell = (v, cls = '') => `<td class="${cls}">${esc(v ?? '')}</td>`;
   const money = v => v == null || v === '' ? '' : fmt(v);
   return pages.map(p => {
     let h = `<div class="pg"><h1>銷售報表</h1><div class="unit"><span>單位：復原者${esc(br)}</span><span>${y}年${m}月</span></div><table>${col}`;
-    h += `<tr class="th">${['日期', '售出品項', '金額', '接待人', '經手人', '備註', '成本', '毛利', '連絡電話', '單號'].map(x => cell(x, 'c')).join('')}</tr>`;
-    h += `<tr>${cell('')}${cell(p.first ? `承${pm}月份金額` : '承前盈餘')}${cell(money(p.open), 'r')}${cell('').repeat(7)}</tr>`;
+    h += `<tr class="th">${['日期', '售出品項', '金額', '接待人', '經手人', '備註', '成本', '毛利'].map(x => cell(x, 'c')).join('')}</tr>`;
+    h += `<tr>${cell('')}${cell(p.first ? `承${pm}月份金額` : '承前盈餘')}${cell(money(p.open), 'r')}${cell('').repeat(5)}</tr>`;
     p.lines.forEach(l => {
-      if (l.k === 'tot') h += `<tr class="tot">${cell('合計', 'c')}${cell('')}${cell('')}${cell('')}${cell('')}${cell(money(l.sum), 'r')}${cell('')}${cell(money(l.prof), 'r')}${cell('')}${cell('')}</tr>`;
+      if (l.k === 'tot') h += `<tr class="tot">${cell('合計', 'c')}${cell('')}${cell('')}${cell('')}${cell('')}${cell(money(l.sum), 'r')}${cell('')}${cell(money(l.prof), 'r')}</tr>`;
       else {
         const r = l.r, a = num(r.amount);
-        h += `<tr>${cell(l.date, 'c')}${cell(r.item)}<td class="r${a < 0 ? ' neg' : ''}">${money(a)}</td>${cell(r.recv, 'c')}${cell(r.handler, 'c')}${cell(r.note)}${cell(money(num(r.cost)), 'r')}${cell(l.extraRow ? '' : money(profit(r)), 'r')}${cell(r.phone)}${cell(r.ticket)}</tr>`;
+        h += `<tr${!l.extraRow && isRedRow(r) ? ' class="red"' : ''}>${cell(l.date, 'c')}${cell(r.item)}<td class="r${a < 0 ? ' neg' : ''}">${money(a)}</td>${cell(r.recv, 'c')}${cell(r.handler, 'c')}${cell(r.note)}${cell(money(num(r.cost)), 'r')}${cell(l.extraRow ? '' : money(profit(r)), 'r')}</tr>`;
       }
     });
-    for (let i = p.lines.length; i < PER_PAGE; i++) h += `<tr>${cell('').repeat(10)}</tr>`;
-    h += `<tr class="tot">${cell('合計', 'c')}${cell('')}${cell(money(p.close), 'r')}${cell('').repeat(7)}</tr>`;
-    h += `<tr>${cell('零用金', 'c')}${cell('').repeat(9)}</tr>`;
+    for (let i = p.lines.length; i < PER_PAGE; i++) h += `<tr>${cell('').repeat(8)}</tr>`;
+    h += `<tr class="tot">${cell('合計', 'c')}${cell('')}${cell(money(p.close), 'r')}${cell('').repeat(5)}</tr>`;
+    h += `<tr>${cell('零用金', 'c')}${cell('').repeat(7)}</tr>`;
     const lastD = p.lines.filter(l => l.d).at(-1)?.d;
     if (p === pagesRef.at(-1) && lastD && num(cash[lastD]?.drawer) != null) {
-      const sf = effSafe(lastD) ?? 0, dr = num(cash[lastD].drawer), df = sf + dr - p.close;
-      h += `<tr>${cell('')}${cell('保險櫃')}${cell(money(sf), 'r')}${cell('').repeat(7)}</tr><tr>${cell('')}${cell('現金')}${cell(money(dr), 'r')}${cell('').repeat(7)}</tr><tr>${cell('')}${cell(df === 0 ? '相符' : df > 0 ? '多錢' : '少錢')}${cell(money(df), 'r')}${cell('').repeat(7)}</tr>`;
+      const sf = effSafe(lastD) ?? 0, dr = num(cash[lastD].drawer), cr = creditOf(lastD), df = sf + dr - cr - p.close;
+      h += `<tr>${cell('')}${cell('保險櫃')}${cell(money(sf), 'r')}${cell('').repeat(5)}</tr><tr>${cell('')}${cell('現金')}${cell(money(dr), 'r')}${cell('').repeat(5)}</tr>${cr ? `<tr>${cell('')}${cell('購物金（已用、退貨未登打）')}${cell(money(-cr), 'r')}${cell('').repeat(5)}</tr>` : ''}<tr>${cell('')}${cell(df === 0 ? '相符' : df > 0 ? '多錢' : '少錢')}${cell(money(df), 'r')}${cell('').repeat(5)}</tr>`;
     }
-    h += `<tr class="tot">${cell('合計', 'c')}${cell('')}${cell(money(p.close), 'r')}${cell('').repeat(7)}</tr>`;
+    h += `<tr class="tot">${cell('合計', 'c')}${cell('')}${cell(money(p.close), 'r')}${cell('').repeat(5)}</tr>`;
     return h + '</table></div>';
   }).join('');
 }
