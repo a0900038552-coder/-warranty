@@ -18,7 +18,7 @@
 | 專案 ID | 給誰用 | 用到的頁面 |
 |---|---|---|
 | `care-warranty` | **主力**：新保固 CARE+、每日登打、報價、庫存、退貨待辦、LINE 機器人 | `care/*`、`line-webhook.gs` |
-| `warranty-system-4d18d` | 舊保固系統（1 萬多筆舊紀錄）＋員工系統＋打卡 | `warranty-system.html`、`staff-*.html`、`checkin.html` |
+| `warranty-system-4d18d` | 舊保固系統（1 萬多筆舊紀錄）＋員工系統＋打卡 | `warranty-system.html`、`staff-system.html`、`checkin.html` |
 | `warranty-branch-65608` | 其他分店（小港・瑞隆・屏東）的保固系統 | `warranty-branch.html` |
 
 ## 檔案地圖
@@ -47,7 +47,6 @@
 | `warranty-system.html` | 舊保固系統（`warranty_records`），計畫之後匯入 `care/` |
 | `warranty-branch.html` | 小港・瑞隆・屏東分店保固系統 |
 | `staff-system.html` | 內部系統 V2（員工、請假、公告、庫存調撥、薪資…）|
-| `staff-gemini.html` | 跟 `staff-system.html` 幾乎一樣、少了動畫效果的舊版本 — **待確認是否可刪** |
 | `checkin.html` | 打卡機（`attendance`） |
 | `booking/index.html` | LINE LIFF 預約表單（圖文選單「立即預約」），送出後由 GAS 建立 `bookings` |
 | `dm/` | 2026 秋冬配件 DM 網頁＋圖 |
