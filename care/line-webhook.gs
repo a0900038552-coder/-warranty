@@ -562,7 +562,8 @@ function staffAction_(req) {
 
   var b = getDoc_('bookings/' + req.id);
   if (!b) return { ok: false, error: '找不到這筆預約' };
-  var store = storeByBranch_(b.branch);
+  // 用客人「當初預約的那個 LINE 官方帳號」傳訊息（轉店後客人仍是原本那間的好友）
+  var store = (b.store && STORES[b.store]) || storeByBranch_(b.branch);
   var token = prop_(store.tokenProp);
   var now = new Date().toISOString();
   var text, quick = null, upd = { updatedAt: now, updatedBy: staff };
@@ -585,6 +586,13 @@ function staffAction_(req) {
     text = '🙏 很抱歉，您的預約（' + b.wish + '）目前無法安排。' + (req.reason ? '\n原因：' + req.reason : '') +
            '\n\n如有需要，歡迎直接在此聊天室與我們討論其他時間，謝謝您！';
     upd.status = 'declined'; upd.declineReason = req.reason || '';
+  } else if (req.type === 'transfer') {
+    // 客人改去另一間店修：改預約的分店；可選擇是否用 LINE 通知客人
+    var to = req.to;
+    if (!STORE_ADDR[to] || to === b.branch) return { ok: false, error: '要轉去的分店不正確' };
+    upd.branch = to; upd.transferredFrom = b.branch; upd.transferredAt = now;
+    if (req.notify) text = '📍 預約分店變更\n\n您的預約已改到：復原者' + to + '\n（' + STORE_ADDR[to] + '）\n🕐 ' + (b.confirmedTime || b.proposedTime || b.wish) +
+      '\n📱 ' + b.model + '｜' + b.issues + '\n\n如有問題請直接在此聊天室告訴我們，謝謝！';
   } else if (req.type === 'done' || req.type === 'noshow' || req.type === 'cancel') {
     upd.status = { done: 'done', noshow: 'noshow', cancel: 'cancelled' }[req.type];   // 不通知客人
   } else return { ok: false, error: '未知的操作' };
@@ -602,7 +610,7 @@ function staffAction_(req) {
   }
   patchDoc_('bookings/' + req.id, upd);
   sheetStatus_(req.id, upd.status, upd.confirmedTime || upd.proposedTime || '');
-  return { ok: true, status: upd.status };
+  return { ok: true, status: upd.status || b.status, branch: upd.branch || b.branch };
 }
 
 /* 客人按「接受新時間」 */

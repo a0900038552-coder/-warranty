@@ -958,15 +958,15 @@ function renderBookings() {
   $('bkList').innerHTML = list.length ? list.map(b => {
     const time = b.confirmedTime || b.proposedTime || b.wish;
     const acts = {
-      pending: `<button class="btn btn-primary" data-bk="confirm" data-id="${b.id}">✅ 確認</button><button class="btn btn-dark" data-bk="propose" data-id="${b.id}">🔄 改時間</button><button class="btn btn-ghost" data-bk="decline" data-id="${b.id}">婉拒</button><button class="btn btn-ghost" data-bk="cancel" data-id="${b.id}">🗑 取消（不通知）</button>`,
-      proposed: `<button class="btn btn-ghost" data-bk="confirm" data-id="${b.id}">客人電話確認了</button><button class="btn btn-ghost" data-bk="propose" data-id="${b.id}">再改時間</button><button class="btn btn-ghost" data-bk="decline" data-id="${b.id}">婉拒</button><button class="btn btn-ghost" data-bk="cancel" data-id="${b.id}">🗑 取消（不通知）</button>`,
-      confirmed: `<button class="btn btn-dark" data-bk="done" data-id="${b.id}">已完成</button><button class="btn btn-ghost" data-bk="noshow" data-id="${b.id}">未到</button><button class="btn btn-ghost" data-bk="propose" data-id="${b.id}">改時間</button><button class="btn btn-ghost" data-bk="cancel" data-id="${b.id}">🗑 取消（不通知）</button>`
+      pending: `<button class="btn btn-primary" data-bk="confirm" data-id="${b.id}">✅ 確認</button><button class="btn btn-dark" data-bk="propose" data-id="${b.id}">🔄 改時間</button><button class="btn btn-ghost" data-bk="decline" data-id="${b.id}">婉拒</button><button class="btn btn-ghost" data-bk="transfer" data-id="${b.id}">🔀 轉到${b.branch === '楠梓店' ? '德賢店' : '楠梓店'}</button><button class="btn btn-ghost" data-bk="cancel" data-id="${b.id}">🗑 取消（不通知）</button>`,
+      proposed: `<button class="btn btn-ghost" data-bk="confirm" data-id="${b.id}">客人電話確認了</button><button class="btn btn-ghost" data-bk="propose" data-id="${b.id}">再改時間</button><button class="btn btn-ghost" data-bk="decline" data-id="${b.id}">婉拒</button><button class="btn btn-ghost" data-bk="transfer" data-id="${b.id}">🔀 轉到${b.branch === '楠梓店' ? '德賢店' : '楠梓店'}</button><button class="btn btn-ghost" data-bk="cancel" data-id="${b.id}">🗑 取消（不通知）</button>`,
+      confirmed: `<button class="btn btn-dark" data-bk="done" data-id="${b.id}">已完成</button><button class="btn btn-ghost" data-bk="noshow" data-id="${b.id}">未到</button><button class="btn btn-ghost" data-bk="propose" data-id="${b.id}">改時間</button><button class="btn btn-ghost" data-bk="transfer" data-id="${b.id}">🔀 轉到${b.branch === '楠梓店' ? '德賢店' : '楠梓店'}</button><button class="btn btn-ghost" data-bk="cancel" data-id="${b.id}">🗑 取消（不通知）</button>`
     }[b.status] || '';
     return `<div class="bk ${b.status}">
       <div class="bk-top"><div><div class="bk-time">${esc(time)}</div>
         <div class="bk-meta">${b.status === 'proposed' ? '原希望：' + esc(b.wish) + '　→ 已提議新時間，等客人按接受' : ''}</div></div>
         <span class="badge" style="background:${BK_COLOR[b.status]};color:#fff">${BK_ZH[b.status] || b.status}</span></div>
-      <div style="margin-top:6px"><b>${esc(b.name)}</b>　<a href="tel:${esc(b.phone)}">${esc(b.phone)}</a>　${esc(b.branch)}</div>
+      <div style="margin-top:6px"><b>${esc(b.name)}</b>　<a href="tel:${esc(b.phone)}">${esc(b.phone)}</a>　${esc(b.branch)}${b.transferredFrom ? `<span style="color:#6b7280;font-size:12px">（從${esc(b.transferredFrom)}轉來）</span>` : ''}</div>
       <div>📱 ${esc(b.model)}｜${esc(b.issues)}</div>
       ${b.note ? `<div class="bk-meta">備註：${esc(b.note)}</div>` : ''}
       <div class="bk-meta">申請：${esc(String(b.createdAt || '').slice(0, 16).replace('T', ' '))}${b.updatedBy ? '　最後處理：' + esc(b.updatedBy) : ''}</div>
@@ -1026,6 +1026,11 @@ $('bkList').addEventListener('click', async e => {
   } else if (type === 'decline') {
     const r = await askText(`婉拒 ${b.name} 的預約，並用 LINE 通知。\n原因（可空白，會顯示給客人）：`, '');
     if (r === null) return; req.reason = r.trim();
+  } else if (type === 'transfer') {
+    const to = b.branch === '楠梓店' ? '德賢店' : '楠梓店';
+    if (!await ask(`把 ${b.name} 的預約從「${b.branch}」轉到「${to}」？\n\n時間不變：${b.confirmedTime || b.proposedTime || b.wish}`, { ok: '轉過去', danger: false })) return;
+    req.to = to;
+    req.notify = await ask(`要用 LINE 通知 ${b.name} 改到${to}嗎？\n\n（會傳一則訊息，用掉 1 則訊息額度；已經電話講好的可以不通知）`, { ok: '通知客人', cancel: '不用通知', danger: false });
   } else if (type === 'cancel') {
     if (!await ask(`取消 ${b.name} 的預約？\n\n只會改成「已取消」，不會傳 LINE 給客人、不扣訊息額度。`)) return;
   }
@@ -1035,7 +1040,7 @@ $('bkList').addEventListener('click', async e => {
     const res = await fetch(GAS_URL + '?action=staff', { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(req) });
     const j = await res.json();
     if (!j.ok) throw new Error(j.error || '失敗');
-    toast(['done', 'noshow', 'cancel'].includes(type) ? '已更新狀態（未通知客人）' : '✅ 已用 LINE 通知客人');
+    toast(type === 'transfer' ? `🔀 已轉到${req.to}${req.notify ? '，並用 LINE 通知客人' : '（未通知客人）'}` : ['done', 'noshow', 'cancel'].includes(type) ? '已更新狀態（未通知客人）' : '✅ 已用 LINE 通知客人');
   } catch (er) {
     toast('⚠️ ' + er.message);
     btn.closest('.row-actions')?.querySelectorAll('button').forEach(x => x.disabled = false);

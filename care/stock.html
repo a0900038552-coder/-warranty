@@ -74,7 +74,24 @@ tr.detail td{background:#fafbfc}
       <span class="seg" id="segS"><button data-k="stock" class="on">在庫</button><button data-k="sold">已售出</button><button data-k="all">全部</button></span>
       <select id="br"><option value="">兩店</option><option>楠梓店</option><option>德賢店</option></select>
       <button class="hbtn" id="reload" style="color:var(--ink);border-color:#d1d5db;background:#fff">↻ 重新整理</button>
+      <button class="hbtn" id="addBtn" style="background:var(--ink);color:#fff;border-color:var(--ink);font-weight:700">＋ 手動新增</button>
     </div>
+    <form id="addForm" class="panel hidden" style="padding:12px 14px;margin-bottom:12px">
+      <b>＋ 手動新增中古機</b> <span class="mute">（沒有在每日登打打「支出:中古機回收」的機子，例如舊機折抵、別處收來的）</span>
+      <div class="dgrid" style="margin-top:6px">
+        <div><label>收購日</label><input type="date" name="date" required></div>
+        <div><label>分店</label><select name="branch"><option>楠梓店</option><option>德賢店</option></select></div>
+        <div><label>機型 *</label><input name="model" required placeholder="例：iPhone 14 Pro 256G"></div>
+        <div><label>收購成本 *</label><input name="cost" required inputmode="numeric" placeholder="例：12000"></div>
+        <div><label>IMEI</label><input name="imei" inputmode="numeric"></div>
+        <div><label>機況</label><input name="cond" placeholder="例：9成新、背蓋小刮"></div>
+        <div><label>建議售價</label><input name="price" inputmode="numeric"></div>
+        <div><label>最低售價</label><input name="minPrice" inputmode="numeric"></div>
+        <div style="grid-column:1/-1"><label>備註</label><input name="note" placeholder="賣家、來源…"></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px"><button class="hbtn" style="background:var(--ink);color:#fff;border-color:var(--ink);font-weight:700">新增</button>
+        <button type="button" class="hbtn" id="addCancel" style="color:var(--ink);border-color:#d1d5db;background:#fff">取消</button></div>
+    </form>
     <div class="tiles" id="tiles"></div>
     <div class="panel"><table>
       <thead><tr><th>收購日</th><th>分店</th><th>機型</th><th style="text-align:right">收購成本</th><th style="text-align:right">建議售價</th><th style="text-align:right">最低售價</th><th>狀態</th>
@@ -94,8 +111,9 @@ tr.detail td{background:#fafbfc}
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { reportLogin } from './guard.js?v=20261116';
 import { cachedDocs, expireCache } from './cache.js?v=20261117';
+import { requirePin } from './pin.js?v=20261117';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, onSnapshot, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, addDoc, deleteDoc, onSnapshot, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 const app = initializeApp({ apiKey: "AIzaSyD04ZMXIt8Oo3hjm5qsMaKiLXYzp_9YKwA", authDomain: "care-warranty.firebaseapp.com", projectId: "care-warranty",
   storageBucket: "care-warranty.firebasestorage.app", messagingSenderId: "29512690431", appId: "1:29512690431:web:f0c2dd1cd6acb03d197aca" });
 const auth = getAuth(app), db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) });
@@ -117,11 +135,14 @@ const isSale = r => /中古機/.test(r.item || '') && !/^\s*支出/.test(r.item)
 const saleModel = r => String(r.item || '').split('中古機')[0].trim();
 
 let buys = [], sales = [], details = {}, scope = 'stock', open = null, unsubD = null;
+const manualBuys = () => Object.entries(details).filter(([, d]) => d.manual && !d.deleted)
+  .map(([id, d]) => ({ id, date: d.date || '', branch: d.branch || '', item: '支出:中古機回收:' + (d.model || ''), amount: String(-(num(d.cost) ?? 0)), manual: true }));
+const allBuys = () => buys.concat(manualBuys());
 onAuthStateChanged(auth, u => { $('login').classList.toggle('hidden', !!u); $('app').classList.toggle('hidden', !u); if (u) { start(); reportLogin(auth, '中古機庫存'); } });
 $('loginForm').onsubmit = async e => { e.preventDefault(); try { await signInWithEmailAndPassword(auth, e.target.email.value.trim(), e.target.pw.value); } catch { toast('⚠️ 登入失敗'); } };
 
 async function start() {
-  if (!unsubD) unsubD = onSnapshot(collection(db, 'used_stock'), s => { s.docs.forEach(d => details[d.id] = { ...d.data(), ...(pend[d.id] || {}) }); safeRender(); });
+  if (!unsubD) unsubD = onSnapshot(collection(db, 'used_stock'), s => { s.docChanges().forEach(c => { if (c.type === 'removed') delete details[c.doc.id]; }); s.docs.forEach(d => details[d.id] = { ...d.data(), ...(pend[d.id] || {}) }); safeRender(); });
   await loadLedger();
 }
 async function loadLedger() {
@@ -130,7 +151,7 @@ async function loadLedger() {
   const qs = ['支出:中古機回收', '支出：中古機回收'].map((p, i) => cachedDocs(query(collection(db, 'ledger'), where('item', '>=', p), where('item', '<', p + '\uf8ff')), 'stock-buys-' + i, 1));
   buys = (await Promise.all(qs)).flatMap(s => s.docs.map(d => ({ id: d.id, ...d.data() }))).filter(isBuy);
   // 2. 售出列：從最早一台收購的月份到這個月（兩店）
-  const first = buys.map(b => b.date).sort()[0] || ymd(new Date());
+  const first = allBuys().map(b => b.date).filter(Boolean).sort()[0] || ymd(new Date());
   const months = []; for (let d = new Date(first.slice(0, 7) + '-01T00:00:00'); d <= new Date(); d.setMonth(d.getMonth() + 1)) months.push(ymd(d).slice(0, 7));
   const cur = ymd(new Date()).slice(0, 7);
   const bms = months.slice(-18).flatMap(m => ['楠梓店', '德賢店'].map(b => `${b}_${m}`));
@@ -146,7 +167,7 @@ async function loadLedger() {
 function match() {
   const used = new Set(), res = {};
   Object.values(details).forEach(d => { if (d.saleId) used.add(d.saleId); });
-  [...buys].sort((a, b) => (a.date || '').localeCompare(b.date || '')).forEach(b => {
+  allBuys().sort((a, b) => (a.date || '').localeCompare(b.date || '')).forEach(b => {
     const d = details[b.id] || {};
     if (d.status && d.status !== 'auto') { res[b.id] = { status: d.status, sale: sales.find(s => s.id === d.saleId) || null, manual: true }; return; }
     const k = mkey(buyModel(b)), cost = Math.abs(num(b.amount) ?? 0);
@@ -167,9 +188,9 @@ function pxHint(v, cost) {
 }
 const STATUS = { auto: '自動判斷', stock: '在庫', sold: '已售出', returned: '退回／轉賣同行', own: '自用／拆零件' };
 function render() {
-  if (!buys.length && !Object.keys(details).length) { $('list').innerHTML = '<tr><td colspan="13" class="mute" style="padding:16px">還沒有收購紀錄。每日登打寫「支出:中古機回收:機型」就會出現在這裡。</td></tr>'; $('tiles').innerHTML = ''; return; }
+  if (!allBuys().length) { $('list').innerHTML = '<tr><td colspan="13" class="mute" style="padding:16px">還沒有收購紀錄。每日登打寫「支出:中古機回收:機型」就會出現在這裡。</td></tr>'; $('tiles').innerHTML = ''; return; }
   const m = match(), today = ymd(new Date()), q = $('q').value.trim().toLowerCase(), br = $('br').value;
-  const rows = buys.map(b => ({ b, d: details[b.id] || {}, m: m[b.id] }))
+  const rows = allBuys().map(b => ({ b, d: details[b.id] || {}, m: m[b.id] }))
     .filter(x => !br || x.b.branch === br)
     .sort((a, b) => (b.b.date || '').localeCompare(a.b.date || ''));
   const inStock = rows.filter(x => x.m.status === 'stock');
@@ -202,10 +223,14 @@ function render() {
         <div><label>其他配件</label><input data-k="acc" data-id="${b.id}" value="${esc(d.acc)}" placeholder="例：原廠殼、發票"></div>
         <div><label>狀態</label><select data-k="status" data-id="${b.id}">${Object.entries(STATUS).map(([k, l]) => `<option value="${k}"${(d.status || 'auto') === k ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
         <div style="grid-column:1/-1"><label>備註（賣家、收購原因、預計售價…）</label><textarea data-k="note" data-id="${b.id}">${esc(d.note)}</textarea></div>
-        <div style="grid-column:1/-1" class="mute">登打原文：${esc(b.item)}　金額 ${esc(b.amount)}　${esc(b.note || '')}${mm.sale ? `<br>配對到的售出列：${esc(mm.sale.date)}　${esc(mm.sale.item)}　售價 ${esc(mm.sale.amount)}　成本 ${esc(mm.sale.cost)}` : ''}</div>
+        ${b.manual ? `<div><label>收購日</label><input type="date" data-k="date" data-id="${b.id}" value="${esc(d.date)}"></div>
+        <div><label>機型</label><input data-k="model" data-id="${b.id}" value="${esc(d.model)}"></div>
+        <div><label>收購成本</label><input data-k="cost" data-id="${b.id}" value="${esc(d.cost)}" inputmode="numeric"></div>
+        <div style="display:flex;align-items:flex-end"><button class="more" style="color:var(--red);font-size:13px" data-mdel="${b.id}">🗑 刪除這筆（手動新增的）</button></div>` : ''}
+        <div style="grid-column:1/-1" class="mute">${b.manual ? `手動新增　${esc(d.createdBy || '')}` : `登打原文：${esc(b.item)}`}　金額 ${esc(b.amount)}　${esc(b.note || '')}${mm.sale ? `<br>配對到的售出列：${esc(mm.sale.date)}　${esc(mm.sale.item)}　售價 ${esc(mm.sale.amount)}　成本 ${esc(mm.sale.cost)}` : ''}</div>
       </div></td></tr>` : '';
     return `<tr class="row">
-      <td>${esc((b.date || '').slice(5).replace('-', '/'))}<br><span class="mute">${esc((b.date || '').slice(0, 4))}</span></td>
+      <td>${esc((b.date || '').slice(5).replace('-', '/'))}<br><span class="mute">${esc((b.date || '').slice(0, 4))}</span>${b.manual ? '<br><span class="pill other" title="不是從每日登打帶進來的，是手動新增">手動</span>' : ''}</td>
       <td>${esc(b.branch || '')}</td>
       <td><span class="model">${esc(buyModel(b))}</span>${d.color ? `<br><span class="mute">${esc(d.color)}</span>` : ''}</td>
       <td class="n">${money(cost)}</td>
@@ -246,6 +271,27 @@ $('list').addEventListener('change', e => {
 });
 $('list').addEventListener('click', e => { const b = e.target.closest('[data-open]'); if (!b) return; open = open === b.dataset.open ? null : b.dataset.open; render(); });
 $('segS').onclick = e => { const b = e.target.closest('button'); if (!b) return; scope = b.dataset.k; [...$('segS').children].forEach(x => x.classList.toggle('on', x === b)); render(); };
+$('addBtn').onclick = () => {
+  const f = $('addForm'); f.classList.toggle('hidden');
+  if (!f.classList.contains('hidden')) { f.date.value = f.date.value || ymd(new Date()); f.branch.value = $('br').value || f.branch.value; f.model.focus(); }
+};
+$('addCancel').onclick = () => $('addForm').classList.add('hidden');
+$('addForm').onsubmit = async e => {
+  e.preventDefault(); const f = e.target;
+  const cost = num(f.cost.value); if (cost == null || cost <= 0) { toast('請填收購成本'); return f.cost.focus(); }
+  const data = { manual: true, date: f.date.value, branch: f.branch.value, model: f.model.value.trim(), cost: String(cost),
+    imei: f.imei.value.trim(), cond: f.cond.value.trim(), price: f.price.value.trim(), minPrice: f.minPrice.value.trim(), note: f.note.value.trim(),
+    createdAt: new Date().toISOString(), createdBy: auth.currentUser.email };
+  try { await addDoc(collection(db, 'used_stock'), data); f.reset(); f.classList.add('hidden'); toast('已新增到庫存'); }
+  catch (er) { toast('⚠️ 新增失敗：' + er.message); }
+};
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-mdel]'); if (!b) return;
+  const d = details[b.dataset.mdel]; if (!d) return;
+  if (!await requirePin(d.branch, '刪除')) return;
+  try { await deleteDoc(doc(db, 'used_stock', b.dataset.mdel)); delete details[b.dataset.mdel]; open = null; render(); toast('已刪除'); }
+  catch (er) { toast('⚠️ 刪除失敗：' + er.message); }
+});
 $('q').oninput = render; $('br').onchange = render; $('reload').onclick = () => { expireCache('stock'); loadLedger(); };
 </script>
 </body>
