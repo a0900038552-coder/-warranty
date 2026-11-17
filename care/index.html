@@ -277,6 +277,7 @@ th{color:var(--mute);font-weight:600}
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { reportLogin } from './guard.js?v=20261116';
+import { cachedDocs } from './cache.js?v=20261117';
 import { ask, askText } from './ask.js?v=20261116';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
@@ -303,10 +304,13 @@ const db = initializeFirestore(app, { localCache: persistentLocalCache({ tabMana
 const $ = id => document.getElementById(id);
 
 // 讀取策略（資料量上萬筆也不會超過免費額度）：
-//   recent：即時同步「最近 15 個月」的紀錄（還可能在保固內的都在這裡）
-//   found ：搜尋電話／姓名時，直接到資料庫查（多舊都查得到）
-const RECENT_DAYS = 460;
-let recent = [], found = new Map(), totalCount = null;
+//   recent：最近 15 個月的紀錄（還可能在保固內的都在這裡）
+//           其中最近 LIVE_DAYS 天即時同步；更舊的一天只向資料庫拿一次，其餘用電腦裡的副本（省讀取額度）
+//   found ：搜尋電話／姓名時，直接到資料庫查（多舊都查得到、永遠是最新）
+const RECENT_DAYS = 460, LIVE_DAYS = 30;
+let recent = [], recentLive = [], recentOld = [], found = new Map(), totalCount = null;
+let quotesLive = [], quotesOld = [];
+const joinById = (...lists) => { const m = new Map(); lists.forEach(l => l.forEach(r => m.set(r.id, r))); return [...m.values()]; };
 let records = [], bindings = [], lineUsers = {}, bookings = [], blocks = new Set(), quotes = [];
 
 /* ── 報價查詢：搜尋框打機型／零件，最上面顯示相關報價與「幾天前」（越舊顏色越警示）── */
@@ -341,11 +345,13 @@ function renderQuotes() {
 }
 function mergeRecords() {
   const m = new Map(recent.map(r => [r.id, r]));
-  found.forEach((r, id) => { if (!m.has(id)) m.set(id, r); });
+  found.forEach((r, id) => m.set(id, r));   // 搜尋結果是剛從資料庫拿的，比較新
   records = [...m.values()];
 }
 async function refreshCount() {
-  try { totalCount = (await getCountFromServer(collection(db, 'records'))).data().count; render(); } catch {}
+  // 總筆數一天問一次資料庫就好（每 1000 筆算 1 次讀取），其餘時間用上次的數字
+  try { const c = JSON.parse(localStorageGet('care.totalCount') || 'null'); if (c && Date.now() - c.t < 20 * 3600e3) { totalCount = c.n; render(); return; } } catch {}
+  try { totalCount = (await getCountFromServer(collection(db, 'records'))).data().count; localStorageSet('care.totalCount', JSON.stringify({ n: totalCount, t: Date.now() })); render(); } catch {}
 }
 let unsubs = [];
 let pendingRows = [], pendingFile = '';
@@ -365,13 +371,19 @@ onAuthStateChanged(auth, user => {
   if (saved !== null) $('branchFilter').value = saved;
   const err = e => toast('⚠️ 讀取失敗：' + e.message);
   const cutoff = ymd(new Date(Date.now() - RECENT_DAYS * 86400000));
-  unsubs.push(onSnapshot(query(collection(db, 'records'), where('repairDate', '>=', cutoff)), s => {
-    recent = s.docs.map(d => ({ id: d.id, ...d.data() })); mergeRecords(); render();
+  const liveCut = ymd(new Date(Date.now() - LIVE_DAYS * 86400000));
+  unsubs.push(onSnapshot(query(collection(db, 'records'), where('repairDate', '>=', liveCut)), s => {
+    recentLive = s.docs.map(d => ({ id: d.id, ...d.data() })); recent = joinById(recentOld, recentLive); mergeRecords(); render();
   }, err));
+  cachedDocs(query(collection(db, 'records'), where('repairDate', '>=', cutoff), where('repairDate', '<', liveCut)), 'records-old')
+    .then(s => { recentOld = s.docs.map(d => ({ id: d.id, ...d.data() })); recent = joinById(recentOld, recentLive); mergeRecords(); render(); }).catch(err);
   refreshCount();
-  unsubs.push(onSnapshot(query(collection(db, 'quotes'), where('date', '>=', ymd(new Date(Date.now() - 365 * 86400000)))), s => {
-    quotes = s.docs.map(d => ({ id: d.id, ...d.data() })); renderQuotes();
+  const qLiveCut = ymd(new Date(Date.now() - 14 * 86400000)), qCut = ymd(new Date(Date.now() - 365 * 86400000));
+  unsubs.push(onSnapshot(query(collection(db, 'quotes'), where('date', '>=', qLiveCut)), s => {
+    quotesLive = s.docs.map(d => ({ id: d.id, ...d.data() })); quotes = joinById(quotesOld, quotesLive); renderQuotes();
   }, () => {}));
+  cachedDocs(query(collection(db, 'quotes'), where('date', '>=', qCut), where('date', '<', qLiveCut)), 'quotes-old')
+    .then(s => { quotesOld = s.docs.map(d => ({ id: d.id, ...d.data() })); quotes = joinById(quotesOld, quotesLive); renderQuotes(); }).catch(() => {});
   unsubs.push(onSnapshot(collection(db, 'care_bindings'), s => {
     bindings = s.docs.map(d => ({ id: d.id, ...d.data() })); render();
   }, err));

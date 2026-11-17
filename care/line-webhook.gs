@@ -1155,18 +1155,19 @@ function modelOf_(s) {
   return null;
 }
 
-/* ───────── 每日自動備份：把 Firestore 全部資料存到 Google 雲端硬碟 ─────────
+/* ───────── 每週自動備份：把 Firestore 全部資料存到 Google 雲端硬碟 ─────────
  * 第一次：在編輯器上方選 setupBackup → 執行（會跳出 Google 授權，允許存取雲端硬碟）。
- * 之後每天凌晨 3 點自動備份到雲端硬碟「復原者系統備份」資料夾：
- *   每天一份保留 30 天；每月 1 號那份保留 1 年。失敗會用小幫手 LINE 通知老闆。
+ * 之後每週日（店休）凌晨 3 點自動備份到雲端硬碟「復原者系統備份」資料夾：
+ *   每週一份保留 2 個月；每月第一個週日那份保留 1 年。失敗會用小幫手 LINE 通知老闆。
+ *   （免費方案每天只有 5 萬次讀取，全部備份一次要讀每一筆資料，所以選店休日、一週一次）
  * 檔案是 .json.gz（原始格式，可以完整還原）。還原請交給 Claude 處理（restoreBackup_）。
  */
 var BACKUP_FOLDER = '復原者系統備份';
 function setupBackup() {
   ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'backupFirestore') ScriptApp.deleteTrigger(t); });
-  ScriptApp.newTrigger('backupFirestore').timeBased().atHour(3).everyDays(1).inTimezone('Asia/Taipei').create();
+  ScriptApp.newTrigger('backupFirestore').timeBased().onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(3).inTimezone('Asia/Taipei').create();
   var r = backupFirestore();
-  notifyOwner_('🗄️ 每日自動備份已開啟（每天凌晨 3 點）\n第一份備份完成：' + r.docs + ' 筆資料、' + r.cols + ' 個資料表\n存在 Google 雲端硬碟「' + BACKUP_FOLDER + '」資料夾。');
+  notifyOwner_('🗄️ 每週自動備份已開啟（每週日凌晨 3 點）\n第一份備份完成：' + r.docs + ' 筆資料、' + r.cols + ' 個資料表\n存在 Google 雲端硬碟「' + BACKUP_FOLDER + '」資料夾。');
   return r;
 }
 function backupFolder_() {
@@ -1215,7 +1216,7 @@ function backupFirestore() {
     PropertiesService.getScriptProperties().setProperty('BACKUP_LAST', day + ' ' + total);
     return { docs: total, cols: cols.length, file: blob.getName() };
   } catch (err) {
-    notifyOwner_('⚠️ 系統每日備份失敗\n' + String(err && err.message || err).slice(0, 300) + '\n請告訴 Claude 處理。');
+    notifyOwner_('⚠️ 系統每週備份失敗\n' + String(err && err.message || err).slice(0, 300) + '\n請告訴 Claude 處理。');
     throw err;
   }
 }
@@ -1225,7 +1226,7 @@ function pruneBackups_(folder) {
     var f = files.next(), m = f.getName().match(/^backup-(\d{4})-(\d{2})-(\d{2})\.json\.gz$/);
     if (!m) continue;
     var age = (now - new Date(m[1] + '-' + m[2] + '-' + m[3] + 'T00:00:00+08:00').getTime()) / 864e5;
-    var keep = age <= 30 || (m[3] === '01' && age <= 370);
+    var keep = age <= 62 || (Number(m[3]) <= 7 && age <= 370);   // 近 2 個月每週都留；每月第一週那份留 1 年
     if (!keep) f.setTrashed(true);
   }
 }

@@ -152,6 +152,7 @@ function modelOf_(s) {
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { reportLogin } from './guard.js?v=20261116';
+import { cachedDocs } from './cache.js?v=20261117';
 import { ask } from './ask.js?v=20261116';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -176,8 +177,11 @@ function ageTag(q) {
 }
 function start() {
   const pq = new URLSearchParams(location.search).get('q'); if (pq) $('q').value = pq;
-  const since = ymd(new Date(Date.now() - 365 * 86400000));
-  onSnapshot(query(collection(db, 'quotes'), where('date', '>=', since)), s => {
+  // 最近 14 天即時同步；14 天～1 年的舊報價一天向資料庫拿一次，其餘用電腦裡的副本（省讀取額度）
+  const since = ymd(new Date(Date.now() - 365 * 86400000)), liveCut = ymd(new Date(Date.now() - 14 * 86400000));
+  cachedDocs(query(collection(db, 'quotes'), where('date', '>=', since), where('date', '<', liveCut)), 'quotes-old')
+    .then(s => { s.docs.forEach(d => { if (!quotes.has(d.id)) quotes.set(d.id, { id: d.id, ...d.data() }); }); render(); }).catch(() => {});
+  onSnapshot(query(collection(db, 'quotes'), where('date', '>=', liveCut)), s => {
     s.docChanges().forEach(c => { if (c.type === 'removed') quotes.delete(c.doc.id); else quotes.set(c.doc.id, { id: c.doc.id, ...c.doc.data() }); });
     render();
   }, er => toast('⚠️ 讀取失敗：' + er.message));
