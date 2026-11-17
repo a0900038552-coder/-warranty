@@ -916,6 +916,7 @@ function webQuotes_(model, part) {
   var props = PropertiesService.getScriptProperties();
   var res = fsFetch_(fsBase_() + ':runQuery', { method: 'post', payload: JSON.stringify({ structuredQuery: {
     from: [{ collectionId: 'web_prices' }], where: { fieldFilter: { field: { fieldPath: 'modelKey' }, op: 'EQUAL', value: { stringValue: wkey_(model) } } }, limit: 300 } }) });
+  if (res.getResponseCode() === 429) QUOTA_HIT = true;
   if (res.getResponseCode() !== 200) return [];
   return JSON.parse(res.getContentText()).filter(function (x) { return x.document; }).map(function (x) { return fromFields_(x.document.fields); })
     .filter(function (r) { return r.run === props.getProperty('WEB_RUN_' + r.src) && (part ? r.part === part : (r.part === '螢幕' || r.part === '電池')); });
@@ -934,9 +935,11 @@ function peerPrefix_(t) {
 }
 
 /* ═══ 私訊查價 ═══ */
+var QUOTA_HIT = false;   // 這次查詢是否碰到 Firebase 每日讀取額度用完（429）
 function runQuery_(where, max) {
   var res = fsFetch_(fsBase_() + ':runQuery', { method: 'post', payload: JSON.stringify({ structuredQuery: {
     from: [{ collectionId: 'quotes' }], where: where, limit: max || 500 } }) });
+  if (res.getResponseCode() === 429) QUOTA_HIT = true;
   if (res.getResponseCode() !== 200) { console.error(res.getContentText()); return []; }
   return JSON.parse(res.getContentText()).filter(function (x) { return x.document; }).map(function (x) { return fromFields_(x.document.fields); });
 }
@@ -963,7 +966,7 @@ function lookupQuotes_(text) {
   rows = rows.filter(function (r) { return (!model || norm(r.model) === norm(model)) && (!part || r.part === part || partOf_(r.part) === part); });
   var web = [];
   try { web = webQuotes_(model, part); } catch (e) { console.error(e); }
-  if (!rows.length && !web.length) return '';
+  if (!rows.length && !web.length) return QUOTA_HIT ? '⚠️ 資料庫今天的免費查詢次數用完了，暫時查不到價格。\n台灣時間下午 4 點後會自動恢復，請稍後再查。' : '';
   rows.sort(function (a, b) { return String(b.ts).localeCompare(String(a.ts)); });
   var now = Date.now(), day = 86400000;
   var age = function (r) {
