@@ -593,6 +593,8 @@ document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
   document.querySelectorAll('nav button').forEach(x => x.classList.toggle('active', x === b));
   ['search', 'add', 'import', 'booking', 'manage'].forEach(t => $('tab-' + t).classList.toggle('hidden', t !== b.dataset.tab));
 });
+// 從每日登打點「到保固系統處理」會帶 #booking，直接打開預約分頁
+if (location.hash === '#booking') document.querySelector('nav button[data-tab="booking"]')?.click();
 
 /* ════════ 6. 新增／編輯表單 ════════ */
 function formHTML(p) {

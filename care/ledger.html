@@ -25,6 +25,11 @@ header{background:var(--ink);color:#fff;padding:10px 16px;border-bottom:4px soli
 .hbtn.pri{background:var(--red);border-color:var(--red);color:#fff;font-weight:700}
 main{max-width:1280px;margin:0 auto;padding:12px 12px 80px}
 .sum{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+#bkPanel{background:#fff;border:1px solid var(--line);border-left:4px solid var(--red);border-radius:12px;padding:10px 14px;margin-bottom:12px}
+#bkPanel .bk{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;padding:6px 0;border-top:1px solid #f0f0f0}#bkPanel .bk:first-of-type{border-top:0}
+#bkPanel .st{font-size:12px;font-weight:700;border-radius:99px;padding:1px 8px;white-space:nowrap}
+#bkPanel .st.pending{background:#fee2e2;color:#c00}#bkPanel .st.proposed{background:#fef3c7;color:#b45309}#bkPanel .st.confirmed{background:#dcfce7;color:#15803d}
+#bkPanel .tm{font-weight:800;white-space:nowrap}#bkPanel .sub{color:var(--mute);font-size:13px}
 .sum div{background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 14px;min-width:150px}
 .sum b{display:block;font-size:20px}
 .sum small{color:var(--mute);font-size:12px}
@@ -140,10 +145,11 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
     <button class="hbtn" id="printBtn">🖨 列印</button>
     <button class="hbtn" id="xlsxBtn">⬇ 匯出 Excel</button>
     <button class="hbtn" id="impBtn">📥 匯入舊報表</button><button class="hbtn hidden" id="undoImp" title="把這個月恢復成匯入前的樣子">↩️ 還原上次匯入</button><input type="file" id="impFile" accept=".xlsx,.xls" class="hidden">
-    <a class="hbtn" href="notes.html" id="notesLink">📒 退貨／待辦<span class="nbadge hidden" id="notesBadge"></span></a><a class="hbtn" href="quotes.html">💰 報價</a><a class="hbtn" href="stock.html">📱 中古機庫存</a>
+    <button class="hbtn" id="bkBtn" title="預約">📅 預約<span class="nbadge hidden" id="bkBadge"></span></button><a class="hbtn" href="notes.html" id="notesLink">📒 退貨／待辦<span class="nbadge hidden" id="notesBadge"></span></a><a class="hbtn" href="quotes.html">💰 報價</a><a class="hbtn" href="stock.html">📱 中古機庫存</a>
     <a class="hbtn" href="./">← 保固系統</a>
   </div></header>
   <main>
+    <div id="bkPanel" class="hidden"></div>
     <div class="sum">
       <div><small>承上月金額</small><input id="carry" type="number" step="1"></div>
       <div><small>本月收支</small><b id="sMonth">0</b></div>
@@ -218,12 +224,44 @@ const newId = () => doc(collection(db, 'ledger')).id;
 /* ─── 登入 ─── */
 onAuthStateChanged(auth, u => {
   $('login').classList.toggle('hidden', !!u); $('app').classList.toggle('hidden', !u);
-  if (u) { start(); listenStaff(); listenNotes(); reportLogin(auth, '每日登打'); }
+  if (u) { start(); listenStaff(); listenNotes(); listenBookings(); reportLogin(auth, '每日登打'); }
 });
 $('loginForm').onsubmit = async e => {
   e.preventDefault(); const f = e.target;
   try { await signInWithEmailAndPassword(auth, f.email.value.trim(), f.pw.value); } catch (er) { toast('⚠️ 登入失敗'); }
 };
+
+// 預約：上方「📅 預約」按鈕顯示這間店待確認的數量；有新預約進來會跳通知；點開看清單，到保固系統處理
+let bks = [], bkOn = false, bkFirst = true;
+const BK_ST = { pending: '待確認', proposed: '等客人回覆', confirmed: '已確認' };
+function listenBookings() {
+  if (bkOn) return; bkOn = true;
+  onSnapshot(query(collection(db, 'bookings'), where('status', 'in', ['pending', 'proposed', 'confirmed'])), s => {
+    if (!bkFirst) s.docChanges().forEach(c => {
+      const b = c.doc.data();
+      if (c.type === 'added' && b.status === 'pending' && b.branch === $('branch').value) { toast(`📅 新預約：${b.name || ''}　${b.wish || ''}`); $('bkPanel').classList.remove('hidden'); }
+    });
+    bkFirst = false;
+    bks = s.docs.map(d => ({ id: d.id, ...d.data() })); renderBk();
+  }, () => {});
+}
+function renderBk() {
+  const br = $('branch').value, mine = bks.filter(b => b.branch === br);
+  const pend = mine.filter(b => b.status === 'pending').length;
+  const badge = $('bkBadge'); badge.textContent = pend; badge.classList.toggle('hidden', !pend);
+  $('bkBtn').title = `${br}：待確認 ${pend} 筆、等客人回覆 ${mine.filter(b => b.status === 'proposed').length} 筆、已確認 ${mine.filter(b => b.status === 'confirmed').length} 筆`;
+  const order = { pending: 0, proposed: 1, confirmed: 2 };
+  const list = mine.sort((a, b) => order[a.status] - order[b.status] || String(b.createdAt || '').localeCompare(String(a.createdAt || ''))).slice(0, 15);
+  $('bkPanel').innerHTML = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><b>📅 ${esc(br)}預約</b><span class="sub">待確認 ${pend}・已確認 ${mine.filter(b => b.status === 'confirmed').length}</span>
+      <a href="./#booking" style="margin-left:auto;color:var(--red);font-weight:700;text-decoration:none">到保固系統處理（確認／改時間／轉店）→</a>
+      <button class="del" id="bkClose" title="收起">✕</button></div>` +
+    (list.length ? list.map(b => `<div class="bk"><span class="st ${b.status}">${BK_ST[b.status]}</span>
+      <span class="tm">${esc(b.confirmedTime || b.proposedTime || b.wish || '')}</span><b>${esc(b.name || '')}</b>
+      <a href="tel:${esc(b.phone || '')}" class="sub">${esc(b.phone || '')}</a><span class="sub">📱 ${esc(b.model || '')}｜${esc(b.issues || '')}</span>${b.note ? `<span class="sub">備註：${esc(b.note)}</span>` : ''}</div>`).join('')
+      : '<div class="sub" style="padding:6px 0">目前沒有預約</div>');
+}
+$('bkBtn').onclick = () => $('bkPanel').classList.toggle('hidden');
+$('bkPanel').addEventListener('click', e => { if (e.target.id === 'bkClose') $('bkPanel').classList.add('hidden'); });
 
 // 「退貨／待辦」按鈕上的紅色數字：未完成待辦＋購物金已用完、該登打的退貨（只算目前這間店）
 let notesT = [], notesC = [], notesTf = [], notesOn = false;
@@ -246,7 +284,7 @@ function start() {
   $('branch').value = lsGet('ledgerBranch') || '楠梓店';
   const t = new Date(); $('month').value = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}`;
   $('newDate').value = ymd(t);
-  $('branch').onchange = () => { lsSet('ledgerBranch', $('branch').value); load(); notesBadge(); lockNote(); };
+  $('branch').onchange = () => { lsSet('ledgerBranch', $('branch').value); load(); notesBadge(); lockNote(); renderBk(); };
   lockNote();
   $('month').onchange = load;
   load();
