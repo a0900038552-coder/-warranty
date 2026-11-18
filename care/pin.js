@@ -2,6 +2,18 @@
 // 注意：這是「防手滑」用的，不是資安防護（真正擋外人的是登入帳號＋資料庫規則）。
 const PINS = { '楠梓店': '3223', '德賢店': '6883' };
 
+// 每個帳號的「自己的分店」：開頁面預設就是這間；員工切到別間店可以看，但要登打必須輸入那間店的密碼（10 分鐘內有效）
+const HOME = {
+  'a0900038552@gmail.com': '楠梓店',   // 老闆（兩間店都能直接登打，不受這個限制）
+  'i0935349954@gmail.com': '楠梓店',
+  'soso770724@gmail.com': '德賢店',
+  'i0935349455@gmail.com': '德賢店',
+};
+const OWNER = 'a0900038552@gmail.com';
+export const homeBranch = email => HOME[String(email || '').toLowerCase()] || '';
+// 這個帳號現在看的是不是「別人的分店」（老闆不算）
+export const isAway = (email, branch) => { const h = homeBranch(email); return !!h && String(email).toLowerCase() !== OWNER && branch !== h; };
+
 const ssGet = k => { try { return sessionStorage.getItem(k); } catch { return null; } };
 const ssSet = (k, v) => { try { sessionStorage.setItem(k, v); } catch {} };
 const lsGet = k => { try { return localStorage.getItem(k); } catch { return null; } };

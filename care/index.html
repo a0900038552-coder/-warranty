@@ -285,7 +285,7 @@ th{color:var(--mute);font-weight:600}
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { reportLogin } from './guard.js?v=20261116';
 import { cachedDocs } from './cache.js?v=20261117';
-import { requirePin } from './pin.js?v=20261117';
+import { requirePin, homeBranch } from './pin.js?v=20261118';
 import { ask, askText } from './ask.js?v=20261116';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
@@ -375,8 +375,9 @@ onAuthStateChanged(auth, user => {
   reportLogin(auth, '保固系統');
   $('login').classList.add('hidden'); $('app').classList.remove('hidden');
   $('who').textContent = user.email;
-  const saved = localStorageGet('care.branch');
-  if (saved !== null) $('branchFilter').value = saved;
+  const saved = localStorageGet('care.branch'), home = homeBranch(user.email);
+  if (saved !== null) $('branchFilter').value = saved; else if (home) $('branchFilter').value = home;
+  if (home) addForm.querySelector('[name="branch"]').value = home;   // 新增保固預設自己的分店
   const err = e => toast('⚠️ 讀取失敗：' + e.message);
   const cutoff = ymd(new Date(Date.now() - RECENT_DAYS * 86400000));
   unsubs.push(onSnapshot(query(collection(db, 'records'), orderBy('repairDate', 'desc'), limit(LIVE_N)), s => {
@@ -677,7 +678,7 @@ function readForm(form) {
 const addForm = $('addForm');
 addForm.innerHTML = formHTML('a'); wireForm(addForm);
 const resetAdd = () => {
-  addForm.reset(); delete addForm.dataset.catTouched;
+  addForm.reset(); delete addForm.dataset.catTouched; { const h = homeBranch(auth.currentUser?.email); if (h) addForm.querySelector('[name="branch"]').value = h; }
   addForm.repairDate.value = ymd(new Date());
   const br = $('branchFilter').value; if (br) addForm.branch.value = br;
   addForm.category.value = 'other'; addForm.category.dispatchEvent(new Event('change')); delete addForm.dataset.catTouched;

@@ -138,7 +138,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { reportLogin } from './guard.js?v=20261116';
 import { ask, askText } from './ask.js';
 import { settle } from './transfer.js?v=20261117';
-import { requirePin } from './pin.js?v=20261117';
+import { requirePin, homeBranch } from './pin.js?v=20261118';
 import { pickPost } from './credit.js?v=20261118';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, addDoc, setDoc, updateDoc, deleteDoc, writeBatch, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -162,7 +162,7 @@ $('loginForm').onsubmit = async e => { e.preventDefault(); try { await signInWit
 
 function start() {
   if (started) return; started = true;
-  const myBr = lsGet('ledgerBranch') || '楠梓店';
+  const myBr = homeBranch(auth.currentUser?.email) || lsGet('ledgerBranch') || '楠梓店';
   $('todoBr').value = myBr; $('rBr').value = myBr; $('br').value = lsGet('notesBranch') ?? '';
   $('rDate').value = ymd(new Date());
   onSnapshot(collection(db, 'credit'), s => { credit = s.docs.map(d => ({ id: d.id, ...d.data() })); renderCredit(); });

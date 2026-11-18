@@ -182,7 +182,7 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { reportLogin } from './guard.js?v=20261116';
-import { requirePin, isUnlocked } from './pin.js?v=20261117';
+import { requirePin, isUnlocked, homeBranch, isAway } from './pin.js?v=20261118';
 import { parseTransfer, settle } from './transfer.js?v=20261117';
 import { pickPost } from './credit.js?v=20261118';
 import { ask } from './ask.js?v=20261116';
@@ -287,7 +287,7 @@ function notesBadge() {
   $('notesLink').title = `未完成待辦 ${notesT.filter(t => t.branch === br).length} 件${readyN ? `、${readyN} 家廠商的退貨可以登打了` : ''}${owe ? `、還欠${br === '楠梓店' ? '德賢店' : '楠梓店'} ${owe} 筆調貨` : ''}`;
 }
 function start() {
-  $('branch').value = lsGet('ledgerBranch') || '楠梓店';
+  $('branch').value = homeBranch(auth.currentUser?.email) || lsGet('ledgerBranch') || '楠梓店';   // 帳號有自己的分店就預設那間
   const t = new Date(); $('month').value = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}`;
   $('newDate').value = ymd(t);
   $('branch').onchange = () => { lsSet('ledgerBranch', $('branch').value); load(); notesBadge(); lockNote(); renderBk(); };
@@ -636,12 +636,24 @@ $('days').addEventListener('keydown', e => {
 // 分店密碼：游標點進格子時，這台裝置還沒解鎖這間店就先要密碼（解鎖後這台記住，不會每次問）
 async function guardEdit(e) {
   const i = e.target.closest && e.target.closest('input'); if (!i) return;
-  const br = $('branch').value; if (isUnlocked(br)) return;
+  const br = $('branch').value, me = auth.currentUser?.email;
+  if (isAway(me, br)) {   // 員工在看別間店：每次登打都要那間店的密碼（10 分鐘內不用重打）
+    const k = 'pin.ok.' + br; let ok = false; try { ok = Date.now() - Number(sessionStorage.getItem(k) || 0) < 10 * 60e3; } catch {}
+    if (ok) return;
+    e.preventDefault(); i.blur();
+    if (await requirePin(br, '登打（這不是你的分店）', { minutes: 10 })) { i.focus(); lockNote(); }
+    return;
+  }
+  if (isUnlocked(br)) return;
   e.preventDefault(); i.blur();
   if (await requirePin(br, '登打', { device: true })) { i.focus(); lockNote(); }
 }
 ['focusin', 'beforeinput'].forEach(t => { $('days').addEventListener(t, guardEdit, true); $('carry').addEventListener(t, guardEdit, true); });
-function lockNote() { const n = $('lockNote'); if (n) n.classList.toggle('hidden', isUnlocked($('branch').value)); }
+function lockNote() {
+  const n = $('lockNote'); if (!n) return; const br = $('branch').value, away = isAway(auth.currentUser?.email, br);
+  n.textContent = away ? `👀 查看${br}（不是你的分店，登打要密碼）` : '🔒 未解鎖';
+  n.classList.toggle('hidden', !away && isUnlocked(br));
+}
 
 $('days').addEventListener('click', async e => {
   const b = e.target.closest('[data-del]'); if (!b) return;

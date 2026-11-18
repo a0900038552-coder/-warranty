@@ -116,7 +116,7 @@ tr.detail td{background:#fafbfc}
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { reportLogin } from './guard.js?v=20261116';
 import { cachedDocs, expireCache } from './cache.js?v=20261117';
-import { requirePin } from './pin.js?v=20261117';
+import { requirePin, homeBranch } from './pin.js?v=20261118';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, addDoc, deleteDoc, onSnapshot, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 const app = initializeApp({ apiKey: "AIzaSyD04ZMXIt8Oo3hjm5qsMaKiLXYzp_9YKwA", authDomain: "care-warranty.firebaseapp.com", projectId: "care-warranty",
@@ -278,7 +278,7 @@ $('list').addEventListener('click', e => { const b = e.target.closest('[data-ope
 $('segS').onclick = e => { const b = e.target.closest('button'); if (!b) return; scope = b.dataset.k; [...$('segS').children].forEach(x => x.classList.toggle('on', x === b)); render(); };
 $('addBtn').onclick = () => {
   const f = $('addForm'); f.classList.toggle('hidden');
-  if (!f.classList.contains('hidden')) { f.date.value = f.date.value || ymd(new Date()); f.branch.value = $('br').value || f.branch.value; f.model.focus(); }
+  if (!f.classList.contains('hidden')) { f.date.value = f.date.value || ymd(new Date()); f.branch.value = $('br').value || homeBranch(auth.currentUser?.email) || f.branch.value; f.model.focus(); }
 };
 $('addCancel').onclick = () => $('addForm').classList.add('hidden');
 $('addForm').onsubmit = async e => {
