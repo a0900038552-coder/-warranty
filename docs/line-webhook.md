@@ -9,6 +9,7 @@ Google Apps Script，一支程式處理所有 LINE 事件。**改完要手動貼
 | `POST ?store=quote` | `handleQuoteWebhook_` → `quoteEvent_` | 復原者Ai機器人（報價小幫手）群組訊息 |
 | `POST ?action=staff` | `staffAction_` | 員工在保固系統按預約「確認／改時間／婉拒」→ Push 給客人 |
 | `POST ?action=login` | `loginAlert_` | `guard.js` 登入回報，新裝置通知老闆 |
+| `POST ?action=refundNotice` | `refundNotice_` | 保固系統退修卡片按「LINE 通知客人」→ 用該店官方帳號 Push 保固終止通知給有綁定的客人；寫 `records.notifiedAt` |
 | `GET ?action=blocks&store=` | `blocksFor_` | LIFF 預約表單讀不開放時段 |
 
 ## 主要功能 → 函式

@@ -16,7 +16,8 @@
 | `type` | 原始品項文字，例 `11/1 13 電池/雄1028` |
 | `category`, `baseDays`, `careDays` | 主項目（保固最長那項）的分類與天數 |
 | `items[]`, `itemsCode` | 每個項目 `{category, baseDays, careDays}`；`itemsCode` 例 `battery:90:90\|screen:30:60` |
-| `kind` | `repair` 或 `refund`（退修，另多 `origDate`、`origItem`，天數皆 0） |
+| `kind` | `repair` 或 `refund`（退修，另多 `origDate`、`origItem`，天數皆 0）。有對應退修的維修＝保固（含 CARE+）作廢（保固系統 `refundsOf()`、GAS `refundedBy_()`，兩邊比對規則要一致） |
+| `notifiedAt/By` | 退修紀錄：已用 LINE 通知客人保固終止的時間／員工（GAS `refundNotice_`） |
 | `price`, `note`, `followup` | |
 | `careManual` | 人工啟用 CARE+ |
 | `source` | `manual` / `ledger` / 匯入 |
@@ -30,7 +31,7 @@
 `status`: `friend` / `blocked`、`branch`, `phone`, `updatedAt`。封鎖時 CARE+ 延長部分暫停，重新加好友自動恢復。
 
 ### `bookings` — 預約（GAS 寫、保固系統頁面處理）
-`branch`, `store`(`nanzi`/`dexian`), `lineUserId`, `name`, `phone`, `model`, `issues`, `wish`(希望時間), `note`,
+`branch`（可轉店，轉過會有 `transferredFrom`、`transferredAt`）, `store`(`nanzi`/`dexian`，客人當初用哪個官方帳號預約，LINE 通知一律從這個帳號傳), `lineUserId`, `name`, `phone`, `model`, `issues`, `wish`(希望時間), `note`,
 `status`: `pending` → `proposed`（店家提議改時間，`proposedTime`）→ `confirmed`（`confirmedTime`）；或 `declined`（`declineReason`）；到店後 `done` / `noshow` / `cancelled`（這三種不通知客人）；`createdAt`, `updatedAt/By`。
 同時寫一份到 Google 試算表（指令碼屬性 `BOOKING_SHEET_ID`）。
 
