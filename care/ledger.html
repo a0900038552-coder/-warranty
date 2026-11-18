@@ -279,7 +279,7 @@ function listenNotes() {
 }
 function notesBadge() {
   const br = $('branch').value, g = {};
-  notesC.filter(c => c.branch === br && !c.done).forEach(c => { const k = c.supplier || ''; g[k] = g[k] || { r: 0, u: 0, n: 0 }; const a = Number(c.amount) || 0; if (c.kind === 'use') g[k].u += a; else { g[k].r += a; g[k].n++; } });
+  notesC.filter(c => c.branch === br && !c.done).forEach(c => { const k = c.supplier || ''; g[k] = g[k] || { r: 0, u: 0, n: 0 }; const a = Number(c.amount) || 0; if (c.kind === 'use') g[k].u += a; else if (c.kind === 'return') { g[k].r += a; g[k].n++; } });
   const readyN = Object.values(g).filter(x => x.n && x.r - x.u <= 0).length;
   const owe = settle(notesTf).open.filter(t => t.debtor === br).length;
   const n = notesT.filter(t => t.branch === br).length + readyN + owe;

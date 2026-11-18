@@ -65,9 +65,13 @@
 ### `transfers/{ledger id}` — 兩店調貨欠條（由 ledger 自動產生）
 `kind`(`borrow`/`return`), `debtor`, `creditor`, `part`, `qty`, `date`, `ledgerId`, `ledgerBranch`, `note`, `cost`, `settled`, `settledAt/By`。
 
-### `credit` — 廠商退貨購物金
-`kind`(`return` 退貨得到購物金 / `use` 使用), `branch`, `supplier`, `item`, `amount`, `note`, `date`,
+### `credit` — 廠商退貨／換貨（購物金、月結）
+`kind`(`return` 退貨 / `use` 使用購物金 / `exchange` 換貨，不算錢), `branch`, `supplier`, `item`, `amount`, `note`, `date`,
+`checked`/`checkedAt`/`checkedBy`（核銷＝處理好了，畫面上畫刪除線但不歸檔）, `settledOn`（按「結算」選的結算日；已核銷的一起歸檔）,
 `done`/`doneAt`/`doneBy`（已歸檔）, `postId`（被哪一列 ledger「購物金入帳」歸檔）。入帳金額＝已使用的購物金；歸檔全部 `use`＋加總剛好等於入帳金額的 `return`（`care/credit.js` 的 `pickPost`），沒用完的退貨保留。
+
+### `settings/suppliers` — 廠商類型
+`monthly`: 月結廠商名稱陣列（預設 `謝廣雄`、`上湛`）；不在名單的是購物金廠商。月結廠商的退貨從月結帳款扣，不影響點錢。
 
 ### `todos` — 待辦
 `text`, `branch`, `done`, `doneAt/By`, `createdAt`, `by`。

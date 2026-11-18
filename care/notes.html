@@ -33,7 +33,7 @@ select,input[type=text],input[type=date]{border:1px solid #d1d5db;border-radius:
 .btn.green{background:var(--green)}
 .btn.sm{padding:5px 10px;font-size:13px}
 .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px}
-.form{display:grid;grid-template-columns:130px 100px 1fr 1.6fr 110px 1fr auto;gap:8px;align-items:end}
+.form{display:grid;grid-template-columns:130px 90px 84px 1fr 1.6fr 110px 1fr auto;gap:8px;align-items:end}
 .form label{display:block;font-size:12px;color:var(--mute);margin-bottom:2px}
 .form input,.form select{width:100%}
 @media (max-width:820px){.form{grid-template-columns:1fr 1fr}.form .wide{grid-column:1/-1}}
@@ -49,7 +49,10 @@ td.d{white-space:nowrap;color:var(--mute);width:1%}
 td.x{width:1%;text-align:right}
 .del{border:0;background:none;color:#9ca3af;cursor:pointer;font-size:16px;padding:0 4px}.del:hover{color:var(--red)}
 .k{font-size:11px;font-weight:700;border-radius:4px;padding:0 5px;margin-right:4px}
-.k.r{background:#e6f0fb;color:var(--blue)}.k.u{background:#fef3c7;color:var(--amber)}
+.k.r{background:#e6f0fb;color:var(--blue)}.k.u{background:#fef3c7;color:var(--amber)}.k.x{background:#ede9fe;color:#6d28d9}
+tr.chk td:not(.x){text-decoration:line-through;color:#9ca3af}tr.chk .k{opacity:.6}
+.chkb{border:1px solid #d1d5db;background:#fff;border-radius:6px;padding:1px 7px;font-size:12px;cursor:pointer;white-space:nowrap}.chkb.on{background:var(--green);border-color:var(--green);color:#fff}
+.mode{font-size:12px;border-radius:99px;padding:1px 8px;cursor:pointer;border:1px solid #d1d5db;background:#fff}.mode.m{background:#1e3a8a;color:#fff;border-color:#1e3a8a}
 .use{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center}
 .use input[type=text]{flex:1;min-width:120px}
 .ready{background:#dcfce7;border:1px solid #86efac;border-radius:10px;padding:10px 12px;margin-top:10px}
@@ -112,14 +115,17 @@ details{margin-top:8px}summary{cursor:pointer;color:var(--mute);font-size:13px}
       <form class="form" id="retForm">
         <div><label>退貨日期</label><input type="date" id="rDate"></div>
         <div><label>分店</label><select id="rBr"><option>楠梓店</option><option>德賢店</option></select></div>
+        <div><label>類型</label><select id="rKind"><option value="return">退貨</option><option value="exchange">換貨</option></select></div>
         <div><label>廠商</label><input type="text" id="rSup" list="supList" placeholder="例：傑昇" autocomplete="off"></div>
         <div class="wide"><label>退貨品項</label><input type="text" id="rItem" placeholder="例：iPhone 14 螢幕（亮點）×1" autocomplete="off"></div>
-        <div><label>金額（購物金）</label><input type="text" id="rAmt" inputmode="numeric" placeholder="例：1800"></div>
+        <div><label>金額</label><input type="text" id="rAmt" inputmode="numeric" placeholder="換貨可不填"></div>
         <div class="wide"><label>備註</label><input type="text" id="rNote" placeholder="選填" autocomplete="off"></div>
-        <button class="btn">＋ 新增退貨</button>
+        <button class="btn">＋ 新增</button>
       </form>
       <datalist id="supList"></datalist>
-      <p class="hint">退貨後廠商給的購物金記在這裡；之後進貨用掉購物金時，在該廠商下面按「記錄使用」。等購物金用完，這裡會提醒你把退貨一次登打進每日登打，打完按「歸檔」。<br>用購物金進貨時，每日登打照常打支出；那天的「點錢」會自動扣掉已使用、還沒登打的購物金，金額就對得起來。購物金用完、退貨入帳那天，在每日登打打「支出:廠商購物金入帳」＋總額，這裡那批就會自動歸檔。</p>
+      <p class="hint"><b>每一筆後面的「核銷」</b>：處理好了就按，會畫刪除線但留在畫面上；廠商結算那天按「結算」，選結算日期，已核銷的會一起歸檔。<br>
+        <b>廠商分兩種</b>（點廠商名稱旁的標籤切換）：<b>購物金</b>＝退貨換購物金、進貨時扣（例：鴻勝）；<b>月結</b>＝退貨從月結帳款扣（例：上湛、謝廣雄），不影響點錢。<b>換貨</b>只追蹤「換回來沒」，不算錢。<br>
+        退貨後廠商給的購物金記在這裡；之後進貨用掉購物金時，在該廠商下面按「記錄使用」。等購物金用完，這裡會提醒你把退貨一次登打進每日登打，打完按「歸檔」。<br>用購物金進貨時，每日登打照常打支出；那天的「點錢」會自動扣掉已使用、還沒登打的購物金，金額就對得起來。購物金用完、退貨入帳那天，在每日登打打「支出:廠商購物金入帳」＋總額，這裡那批就會自動歸檔。</p>
     </div>
     <div id="groups"></div>
     <details id="arcBox"><summary>已歸檔的退貨（最近 50 筆）</summary><div class="card" style="margin-top:8px"><table id="arc"></table></div></details>
@@ -135,7 +141,7 @@ import { settle } from './transfer.js?v=20261117';
 import { requirePin } from './pin.js?v=20261117';
 import { pickPost } from './credit.js?v=20261118';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, addDoc, updateDoc, deleteDoc, writeBatch, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, addDoc, setDoc, updateDoc, deleteDoc, writeBatch, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 const app = initializeApp({ apiKey: "AIzaSyD04ZMXIt8Oo3hjm5qsMaKiLXYzp_9YKwA", authDomain: "care-warranty.firebaseapp.com", projectId: "care-warranty",
   storageBucket: "care-warranty.firebasestorage.app", messagingSenderId: "29512690431", appId: "1:29512690431:web:f0c2dd1cd6acb03d197aca" });
 const auth = getAuth(app), db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) });
@@ -150,7 +156,7 @@ const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
 function toast(m) { const t = $('toast'); t.textContent = m; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2400); }
 const who = () => (auth.currentUser && auth.currentUser.email) || '';
 
-let credit = [], todos = [], transfers = [], started = false;
+let credit = [], todos = [], transfers = [], started = false, monthly = ['謝廣雄', '上湛'];
 onAuthStateChanged(auth, u => { $('login').classList.toggle('hidden', !!u); $('app').classList.toggle('hidden', !u); if (u) { start(); reportLogin(auth, '退貨／待辦'); } });
 $('loginForm').onsubmit = async e => { e.preventDefault(); try { await signInWithEmailAndPassword(auth, e.target.email.value.trim(), e.target.pw.value); } catch { toast('⚠️ 登入失敗'); } };
 
@@ -160,6 +166,7 @@ function start() {
   $('todoBr').value = myBr; $('rBr').value = myBr; $('br').value = lsGet('notesBranch') ?? '';
   $('rDate').value = ymd(new Date());
   onSnapshot(collection(db, 'credit'), s => { credit = s.docs.map(d => ({ id: d.id, ...d.data() })); renderCredit(); });
+  onSnapshot(doc(db, 'settings', 'suppliers'), s => { if (s.exists() && Array.isArray(s.data().monthly)) monthly = s.data().monthly; renderCredit(); }, () => {});
   onSnapshot(collection(db, 'todos'), s => { todos = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTodos(); });
   onSnapshot(collection(db, 'transfers'), s => { transfers = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTf(); });
 }
@@ -226,28 +233,47 @@ function renderCredit() {
     const ra = ready(groups[a]), rb = ready(groups[b]); if (ra !== rb) return ra ? -1 : 1;
     return first(groups[a]).localeCompare(first(groups[b]));
   });
-  $('retCnt').textContent = open.filter(c => c.kind === 'return').length;
+  $('retCnt').textContent = open.filter(c => c.kind !== 'use' && !c.checked).length;
   $('groups').innerHTML = keys.length ? keys.map(k => card(k, groups[k])).join('') : '<div class="card empty">目前沒有待處理的退貨。</div>';
   const arc = credit.filter(c => c.done && inBr(c)).sort((a, b) => (b.doneAt || '').localeCompare(a.doneAt || '') || (b.date || '').localeCompare(a.date || '')).slice(0, 50);
   $('arcBox').classList.toggle('hidden', !arc.length);
-  $('arc').innerHTML = arc.map(c => `<tr><td class="d">${md(c.date)}</td><td><span class="k ${c.kind === 'use' ? 'u">使用' : 'r">退貨'}</span>${esc(c.supplier)}・${esc(c.kind === 'use' ? (c.note || '使用購物金') : c.item)}</td>
-    <td class="n">${c.kind === 'use' ? '−' : ''}${money(num(c.amount))}</td><td class="d">${esc(c.branch || '')}・歸檔 ${md((c.doneAt || '').slice(0, 10))}</td>
+  $('arc').innerHTML = arc.map(c => `<tr><td class="d">${md(c.date)}</td><td>${kindTag(c)}${esc(c.supplier)}・${esc(c.kind === 'use' ? (c.note || '使用購物金') : c.item)}</td>
+    <td class="n">${c.kind === 'use' ? '−' : ''}${num(c.amount) ? money(num(c.amount)) : ''}</td><td class="d">${esc(c.branch || '')}・${c.settledOn ? '結算' : '歸檔'} ${md(c.settledOn || (c.doneAt || '').slice(0, 10))}</td>
     <td class="x"><button class="btn ghost sm" data-unarc="${c.id}">還原</button></td></tr>`).join('');
 }
 const sum = (arr, kind) => arr.filter(c => c.kind === kind).reduce((a, c) => a + (num(c.amount) ?? 0), 0);
 const ready = arr => arr.some(c => c.kind === 'return') && sum(arr, 'return') - sum(arr, 'use') <= 0;
 const first = arr => arr.map(c => c.date || '').sort()[0] || '';
+const isMonthly = sup => monthly.includes(String(sup || '').trim());
+const kindTag = c => c.kind === 'use' ? '<span class="k u">使用</span>' : c.kind === 'exchange' ? '<span class="k x">換貨</span>' : '<span class="k r">退貨</span>';
+const chkBtn = c => `<button class="chkb${c.checked ? ' on' : ''}" data-chk="${c.id}" title="${c.checked ? '取消核銷' : '處理好了就按'}">${c.checked ? '✓ 已核銷' : c.kind === 'exchange' ? '換回了' : '核銷'}</button>`;
+const settleBtn = (k, arr) => { const n = arr.filter(c => c.checked).length;
+  return n ? `<button class="btn ghost sm" data-settle="${esc(k)}">📅 結算（歸檔已核銷的 ${n} 筆）</button>` : ''; };
 function card(k, arr) {
   const [branch, supplier] = k.split('｜');
+  const exch = arr.filter(c => c.kind === 'exchange').sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  const modeTag = `<button class="mode${isMonthly(supplier) ? ' m' : ''}" data-mode="${esc(supplier)}" title="點一下切換購物金／月結">${isMonthly(supplier) ? '月結' : '購物金'}</button>`;
+  const lineX = c => `<tr${c.checked ? ' class="chk"' : ''}><td class="d">${md(c.date)}</td>
+      <td>${kindTag(c)}${esc(c.kind === 'use' ? (c.note || '使用購物金') : c.item)}${c.kind !== 'use' && c.note ? ` <span class="tag">${esc(c.note)}</span>` : ''}${c.checked && c.checkedAt ? ` <span class="tag">核銷 ${md(c.checkedAt.slice(0, 10))}</span>` : ''}</td>
+      <td class="n">${c.kind === 'use' ? '−' : ''}${num(c.amount) ? money(num(c.amount)) : ''}</td>
+      <td class="x">${chkBtn(c)} <button class="del" data-cdel="${c.id}" title="刪除">×</button></td></tr>`;
+  if (isMonthly(supplier)) {
+    // 月結廠商：退貨從月結帳款扣、換貨等換回；結算日不固定，按「結算」選日期
+    const rets = arr.filter(c => c.kind === 'return').sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    const pend = rets.filter(c => !c.checked).reduce((a, c) => a + (num(c.amount) ?? 0), 0);
+    const exPend = exch.filter(c => !c.checked).length;
+    return `<div class="card">
+      <div class="sup"><b class="name">${esc(supplier || '（未填廠商）')}</b>${modeTag}<span class="tag">${esc(branch)}</span>
+        <div class="bal"><div><span>退貨待扣款</span><b style="color:${pend ? 'var(--amber)' : 'var(--green)'}">${money(pend)}</b></div><div><span>換貨待換回</span><b>${exPend} 件</b></div></div></div>
+      <table>${[...rets, ...exch].map(lineX).join('')}</table>
+      <div class="use" style="justify-content:space-between"><span class="hint" style="margin:0">月結單扣到的退貨、換回來的換貨就按「核銷」；結算那天按右邊「結算」。</span>${settleBtn(k, arr)}</div></div>`;
+  }
   const rets = arr.filter(c => c.kind === 'return').sort((a, b) => (a.date || '').localeCompare(b.date || ''));
   const uses = arr.filter(c => c.kind === 'use').sort((a, b) => (a.date || '').localeCompare(b.date || ''));
   const got = sum(arr, 'return'), used = sum(arr, 'use'), left = got - used;
-  const line = c => `<tr><td class="d">${md(c.date)}</td>
-      <td><span class="k ${c.kind === 'use' ? 'u">使用' : 'r">退貨'}</span>${esc(c.kind === 'use' ? (c.note || '使用購物金') : c.item)}${c.kind === 'return' && c.note ? ` <span class="tag">${esc(c.note)}</span>` : ''}</td>
-      <td class="n">${c.kind === 'use' ? '−' : ''}${money(num(c.amount))}</td>
-      <td class="x"><button class="del" data-cdel="${c.id}" title="刪除">×</button></td></tr>`;
+  const line = lineX;
   const status = !rets.length
-    ? `<div class="left">⚠️ 只有使用紀錄、沒有退貨紀錄，請確認是否漏記退貨。</div>`
+    ? (uses.length ? `<div class="left">⚠️ 只有使用紀錄、沒有退貨紀錄，請確認是否漏記退貨。</div>` : '')
     : left <= 0
       ? `<div class="ready">✅ <b>購物金已用完${left < 0 ? `（多用了 ${money(-left)}）` : ''}，可以把這 ${rets.length} 筆退貨登打到每日登打了：</b>
           <ol>${rets.map(r => `<li>${esc(r.item)}　${money(num(r.amount))}</li>`).join('')}</ol>
@@ -257,9 +283,10 @@ function card(k, arr) {
           <div class="hint">也可以直接在每日登打打「<b>支出:${esc(supplier)}購物金入帳</b>」＋${money(used)}（已使用的購物金），這批會自動歸檔。一鍵登打就是幫你新增這一列（品項寫在備註），點錢的購物金也會自動歸零。</div></div>`
       : `<div class="left">購物金還剩 <b>${money(left)}</b> 未用完。${used > 0 ? `<br>如果已經用掉的 ${money(used)} 要先入帳：在每日登打打「<b>支出:${esc(supplier)}購物金入帳</b>」＋${money(used)}，或按 <button class="btn ghost sm" data-post="${esc(k)}">一鍵入帳 ${money(used)}</button>（剩下的 ${money(left)} 會留著）` : '先不用登打。'}</div>`;
   return `<div class="card">
-    <div class="sup"><b class="name">${esc(supplier || '（未填廠商）')}</b><span class="tag">${esc(branch)}</span>
+    <div class="sup"><b class="name">${esc(supplier || '（未填廠商）')}</b>${modeTag}<span class="tag">${esc(branch)}</span>
       <div class="bal"><div><span>購物金</span><b>${money(got)}</b></div><div><span>已使用</span><b>${money(used)}</b></div><div><span>剩餘</span><b style="color:${left > 0 ? 'var(--amber)' : 'var(--green)'}">${money(Math.max(left, 0))}</b></div></div></div>
-    <table>${[...rets, ...uses].map(line).join('')}</table>
+    <table>${[...rets, ...uses, ...exch].map(line).join('')}</table>
+    ${settleBtn(k, arr) ? `<div class="use" style="justify-content:flex-end">${settleBtn(k, arr)}</div>` : ''}
     <form class="use" data-use="${esc(k)}">
       <input type="date" name="date" value="${ymd(new Date())}">
       <input type="text" name="amount" inputmode="numeric" placeholder="使用金額" style="max-width:120px;flex:none">
@@ -270,12 +297,12 @@ function card(k, arr) {
 }
 $('retForm').onsubmit = async e => {
   e.preventDefault();
-  const supplier = $('rSup').value.trim(), item = $('rItem').value.trim(), amount = num($('rAmt').value);
+  const supplier = $('rSup').value.trim(), item = $('rItem').value.trim(), amount = num($('rAmt').value), kind = $('rKind').value;
   if (!supplier) return toast('請填廠商'), $('rSup').focus();
-  if (!item) return toast('請填退貨品項'), $('rItem').focus();
-  if (amount == null || amount <= 0) return toast('請填金額'), $('rAmt').focus();
+  if (!item) return toast('請填品項'), $('rItem').focus();
+  if (kind === 'return' && (amount == null || amount <= 0)) return toast('退貨請填金額'), $('rAmt').focus();
   try {
-    await addDoc(collection(db, 'credit'), { kind: 'return', branch: $('rBr').value, supplier, item, amount, note: $('rNote').value.trim(),
+    await addDoc(collection(db, 'credit'), { kind, checked: false, branch: $('rBr').value, supplier, item, amount: amount ?? 0, note: $('rNote').value.trim(),
       date: $('rDate').value || ymd(new Date()), done: false, createdAt: new Date().toISOString(), by: who() });
     $('rItem').value = ''; $('rAmt').value = ''; $('rNote').value = ''; $('rItem').focus();
     toast('已記錄退貨');
@@ -296,12 +323,31 @@ document.addEventListener('submit', async e => {
 
 // ───────── 點擊：刪除／修改／歸檔／還原 ─────────
 document.addEventListener('click', async e => {
-  const t = e.target.closest('[data-tdel],[data-tedit],[data-cdel],[data-arc],[data-unarc],[data-tfset],[data-tfun],[data-post]'); if (!t) return;
+  const t = e.target.closest('[data-tdel],[data-tedit],[data-cdel],[data-arc],[data-unarc],[data-tfset],[data-tfun],[data-post],[data-chk],[data-settle],[data-mode]'); if (!t) return;
   const d = t.dataset;
   try {
     if (d.tdel) { const x = todos.find(y => y.id === d.tdel); if (await ask(`刪除這筆待辦？\n\n${x ? x.text : ''}`, { ok: '刪除' })) await deleteDoc(doc(db, 'todos', d.tdel)); }
     else if (d.tedit) { const x = todos.find(y => y.id === d.tedit); const v = await askText('修改待辦', x ? x.text : ''); if (v != null && v.trim()) await updateDoc(doc(db, 'todos', d.tedit), { text: v.trim() }); }
     else if (d.cdel) { const x = credit.find(y => y.id === d.cdel); if (await ask(`刪除這筆${x && x.kind === 'use' ? '使用紀錄' : '退貨'}？\n\n${x ? (x.item || x.note || '') + '　' + money(num(x.amount)) : ''}`, { ok: '刪除' })) await deleteDoc(doc(db, 'credit', d.cdel)); }
+    else if (d.chk) {
+      const x = credit.find(y => y.id === d.chk); if (!x) return;
+      await updateDoc(doc(db, 'credit', d.chk), x.checked ? { checked: false, checkedAt: '', checkedBy: '' } : { checked: true, checkedAt: new Date().toISOString(), checkedBy: who() });
+    }
+    else if (d.settle) {
+      const arr = credit.filter(c => !c.done && c.checked && gkey(c) === d.settle), [, sup] = d.settle.split('｜');
+      if (!arr.length) return;
+      const day = await askText(`${sup}：結算日期（已核銷的 ${arr.length} 筆會歸檔）\n格式 2026-11-30`, ymd(new Date()));
+      if (day == null) return;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(day.trim())) { toast('日期格式請打 2026-11-30'); return; }
+      const b = writeBatch(db), at = new Date().toISOString();
+      arr.forEach(c => b.update(doc(db, 'credit', c.id), { done: true, doneAt: at, doneBy: who(), settledOn: day.trim() }));
+      await b.commit(); toast(`✅ ${sup} ${md(day.trim())} 結算完成，${arr.length} 筆已歸檔`);
+    }
+    else if (d.mode) {
+      const sup = d.mode.trim(), next = isMonthly(sup) ? monthly.filter(x => x !== sup) : [...monthly, sup];
+      if (!await ask(`把「${sup}」改成${isMonthly(sup) ? '購物金' : '月結'}廠商？`, { ok: '改', danger: false })) return;
+      await setDoc(doc(db, 'settings', 'suppliers'), { monthly: next, updatedAt: new Date().toISOString(), updatedBy: who() }, { merge: true });
+    }
     else if (d.post) {
       // 購物金用完 → 在今天的每日登打新增一列退貨（照登打規則：支出:廠商，廠商退貨打正數），同時歸檔
       const arr = credit.filter(c => !c.done && gkey(c) === d.post);
@@ -327,7 +373,7 @@ document.addEventListener('click', async e => {
     }
     else if (d.tfset) { const x = transfers.find(y => y.id === d.tfset); if (await ask(`把這筆調貨標成「已還清」？\n\n${x ? x.debtor + '向' + x.creditor + '調：' + x.part : ''}\n\n（建議還是在每日登打打「還貨」，紀錄比較完整）`, { ok: '標成已還清', danger: false })) await updateDoc(doc(db, 'transfers', d.tfset), { settled: true, settledAt: new Date().toISOString(), settledBy: who() }); }
     else if (d.tfun) { await updateDoc(doc(db, 'transfers', d.tfun), { settled: false, settledAt: '', settledBy: '' }); toast('已取消結清'); }
-    else if (d.unarc) { await updateDoc(doc(db, 'credit', d.unarc), { done: false, doneAt: '', doneBy: '' }); toast('已還原'); }
+    else if (d.unarc) { await updateDoc(doc(db, 'credit', d.unarc), { done: false, doneAt: '', doneBy: '', settledOn: '' }); toast('已還原'); }
   } catch (err) { toast('⚠️ 失敗：' + err.message); }
 });
 </script>
