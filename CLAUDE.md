@@ -63,7 +63,7 @@
 8. `line-webhook.gs` 改完要提醒老闆：**貼到 Apps Script → 部署新版本**；`firestore.rules` 改完要提醒**到 Firebase 主控台發布**。
 9. 機密（LINE token、機器人密碼）放 GAS 指令碼屬性，**不要寫進程式碼**（這個 repo 是公開的）。
 10. 介面文字一律繁體中文、台灣用語；給老闆看的提示要白話。
-11. 新增員工帳號：Email 要加進 `firestore.rules` 白名單才進得去。
+11. 新增員工帳號：Email 要加進 `firestore.rules` 白名單才進得去，並在 `care/pin.js` 的 `HOME` 設定他的預設分店（GAS 的 `ALLOWED_EMAILS` 也要加）。
 
 ## 常見任務 → 該看哪裡
 - 保固天數／品項分類不對 → `care/rules.js` ＋ `docs/business-rules.md`
