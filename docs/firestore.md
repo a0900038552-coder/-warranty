@@ -67,7 +67,7 @@
 
 ### `credit` — 廠商退貨購物金
 `kind`(`return` 退貨得到購物金 / `use` 使用), `branch`, `supplier`, `item`, `amount`, `note`, `date`,
-`done`/`doneAt`/`doneBy`（已歸檔）, `postId`（被哪一列 ledger「購物金入帳」歸檔）。
+`done`/`doneAt`/`doneBy`（已歸檔）, `postId`（被哪一列 ledger「購物金入帳」歸檔）。入帳金額＝已使用的購物金；歸檔全部 `use`＋加總剛好等於入帳金額的 `return`（`care/credit.js` 的 `pickPost`），沒用完的退貨保留。
 
 ### `todos` — 待辦
 `text`, `branch`, `done`, `doneAt/By`, `createdAt`, `by`。

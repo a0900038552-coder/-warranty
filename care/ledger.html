@@ -167,7 +167,7 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
     <div id="days"></div>
     <div class="add-day">
       <b>新增日期</b><input type="date" id="newDate"><button class="btn ghost" id="addDayBtn">＋ 加入</button>
-      <span class="hint">打字就會自動儲存；品項有電話的會自動建立保固紀錄。按 Enter 跳到下一列。支出請寫「支出:廠商」，付錢打負數、廠商退貨退錢打正數。每天下方「點錢」填保險櫃與抽屜現金，會自動比對帳上結餘。退修請寫「退修 10/27 13電池/雄0908」＋電話，原因寫在備註，保固系統會多一筆退修紀錄。購物金用完、退貨入帳時寫「支出:鴻勝購物金入帳」＋總額（正數），退貨／待辦裡那批會自動歸檔。兩店調料件寫「楠梓店調貨：13 電池」（金額空白），還的時候寫「楠梓店還貨：13 電池」，會自動記在「退貨／待辦」的欠條。</span>
+      <span class="hint">打字就會自動儲存；品項有電話的會自動建立保固紀錄。按 Enter 跳到下一列。支出請寫「支出:廠商」，付錢打負數、廠商退貨退錢打正數。每天下方「點錢」填保險櫃與抽屜現金，會自動比對帳上結餘。退修請寫「退修 10/27 13電池/雄0908」＋電話，原因寫在備註，保固系統會多一筆退修紀錄。購物金用完要入帳時寫「支出:鴻勝購物金入帳」＋已使用的購物金金額（正數），退貨／待辦裡用掉的那批會自動歸檔。兩店調料件寫「楠梓店調貨：13 電池」（金額空白），還的時候寫「楠梓店還貨：13 電池」，會自動記在「退貨／待辦」的欠條。</span>
     </div>
   </main>
 </section>
@@ -184,6 +184,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { reportLogin } from './guard.js?v=20261116';
 import { requirePin, isUnlocked } from './pin.js?v=20261117';
 import { parseTransfer, settle } from './transfer.js?v=20261117';
+import { pickPost } from './credit.js?v=20261118';
 import { ask } from './ask.js?v=20261116';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, deleteDoc, onSnapshot, query, where, getDocs, getDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -520,7 +521,8 @@ async function save(id) {
   }
 }
 
-// 購物金入帳：「支出:鴻勝購物金入帳」＋正數 → 「退貨／待辦」裡鴻勝這批購物金自動歸檔（這列改掉或刪掉會自動還原）
+// 購物金入帳：「支出:鴻勝購物金入帳」＋已使用的購物金金額 → 「退貨／待辦」裡鴻勝已用掉的那批自動歸檔
+// （歸檔全部「使用」＋加起來等於這個金額的退貨；還沒用到的退貨留著。這列改掉或刪掉會自動還原）
 const CP_RE = /^\s*支出\s*[:：]\s*(.+?)\s*購物金\s*入帳/;
 async function syncCreditPost(id, r) {
   const m = String(r.item || '').match(CP_RE), amt = num(r.amount) ?? 0;
@@ -533,11 +535,13 @@ async function syncCreditPost(id, r) {
   const sup = m[1].trim(), same = c => { const a = String(c.supplier || '').trim(); return a === sup || a.includes(sup) || sup.includes(a); };
   const open = notesC.filter(c => !c.done && c.branch === r.branch && c.supplier && same(c));
   if (!open.length) { toast(`⚠️ 找不到「${sup}」還沒歸檔的購物金（請確認廠商名稱跟退貨／待辦裡一樣）`); return; }
-  const got = open.filter(c => c.kind === 'return').reduce((a, c) => a + (num(c.amount) ?? 0), 0);
+  const p = pickPost(open, amt);
   const b = writeBatch(db), at = `${r.date}T12:00:00+08:00`;
-  open.forEach(c => b.update(doc(db, 'credit', c.id), { done: true, doneAt: at, doneBy: auth.currentUser.email, postId: id }));
+  [...p.uses, ...p.rets].forEach(c => b.update(doc(db, 'credit', c.id), { done: true, doneAt: at, doneBy: auth.currentUser.email, postId: id }));
   await b.commit();
-  toast(amt === got ? `✅ ${sup}的購物金已入帳，${open.filter(c => c.kind === 'return').length} 筆退貨已歸檔` : `✅ ${sup}已歸檔；⚠️ 入帳 ${fmt(amt)} 跟退貨總額 ${fmt(got)} 不一樣，請確認`);
+  const leftSum = p.left.reduce((a, c) => a + (num(c.amount) ?? 0), 0);
+  const warn = p.usedSum !== amt ? `；⚠️ 已使用的購物金是 ${fmt(p.usedSum)}，跟入帳 ${fmt(amt)} 不一樣，請確認` : !p.exact ? `；⚠️ 退貨湊不到剛好 ${fmt(amt)}，請到退貨／待辦確認` : '';
+  toast(`✅ ${sup}入帳 ${fmt(amt)}：${p.rets.length} 筆退貨已歸檔${p.left.length ? `，還有 ${fmt(leftSum)} 購物金沒用（${p.left.length} 筆，留著）` : ''}${warn}`);
 }
 
 // 兩店調貨：「楠梓店調貨：xx」「楠梓店還貨：xx」→ 自動記到「退貨／待辦」的欠條（同一列改掉或刪掉，欠條也跟著改）
