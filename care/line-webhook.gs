@@ -57,6 +57,7 @@ function doPost(e) {
     var p = (e && e.parameter) || {};
     if (p.action === 'staff') return json_(staffAction_(JSON.parse(e.postData.contents || '{}')));
     if (p.action === 'login') return json_(loginAlert_(JSON.parse(e.postData.contents || '{}')));
+    if (p.action === 'refundNotice') return json_(refundNotice_(JSON.parse(e.postData.contents || '{}')));
     if (p.store === 'quote') { handleQuoteWebhook_(p, JSON.parse(e.postData.contents || '{}')); return ok_(); }
     var store = STORES[p.store];
     if (!store) return ok_();
@@ -207,9 +208,19 @@ function parseWantDate_(t) {
   return r;
 }
 
+// 退修比對（跟保固系統一樣）：同電話同分店，對到原維修日；沒寫日期就對品項
+function coreItem_(t) { return String(t || '').replace(/^\d{1,2}[\/.]\d{1,2}\s*/, '').replace(/\s+/g, ''); }
+function refundedBy_(r, all) {
+  return all.filter(function (x) {
+    return x.kind === 'refund' && x.phone === r.phone && x.branch === r.branch &&
+      (x.origDate ? x.origDate === r.repairDate : (coreItem_(x.origItem) && coreItem_(r.type).indexOf(coreItem_(x.origItem)) >= 0));
+  });
+}
 function bindCare_(ev, store, token, userId, phone) {
   var now = new Date();
-  var recs = queryByPhone_(phone).filter(function (r) {
+  var all = queryByPhone_(phone);
+  var recs = all.filter(function (r) {
+    if (r.kind === 'refund' || refundedBy_(r, all).length) return false;   // 已退修的維修沒有保固
     if (r.branch !== store.branch) return false;
     if (!(Number(r.careDays) > 0)) return false;
     var k = daysBetween_(parseYmd_(r.repairDate), now);
@@ -549,6 +560,41 @@ function notifyOwner_(text) {
   if (!token || !owner) return;
   UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', { method: 'post', contentType: 'application/json', muteHttpExceptions: true,
     headers: { Authorization: 'Bearer ' + token }, payload: JSON.stringify({ to: owner, messages: [{ type: 'text', text: text }] }) });
+}
+
+/* 退修通知：保固系統按「LINE 通知客人」→ 傳給有綁定 LINE 的客人，說明這次維修的保固（含 CARE+）已終止 */
+function refundNotice_(req) {
+  var who = UrlFetchApp.fetch('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' + FIREBASE_API_KEY, {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true, payload: JSON.stringify({ idToken: req.idToken || '' }) });
+  if (who.getResponseCode() !== 200) return { ok: false, error: '登入已失效，請重新登入' };
+  var staff = String((JSON.parse(who.getContentText()).users || [{}])[0].email || '').toLowerCase();
+  if (ALLOWED_EMAILS.indexOf(staff) < 0) return { ok: false, error: '沒有權限' };
+  var rf = getDoc_('records/' + String(req.id || '').replace(/[^\w\-]/g, ''));
+  if (!rf || rf.kind !== 'refund') return { ok: false, error: '找不到這筆退修紀錄' };
+  var store = storeByBranch_(rf.branch); if (!store) return { ok: false, error: '分店不正確' };
+  // 找客人綁定的 LINE（CARE+ 登錄時記下的）
+  var res = fsFetch_(fsBase_() + ':runQuery', { method: 'post', payload: JSON.stringify({ structuredQuery: {
+    from: [{ collectionId: 'care_bindings' }], where: { fieldFilter: { field: { fieldPath: 'phone' }, op: 'EQUAL', value: { stringValue: rf.phone } } }, limit: 20 } }) });
+  var ids = [];
+  if (res.getResponseCode() === 200) JSON.parse(res.getContentText()).forEach(function (x) {
+    if (!x.document) return; var b = fromFields_(x.document.fields);
+    if (b.branch === rf.branch && b.lineUserId && ids.indexOf(b.lineUserId) < 0) ids.push(b.lineUserId);
+  });
+  if (!ids.length) return { ok: false, error: '這位客人沒有綁定 ' + rf.branch + ' 的 LINE，沒辦法傳。請當面或電話告知。' };
+  var d = function (s) { return s ? String(s).slice(5, 10).replace('-', '/') : ''; };
+  var money = Math.abs(Number(String(rf.price || '').replace(/[^\d.\-]/g, '')) || 0);
+  var text = '【復原者' + rf.branch + '｜保固異動通知】\n\n' + (rf.name ? rf.name + ' 您好，\n' : '您好，\n') +
+    '您' + (rf.origDate ? '於 ' + d(rf.origDate) + ' ' : '') + '在本店維修的「' + (rf.origItem || '維修項目') + '」，已於 ' + d(rf.repairDate) + ' 辦理退修' + (money ? '（退款 NT$ ' + money.toLocaleString() + '）' : '') + '。\n\n' +
+    '該項維修的保固（含 Repair CARE+ 延長保固）自 ' + d(rf.repairDate) + ' 起終止，先前收到的保固訊息或截圖不再適用。\n其他維修項目的保固不受影響。\n\n如有疑問請直接在此聊天室詢問，謝謝您！';
+  var token = prop_(store.tokenProp), sent = 0;
+  ids.forEach(function (to) {
+    var r = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', { method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      headers: { Authorization: 'Bearer ' + token }, payload: JSON.stringify({ to: to, messages: [{ type: 'text', text: text }] }) });
+    if (r.getResponseCode() === 200) sent++;
+  });
+  if (!sent) return { ok: false, error: 'LINE 傳送失敗（客人可能已封鎖，或本月訊息額度用完）' };
+  patchDoc_('records/' + req.id, { notifiedAt: new Date().toISOString(), notifiedBy: staff });
+  return { ok: true, sent: sent };
 }
 
 function staffAction_(req) {

@@ -94,6 +94,8 @@ textarea{min-height:60px;resize:vertical}
 .b-valid{background:#dcfce7;color:var(--green)}
 .b-expiring{background:#ffedd5;color:var(--orange)}
 .b-expired{background:#f3f4f6;color:#6b7280}
+.card.voided{border-left-color:#ea580c;opacity:.85}.b-voided{background:#ea580c;color:#fff}
+.card.voided .parts b{text-decoration:line-through;color:#9ca3af}
 .phone{color:var(--mute);font-size:13px}
 .kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:6px 14px;margin-top:8px;font-size:13px}
 .kv div span{display:block;color:var(--mute);font-size:11px}
@@ -442,6 +444,7 @@ function status(r) {
   const latest = k => parts.map(p => p[k]).filter(Boolean).sort((a, b) => b - a)[0] || null;
   const baseExp = latest('baseExp'), careExp = latest('careExp'), effExp = latest('effExp');
   const out = { ci, parts, baseExp, careExp, effExp };
+  if (refundsOf(r).length) return { ...out, ci: { ...ci, active: false }, cls: 'voided', label: '已退修・保固取消', voided: true };   // 退修後保固（含 CARE+）作廢
   if (!effExp) return { ...out, cls: 'expired', label: '無保固' };
   const left = diffDays(today(), effExp);
   if (left < 0) return { ...out, cls: 'expired', label: '已過保' };
@@ -459,7 +462,7 @@ function render() {
   const st = recent.filter(r => (!$('branchFilter').value || r.branch === $('branchFilter').value) && r.kind !== 'refund').map(status);
   $('stats').innerHTML = `
     <div class="stat"><b>${totalCount ?? '…'}</b><span>總紀錄（兩店）</span></div>
-    <div class="stat"><b style="color:var(--green)">${st.filter(s => s.cls !== 'expired').length}</b><span>保固中</span></div>
+    <div class="stat"><b style="color:var(--green)">${st.filter(s => s.cls === 'valid' || s.cls === 'expiring').length}</b><span>保固中</span></div>
     <div class="stat"><b style="color:var(--orange)">${st.filter(s => s.cls === 'expiring').length}</b><span>7 天內到期</span></div>
     <div class="stat"><b style="color:var(--red)">${st.filter(s => s.ci.active).length}</b><span>CARE+ 啟用</span></div>`;
 
@@ -502,7 +505,9 @@ function refundCard(r) {
       <div><span>退款金額</span><b>${amt ? 'NT$ ' + Math.abs(amt).toLocaleString() : '未退款'}</b></div>
     </div>
     ${r.note ? `<div class="note">📝 處置／原因：${esc(r.note)}</div>` : ''}
+    <div class="note">⛔ 原維修的保固（含 CARE+）已取消。${r.notifiedAt ? `<b style="color:var(--green)">✅ 已於 ${esc(r.notifiedAt.slice(5, 10).replace('-', '/'))} 用 LINE 通知客人</b>` : ''}</div>
     <div class="row-actions">
+      <button class="btn btn-ghost btn-sm" data-act="refundNotice" data-id="${r.id}">📩 ${r.notifiedAt ? '再傳一次' : 'LINE 通知客人保固取消'}</button>
       <button class="btn btn-ghost btn-sm" data-act="edit" data-id="${r.id}">編輯</button>
       <button class="btn btn-danger btn-sm" data-act="del" data-id="${r.id}">刪除</button>
     </div>
@@ -544,6 +549,7 @@ function card(r) {
     </div>
     <div class="kv parts">${partRows}</div>
     ${ci.state === 'blocked' ? `<div class="warn">客人目前封鎖了 ${esc(r.branch)} LINE，CARE+ 延長部分暫不適用；客人重新加入好友後自動恢復。一般保固不受影響。</div>` : ''}
+    ${rf.length ? `<div class="warn" style="background:#fff7ed;border-color:#fdba74;color:#9a3412"><b>⛔ 這次維修已退修，保固（含 CARE+）自 ${show(parseD(rf[0].repairDate))} 起取消。</b></div>` : ''}
     ${rf.map(x => `<div class="warn" style="background:#fff7ed;border-color:#fdba74;color:#9a3412">🔁 ${show(parseD(x.repairDate))} 退修${x.note ? '：' + esc(x.note) : ''}${Number(String(x.price || '').replace(/[^\d.\-]/g, '') || 0) ? '（退款 NT$ ' + Math.abs(Number(String(x.price).replace(/[^\d.\-]/g, ''))).toLocaleString() + '）' : ''}</div>`).join('')}
     ${r.note ? `<div class="note">📝 ${esc(r.note)}</div>` : ''}
     ${r.followup ? `<div class="note">📌 後續：${esc(r.followup)}</div>` : ''}
@@ -587,9 +593,20 @@ async function serverSearch() {
   searching = false; mergeRecords(); render();
 }
 $('branchFilter').addEventListener('change', () => { localStorageSet('care.branch', $('branchFilter').value); render(); });
-$('list').addEventListener('click', e => {
+$('list').addEventListener('click', async e => {
   const b = e.target.closest('button'); if (!b) return;
   if (b.dataset.act === 'more') { showLimit += PAGE; render(); }
+  if (b.dataset.act === 'refundNotice') {
+    const r = records.find(x => x.id === b.dataset.id); if (!r) return;
+    if (!await ask(`用 ${r.branch} 的 LINE 傳通知給 ${r.name || '客人'}（${r.phone}）？\n\n內容：「${r.origItem || '這次維修'}」已辦理退修，該項保固（含 CARE+）自 ${show(parseD(r.repairDate))} 起終止，先前的保固訊息或截圖不再適用。\n\n（會用掉 1 則訊息額度；客人要有綁定 LINE 才收得到）`, { ok: '傳送', danger: false })) return;
+    b.disabled = true; b.textContent = '傳送中…';
+    try {
+      const res = await fetch(GAS_URL + '?action=refundNotice', { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ idToken: await auth.currentUser.getIdToken(), id: r.id }) }).then(x => x.json());
+      if (res.ok) { r.notifiedAt = new Date().toISOString(); toast('✅ 已用 LINE 通知客人'); render(); }
+      else { toast('⚠️ ' + (res.error || '傳送失敗')); b.disabled = false; b.textContent = '📩 LINE 通知客人保固取消'; }
+    } catch (er) { toast('⚠️ 傳送失敗：' + er.message); b.disabled = false; }
+  }
   if (b.dataset.act === 'edit') { const r = records.find(x => x.id === b.dataset.id); if (r) requirePin(r.branch, '編輯', { minutes: 5 }).then(ok => ok && openEdit(r.id)); }
   if (b.dataset.act === 'del') delRecord(b.dataset.id);
 });
