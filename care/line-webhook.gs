@@ -141,11 +141,11 @@ function autoReplyRows_() {
   var id = PropertiesService.getScriptProperties().getProperty('BOOKING_SHEET_ID'), rows = [];
   try {
     var sh = id && SpreadsheetApp.openById(id).getSheetByName(AUTO_SHEET);
-    if (sh && sh.getLastRow() > 1) rows = sh.getRange(2, 1, sh.getLastRow() - 1, 4).getValues()
+    if (sh && sh.getLastRow() > 1) rows = sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues()
       .filter(function (r) { return String(r[0]).trim() && String(r[1]).trim() && String(r[3]).trim(); })
       .map(function (r) {
         return { keys: String(r[1]).split(/[、,，\n]/).map(function (k) { return k.replace(/\s+/g, '').toLowerCase(); }).filter(String),
-                 branch: String(r[2] || '全部').trim() || '全部', text: String(r[3]).trim().slice(0, 4900) };
+                 branch: String(r[2] || '全部').trim() || '全部', text: String(r[3]).trim().slice(0, 4900), issue: String(r[4] || '').trim() };
       });
   } catch (err) { console.error('自動回覆讀取失敗：' + err); }
   c.put('auto_reply_rows', JSON.stringify(rows), 300);
@@ -163,14 +163,33 @@ function autoReply_(ev, store, token, raw) {
       var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/reply', {
         method: 'post', contentType: 'application/json', muteHttpExceptions: true,
         headers: { Authorization: 'Bearer ' + token },
-        payload: JSON.stringify({ replyToken: ev.replyToken, messages: [{ type: 'text', text: r.text }] })
+        payload: JSON.stringify({ replyToken: ev.replyToken, messages: [{ type: 'text', text: r.text + '\n\n👇 想預約或直接問門市，點下方按鈕', quickReply: bookingQuick_(store, raw, r.issue) }] })
       });
-      autoLog_(store.branch, t, '第' + (i + 2) + '列', res.getResponseCode() + ' ' + res.getContentText().slice(0, 200));
+      var code = res.getResponseCode(), body = res.getContentText().slice(0, 200);
+      if (code !== 200) { var ok2 = reply_(ev.replyToken, token, r.text); body += ' → 改傳純文字' + (ok2 ? '成功' : '失敗'); }   // 按鈕被 LINE 拒收時至少回文字
+      autoLog_(store.branch, t, '第' + (i + 2) + '列', code + ' ' + body);
       return true;
     }
   }
   autoLog_(store.branch, t, '沒對到', '');
   return false;
+}
+// 自動回覆下方的快速按鈕：📅 立即預約（預先填好分店／項目／機型）、📞 打電話
+// 項目：試算表 E 欄「預約項目」（螢幕維修／換電池／尾插／充電／泡水／不開機／主機板／鏡頭），沒填就從客人訊息判斷
+function bookingQuick_(store, raw, issueLabel) {
+  var t = String(raw || '').replace(/\s+/g, ''), codes = [];
+  var LABEL = { '螢幕維修': 'screen', '螢幕': 'screen', '換電池': 'battery', '電池': 'battery', '尾插／充電': 'port', '尾插': 'port', '充電': 'port',
+                '泡水': 'water', '進水': 'water', '不開機／主機板': 'board', '主機板': 'board', '不開機': 'board', '鏡頭': 'camera' };
+  String(issueLabel || '').split(/[、,，\/]/).forEach(function (x) { var c = LABEL[x.trim()]; if (c && codes.indexOf(c) < 0) codes.push(c); });
+  if (!codes.length) ISSUE_RULES.forEach(function (r) { if (r[2].test(t)) codes.push(r[0]); });
+  var q = ['store=' + storeKey_(store)];
+  if (codes.length) q.push('issue=' + codes.join(','));
+  var model = raw.match(/(?:iphone|i(?=\d))\s?(\d{1,2})\s*(pro\s*max|promax|pro|plus|mini|max|e)?/i);
+  if (model) q.push('model=' + encodeURIComponent('iPhone ' + model[1] + (model[2] ? ' ' + model[2].replace(/\s+/g, ' ').replace(/promax/i, 'Pro Max').replace(/\b\w/g, function (c) { return c.toUpperCase(); }) : '')));
+  var items = [{ type: 'action', action: { type: 'uri', label: '📅 立即預約', uri: 'https://liff.line.me/' + BOOKING_LIFF_ID + '?' + q.join('&') } }];
+  var phone = String(STORE_PHONE[storeKey_(store)] || '').replace(/[^\d+]/g, '');
+  if (phone) items.push({ type: 'action', action: { type: 'uri', label: '📞 打電話給' + store.branch, uri: 'tel:' + phone } });
+  return { items: items };
 }
 // 除錯用：記在試算表「自動回覆紀錄」分頁（只有老闆看得到），只留最近 30 筆
 function autoLog_(branch, text, hit, result) {
@@ -188,7 +207,7 @@ function setupAutoReply() {
   var ss = SpreadsheetApp.openById(id), sh = ss.getSheetByName(AUTO_SHEET);
   if (!sh) {
     sh = ss.insertSheet(AUTO_SHEET);   // 加在最後面，不影響第一個分頁（預約紀錄）
-    sh.getRange(1, 1, 1, 4).setValues([['啟用（Ｖ＝開）', '關鍵字（用「、」隔開，客人訊息有出現任一個就回）', '分店（全部／楠梓店／德賢店）', '回覆內容（可換行）']])
+    sh.getRange(1, 1, 1, 5).setValues([['啟用（Ｖ＝開）', '關鍵字（用「、」隔開，客人訊息有出現任一個就回）', '分店（全部／楠梓店／德賢店）', '回覆內容（可換行）', '預約項目（選填：螢幕維修／換電池／尾插／充電／泡水／不開機／主機板／鏡頭）']])
       .setFontWeight('bold').setBackground('#1e2027').setFontColor('#ffffff');
     sh.getRange(2, 1, AUTO_SAMPLES_.length, 4).setValues(AUTO_SAMPLES_);
     sh.setFrozenRows(1); sh.setColumnWidth(1, 90); sh.setColumnWidth(2, 260); sh.setColumnWidth(3, 120); sh.setColumnWidth(4, 520);
