@@ -75,7 +75,12 @@ function doPost(e) {
 function doGet(e) {
   var p = (e && e.parameter) || {};
   if (p.action === 'blocks' && STORES[p.store]) return json_({ blocks: blocksFor_(STORES[p.store].branch) });
-  if (p.action === 'autoReplySetup') return json_({ url: setupAutoReply() });   // 建立／找到「自動回覆」分頁，回傳試算表網址（試算表本身仍只有老闆能開）
+  if (p.action === 'autoReplySetup') return json_({ url: setupAutoReply() });
+  if (p.action === 'autoReplyTest') {   // 測試：這句話在某間店會不會觸發自動回覆（不會真的傳訊息）
+    var st = STORES[p.store] || STORES.nanzi, rows = autoReplyRows_(), q = String(p.q || '').replace(/\s+/g, '').toLowerCase(), hit = -1;
+    for (var i = 0; i < rows.length; i++) { var r = rows[i]; if ((r.branch === '全部' || r.branch === st.branch) && r.keys.some(function (k) { return q.indexOf(k) >= 0; })) { hit = i; break; } }
+    return json_({ store: st.branch, rows: rows.length, keys: rows.map(function (r) { return r.keys.join('、') + '｜' + r.branch; }), hit: hit, reply: hit >= 0 ? rows[hit].text.slice(0, 60) : '' });
+  }   // 建立／找到「自動回覆」分頁，回傳試算表網址（試算表本身仍只有老闆能開）
   return ContentService.createTextOutput('Repair CARE+ webhook OK');
 }
 function json_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
@@ -150,10 +155,11 @@ function autoReply_(ev, store, token, raw) {
   var t = String(raw || '').replace(/\s+/g, '').toLowerCase();
   if (!t || t.length > 300) return false;
   var rows = autoReplyRows_();
+  console.log('自動回覆檢查 ' + store.branch + '：' + rows.length + ' 則規則，訊息「' + t.slice(0, 40) + '」');
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
     if (r.branch !== '全部' && r.branch !== store.branch) continue;
-    if (r.keys.some(function (k) { return t.indexOf(k) >= 0; })) { reply_(ev.replyToken, token, r.text); return true; }
+    if (r.keys.some(function (k) { return t.indexOf(k) >= 0; })) { var ok = reply_(ev.replyToken, token, r.text); console.log('自動回覆 ' + store.branch + ' 第' + (i + 2) + '列 ' + (ok ? '已回覆' : '回覆失敗')); return true; }
   }
   return false;
 }
