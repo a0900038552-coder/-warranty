@@ -338,6 +338,17 @@ function createDoc_(col, obj) {
   return JSON.parse(res.getContentText()).name.split('/').pop();
 }
 
+// 一次寫入多筆（一個請求就好，比一筆一筆快）
+function createDocs_(col, objs) {
+  if (!objs.length) return;
+  var base = 'projects/' + FIREBASE_PROJECT_ID + '/databases/(default)/documents/' + col + '/';
+  var writes = objs.map(function (o) {
+    return { update: { name: base + Utilities.getUuid().replace(/-/g, '').slice(0, 20), fields: toFields_(o) }, currentDocument: { exists: false } };
+  });
+  var res = fsFetch_(fsBase_() + ':commit', { method: 'post', payload: JSON.stringify({ writes: writes }) });
+  if (res.getResponseCode() !== 200) throw new Error('新增失敗：' + res.getContentText().slice(0, 300));
+}
+
 function queryByPhone_(phone) {
   var res = fsFetch_(fsBase_() + ':runQuery', {
     method: 'post',
@@ -788,15 +799,22 @@ function quoteEvent_(ev, token, props) {
   var group = src.groupId ? groupName_(src.groupId, token) : (src.roomId ? '多人聊天' : '私訊');
   var speaker = peerName || (mine ? '我' : memberName_(src, token));
   var now = new Date(ev.timestamp || Date.now());
-  items.forEach(function (q, i) {
-    createDoc_('quotes', { ts: now.toISOString(), date: Utilities.formatDate(now, 'Asia/Taipei', 'yyyy-MM-dd'),
+  var docs = items.map(function (q, i) {
+    return { ts: now.toISOString(), date: Utilities.formatDate(now, 'Asia/Taipei', 'yyyy-MM-dd'),
       who: mine && !peerName ? 'me' : 'peer', speaker: speaker, groupId: gid, group: group,
       model: q.model, modelKey: mkey_(q.model), part: partOf_(q.part) || q.part, price: q.price, raw: q.raw, review: q.review, msgId: ev.message.id + '_' + i,
-      kind: q.kind, target: q.target || (mine && src.groupId ? shortTarget_(group) : ''), asker: q.asker || '' });
+      kind: q.kind, target: q.target || (mine && src.groupId ? shortTarget_(group) : ''), asker: q.asker || '' };
   });
+  // 私訊記價：先回覆（感覺比較快），再一次存進資料庫；萬一存失敗再補傳一則通知
   if (src.type === 'user') reply_(ev.replyToken, token, '✅ 已記錄 ' + items.length + ' 筆：\n' + items.map(function (q) {
     return '・' + (peerName ? '［同行 ' + peerName + '］' : '') + (q.model || '（機型？）') + ' ' + (q.part || '（零件？）') + ' $' + q.price + (q.target ? '（給 ' + q.target + '）' : '') + (q.kind === 'commission' ? '［門號佣金］' : '');
   }).join('\n') + (items.some(function (q) { return q.review; }) ? '\n\n有標「？」的請到報價頁補上。' : ''));
+  try { createDocs_('quotes', docs); }
+  catch (err) {
+    console.error(err);
+    if (src.type === 'user' && uid) UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', { method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      headers: { Authorization: 'Bearer ' + token }, payload: JSON.stringify({ to: uid, messages: [{ type: 'text', text: '⚠️ 剛剛的報價沒有存成功（' + (String(err.message).indexOf('429') >= 0 ? '資料庫今天額度用完' : '資料庫忙碌') + '），請稍後再傳一次。' }] }) });
+  }
   if (mine && gid0) clearAsk_(gid0);
 }
 
