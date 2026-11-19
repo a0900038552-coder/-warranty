@@ -75,6 +75,7 @@ function doPost(e) {
 function doGet(e) {
   var p = (e && e.parameter) || {};
   if (p.action === 'blocks' && STORES[p.store]) return json_({ blocks: blocksFor_(STORES[p.store].branch) });
+  if (p.action === 'autoReplySetup') return json_({ url: setupAutoReply() });   // 建立／找到「自動回覆」分頁，回傳試算表網址（試算表本身仍只有老闆能開）
   return ContentService.createTextOutput('Repair CARE+ webhook OK');
 }
 function json_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
