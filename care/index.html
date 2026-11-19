@@ -316,7 +316,7 @@ const $ = id => document.getElementById(id);
 //           ＋ 即時同步「最新 30 筆」，新登錄的紀錄馬上看得到（省讀取額度）
 //   found ：搜尋電話／姓名時才到資料庫查，最多 30 筆（多舊都查得到、永遠是最新）
 const RECENT_DAYS = 460, LIVE_N = 30, PAGE = 30;
-let recent = [], recentLive = [], recentOld = [], found = new Map(), totalCount = null;
+let recent = [], recentLive = [], recentOld = [], recentEdit = [], found = new Map(), totalCount = null;
 let quotesLive = [], quotesOld = [];
 const joinById = (...lists) => { const m = new Map(); lists.forEach(l => l.forEach(r => m.set(r.id, r))); return [...m.values()]; };
 let records = [], bindings = [], lineUsers = {}, bookings = [], blocks = new Set(), quotes = [];
@@ -381,10 +381,14 @@ onAuthStateChanged(auth, user => {
   const err = e => toast('⚠️ 讀取失敗：' + e.message);
   const cutoff = ymd(new Date(Date.now() - RECENT_DAYS * 86400000));
   unsubs.push(onSnapshot(query(collection(db, 'records'), orderBy('repairDate', 'desc'), limit(LIVE_N)), s => {
-    recentLive = s.docs.map(d => ({ id: d.id, ...d.data() })); recent = joinById(recentOld, recentLive); mergeRecords(); render();
+    recentLive = s.docs.map(d => ({ id: d.id, ...d.data() })); recent = joinById(recentOld, recentEdit, recentLive); mergeRecords(); render();
   }, err));
+  // 最近 2 天被改過的紀錄即時同步（別台電腦改了舊紀錄，這台也馬上看得到；筆數很少）
+  unsubs.push(onSnapshot(query(collection(db, 'records'), where('updatedAt', '>=', new Date(Date.now() - 2 * 86400000).toISOString())), s => {
+    recentEdit = s.docs.map(d => ({ id: d.id, ...d.data() })); recent = joinById(recentOld, recentEdit, recentLive); mergeRecords(); render();
+  }, () => {}));
   cachedDocs(query(collection(db, 'records'), where('repairDate', '>=', cutoff)), 'records-460')
-    .then(s => { recentOld = s.docs.map(d => ({ id: d.id, ...d.data() })); recent = joinById(recentOld, recentLive); mergeRecords(); render(); }).catch(err);
+    .then(s => { recentOld = s.docs.map(d => ({ id: d.id, ...d.data() })); recent = joinById(recentOld, recentEdit, recentLive); mergeRecords(); render(); }).catch(err);
   refreshCount();
   const qLiveCut = ymd(new Date(Date.now() - 14 * 86400000)), qCut = ymd(new Date(Date.now() - 365 * 86400000));
   unsubs.push(onSnapshot(query(collection(db, 'quotes'), where('date', '>=', qLiveCut)), s => {
@@ -604,7 +608,7 @@ $('list').addEventListener('click', async e => {
     try {
       const res = await fetch(GAS_URL + '?action=refundNotice', { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({ idToken: await auth.currentUser.getIdToken(), id: r.id }) }).then(x => x.json());
-      if (res.ok) { r.notifiedAt = new Date().toISOString(); toast('✅ 已用 LINE 通知客人'); render(); }
+      if (res.ok) { patchLocal(r.id, { notifiedAt: new Date().toISOString() }); toast('✅ 已用 LINE 通知客人'); }
       else { toast('⚠️ ' + (res.error || '傳送失敗')); b.disabled = false; b.textContent = '📩 LINE 通知客人保固取消'; }
     } catch (er) { toast('⚠️ 傳送失敗：' + er.message); b.disabled = false; }
   }
@@ -721,16 +725,26 @@ editForm.addEventListener('submit', async e => {
   if (old && r.branch && r.branch !== old.branch && !await requirePin(r.branch, '把紀錄改到', { minutes: 5 })) return;   // 改到另一間店也要那間店的密碼
   if (records.find(x => x.id === editingId)?.kind === 'refund' || refundInfo(r.type, r.repairDate)) r = refundRecord(r, r.repairDate);
   try {
-    await updateDoc(doc(db, 'records', editingId), { ...r, source: 'manual', updatedAt: new Date().toISOString(), updatedBy: auth.currentUser.email });
+    const upd = { ...r, source: 'manual', updatedAt: new Date().toISOString(), updatedBy: auth.currentUser.email };
+    await updateDoc(doc(db, 'records', editingId), upd);
+    patchLocal(editingId, upd);   // 舊紀錄不是即時同步的，存完直接更新畫面上的那一筆
     toast('✅ 已儲存修改'); closeEdit(); if ($('q').value.trim()) serverSearch();
   } catch (er) { toast('⚠️ 儲存失敗：' + er.message); }
 });
+
+// 把剛存好的修改套到畫面上的資料（舊紀錄來自本機副本、不會自動更新）
+function patchLocal(id, upd) {
+  const fix = list => list.map(x => x.id === id ? { ...x, ...upd } : x);
+  recentOld = fix(recentOld); recentLive = fix(recentLive); recentEdit = fix(recentEdit);
+  if (found.has(id)) found.set(id, { ...found.get(id), ...upd });
+  recent = joinById(recentOld, recentEdit, recentLive); mergeRecords(); render();
+}
 
 async function delRecord(id) {
   const r = records.find(x => x.id === id); if (!r) return;
   if (!await requirePin(r.branch, '刪除')) return;
   if (!await ask(`確定刪除「${r.name}／${r.type}」這筆紀錄？刪除後無法復原。`)) return;
-  try { await deleteDoc(doc(db, 'records', id)); found.delete(id); mergeRecords(); render(); refreshCount(); toast('已刪除'); }
+  try { await deleteDoc(doc(db, 'records', id)); found.delete(id); recentOld = recentOld.filter(x => x.id !== id); recentLive = recentLive.filter(x => x.id !== id); recentEdit = recentEdit.filter(x => x.id !== id); recent = joinById(recentOld, recentEdit, recentLive); mergeRecords(); render(); refreshCount(); toast('已刪除'); }
   catch (er) { toast('⚠️ 刪除失敗：' + er.message); }
 }
 
