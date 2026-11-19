@@ -30,7 +30,7 @@
 | `quotes.html` | 報價查詢（報價小幫手／復原者Ai機器人記下的群組報價） | `quotes` |
 | `stock.html` | 中古機庫存 | `used_stock` |
 | `notes.html` | 退貨／待辦：廠商購物金、兩店調貨欠條、待辦 | `credit`、`todos`、`transfers` |
-| `line-webhook.gs` | GAS 後端：LINE webhook、CARE+ 綁定、預約、報價機器人、比價爬蟲、每月備份 | 見 `docs/line-webhook.md` |
+| `line-webhook.gs` | GAS 後端：LINE webhook、CARE+ 綁定、預約、自動回覆（讀 Google 試算表）、報價機器人、比價爬蟲、每月備份 | 見 `docs/line-webhook.md` |
 | `rules.js` | **保固規則唯一來源**（分類、天數、退修）— 保固系統和每日登打共用 | — |
 | `transfer.js` | 解析「楠梓店調貨：xx」「還貨」並配對銷帳 | — |
 | `credit.js` | 購物金入帳：決定「支出:廠商購物金入帳 X」要歸檔哪些退貨／使用紀錄（湊剛好 X，沒用完的留著） | — |

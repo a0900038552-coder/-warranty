@@ -116,11 +116,82 @@ function handleEvent_(ev, store, token) {
     if (!m && !isCare && isBookingIntent_(text)) { bookingIntent_(ev, store, token, raw); return; }
     if (!m) {
       if (isCare) reply_(ev.replyToken, token, [{ type: 'text', text: CARE_INTRO }, termsImage_(store)]);
-      return; // 其他訊息交給原本的關鍵字自動回覆
+      else autoReply_(ev, store, token, raw);   // Google 試算表「自動回覆」分頁有對到關鍵字就回；沒對到就不回（留給店員／後台關鍵字）
+      return;
     }
     bindCare_(ev, store, token, userId, m[1]);
   }
 }
+
+/* ───────── 自動回覆（Google 試算表「復原者 LINE 預約紀錄」的「自動回覆」分頁）─────────
+ * 欄位：啟用(Ｖ) ｜ 關鍵字（用「、」或「,」隔開，客人訊息有出現任一個就回）｜ 分店（全部／楠梓店／德賢店）｜ 回覆內容
+ * 老闆直接在試算表改，5 分鐘內生效。第一次：在編輯器選 setupAutoReply → 執行（會建立分頁＋範例）。
+ * Reply 回覆不扣訊息額度。
+ */
+var AUTO_SHEET = '自動回覆';
+function autoReplyRows_() {
+  var c = CacheService.getScriptCache(), hit = c.get('auto_reply_rows');
+  if (hit) return JSON.parse(hit);
+  var id = PropertiesService.getScriptProperties().getProperty('BOOKING_SHEET_ID'), rows = [];
+  try {
+    var sh = id && SpreadsheetApp.openById(id).getSheetByName(AUTO_SHEET);
+    if (sh && sh.getLastRow() > 1) rows = sh.getRange(2, 1, sh.getLastRow() - 1, 4).getValues()
+      .filter(function (r) { return String(r[0]).trim() && String(r[1]).trim() && String(r[3]).trim(); })
+      .map(function (r) {
+        return { keys: String(r[1]).split(/[、,，\n]/).map(function (k) { return k.replace(/\s+/g, '').toLowerCase(); }).filter(String),
+                 branch: String(r[2] || '全部').trim() || '全部', text: String(r[3]).trim().slice(0, 4900) };
+      });
+  } catch (err) { console.error('自動回覆讀取失敗：' + err); }
+  c.put('auto_reply_rows', JSON.stringify(rows), 300);
+  return rows;
+}
+function autoReply_(ev, store, token, raw) {
+  var t = String(raw || '').replace(/\s+/g, '').toLowerCase();
+  if (!t || t.length > 300) return false;
+  var rows = autoReplyRows_();
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    if (r.branch !== '全部' && r.branch !== store.branch) continue;
+    if (r.keys.some(function (k) { return t.indexOf(k) >= 0; })) { reply_(ev.replyToken, token, r.text); return true; }
+  }
+  return false;
+}
+function setupAutoReply() {
+  var id = PropertiesService.getScriptProperties().getProperty('BOOKING_SHEET_ID');
+  if (!id) throw new Error('找不到預約試算表，請先執行 setupBookingSheet');
+  var ss = SpreadsheetApp.openById(id), sh = ss.getSheetByName(AUTO_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(AUTO_SHEET);   // 加在最後面，不影響第一個分頁（預約紀錄）
+    sh.getRange(1, 1, 1, 4).setValues([['啟用（Ｖ＝開）', '關鍵字（用「、」隔開，客人訊息有出現任一個就回）', '分店（全部／楠梓店／德賢店）', '回覆內容（可換行）']])
+      .setFontWeight('bold').setBackground('#1e2027').setFontColor('#ffffff');
+    sh.getRange(2, 1, AUTO_SAMPLES_.length, 4).setValues(AUTO_SAMPLES_);
+    sh.setFrozenRows(1); sh.setColumnWidth(1, 90); sh.setColumnWidth(2, 260); sh.setColumnWidth(3, 120); sh.setColumnWidth(4, 520);
+    sh.getRange(1, 1, 60, 4).setWrap(true).setVerticalAlignment('top');
+  }
+  CacheService.getScriptCache().remove('auto_reply_rows');
+  return ss.getUrl() + '#gid=' + sh.getSheetId();
+}
+var AUTO_SAMPLES_ = [
+  ['Ｖ', '單換玻璃、只換玻璃、換玻璃、單換螢幕玻璃、外玻璃、玻璃破', '全部',
+   '您好～關於「單換玻璃」（只換螢幕最外層的玻璃）跟您說明一下：\n\n' +
+   '🔸 單換玻璃要先把破掉的玻璃從螢幕上分離、再重新貼合，工序多、耗時長，過程中螢幕很容易受損漏液。\n' +
+   '🔸 就算當下看起來修好了，用一段時間後也常出現線條、黑點、觸控失靈或不顯示等狀況。\n' +
+   '🔸 因為風險高，單換玻璃無法提供保固。\n\n' +
+   '✅ 建議直接更換整片螢幕：品質穩定、維修時間短，而且有提供保固，之後用起來比較安心。\n\n' +
+   '歡迎告訴我們手機型號，我們幫您報價 😊'],
+  ['Ｖ', '黑點、黑斑、墨點、黑影、黑塊、漏液', '全部',
+   '您好～螢幕上出現黑點、而且越來越大，通常是「螢幕漏液」：\n\n' +
+   '🔸 多半是手機曾經受到外力擠壓或撞擊，例如摔到、放在後口袋被坐到、包包裡被壓到，讓螢幕內部的顯示層受損。\n' +
+   '🔸 漏液會慢慢擴散：黑點變大、出現線條，最後可能整片不顯示或無法觸控。\n' +
+   '🔸 漏液沒辦法只修局部，需要更換整片螢幕。\n\n' +
+   '建議盡早處理，並先把重要資料備份。歡迎告訴我們手機型號，我們幫您報價 😊'],
+  ['Ｖ', '線條、彩色線、直線、橫線、單換排線、只換排線、螢幕排線', '全部',
+   '您好～螢幕出現線條，大多是螢幕本身（顯示層或螢幕內部排線）受損造成的：\n\n' +
+   '🔸 「單換螢幕排線」需要把螢幕拆開重新接合，跟單換玻璃一樣工序精細、風險高，修完一段時間後容易再出現線條、閃爍或不顯示。\n' +
+   '🔸 因此單換排線無法提供保固。\n\n' +
+   '✅ 建議更換整片螢幕：品質穩定，而且有提供保固，比較安心。\n\n' +
+   '歡迎告訴我們手機型號，我們幫您報價 😊']
+];
 
 /* ───────── 客人用文字說要預約 → 判讀日期／項目，回覆預填好的預約表單連結（Reply，不扣額度） ───────── */
 // 這些字句已由 LINE 後台關鍵字自動回覆處理，避免重複回覆

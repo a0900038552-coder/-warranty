@@ -29,3 +29,10 @@ Google Apps Script，一支程式處理所有 LINE 事件。**改完要手動貼
 
 ## 一次性設定函式（在 GAS 編輯器手動執行）
 `testSetup`、`setupRichMenu`、`setupBookingSheet`、`setupQuoteHelper`、`setupWebPrices`、`setupBackup`。
+
+
+## 自動回覆（Google 試算表）
+- 試算表：「復原者 LINE 預約紀錄」（`BOOKING_SHEET_ID`）的「自動回覆」分頁；第一個分頁仍是預約紀錄。
+- 欄位：啟用｜關鍵字（「、」隔開，任一出現就回）｜分店（全部／楠梓店／德賢店）｜回覆內容。由上往下第一個對到的列回覆。
+- 只在客人訊息不是 CARE+ 登錄、預約、配件等指令時才查；沒對到就不回（留給店員）。快取 5 分鐘（`auto_reply_rows`）。
+- 第一次建立：GAS 執行 `setupAutoReply`。
