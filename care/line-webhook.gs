@@ -119,7 +119,7 @@ function handleEvent_(ev, store, token) {
     // 預約、詢問等夾帶電話的訊息（例：王先生0912345678明天換電池）不觸發
     var m = text.match(/^(?:CARE\+?|保固登錄|登錄)?(09\d{8})$/i);
     var isCare = /CARE/i.test(text) || /^(保固|延保|保固條款|延長保固)$/.test(text);
-    if (!m && !isCare && isBookingIntent_(text)) { bookingIntent_(ev, store, token, raw); return; }
+    if (!m && !isCare && isBookingIntent_(text)) { autoLog_(store.branch, text, '預約判讀', ''); bookingIntent_(ev, store, token, raw); return; }
     if (!m) {
       if (isCare) reply_(ev.replyToken, token, [{ type: 'text', text: CARE_INTRO }, termsImage_(store)]);
       else autoReply_(ev, store, token, raw);   // Google 試算表「自動回覆」分頁有對到關鍵字就回；沒對到就不回（留給店員／後台關鍵字）
@@ -159,9 +159,28 @@ function autoReply_(ev, store, token, raw) {
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
     if (r.branch !== '全部' && r.branch !== store.branch) continue;
-    if (r.keys.some(function (k) { return t.indexOf(k) >= 0; })) { var ok = reply_(ev.replyToken, token, r.text); console.log('自動回覆 ' + store.branch + ' 第' + (i + 2) + '列 ' + (ok ? '已回覆' : '回覆失敗')); return true; }
+    if (r.keys.some(function (k) { return t.indexOf(k) >= 0; })) {
+      var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/reply', {
+        method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+        headers: { Authorization: 'Bearer ' + token },
+        payload: JSON.stringify({ replyToken: ev.replyToken, messages: [{ type: 'text', text: r.text }] })
+      });
+      autoLog_(store.branch, t, '第' + (i + 2) + '列', res.getResponseCode() + ' ' + res.getContentText().slice(0, 200));
+      return true;
+    }
   }
+  autoLog_(store.branch, t, '沒對到', '');
   return false;
+}
+// 除錯用：記在試算表「自動回覆紀錄」分頁（只有老闆看得到），只留最近 30 筆
+function autoLog_(branch, text, hit, result) {
+  try {
+    var ss = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('BOOKING_SHEET_ID'));
+    var sh = ss.getSheetByName('自動回覆紀錄') || ss.insertSheet('自動回覆紀錄');
+    sh.insertRowBefore(1);
+    sh.getRange(1, 1, 1, 5).setValues([[Utilities.formatDate(new Date(), 'Asia/Taipei', 'MM/dd HH:mm:ss'), branch, text.slice(0, 40), hit, result]]);
+    if (sh.getLastRow() > 30) sh.deleteRows(31, sh.getLastRow() - 30);
+  } catch (e) { console.error(e); }
 }
 function setupAutoReply() {
   var id = PropertiesService.getScriptProperties().getProperty('BOOKING_SHEET_ID');
