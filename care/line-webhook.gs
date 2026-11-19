@@ -1273,6 +1273,7 @@ function parseQuoteLines_(text) {
     var raw = line.trim();
     if (!raw || raw.length > 60) return;
     if (/[?？]|多少|幾錢|嗎|有沒有|請問|報價一下|收不收/.test(raw)) return;          // 問句不是報價
+    if (/總金額|總價|總額|總計|總共|合計|小計|共計|一共|加總|全部共|全部加起來|total/i.test(raw)) return;   // 總金額不是單項報價，不記
     // 報價對象：「@大昌」、結尾「（大昌）」、開頭「大昌：」；沒寫就用群組名稱
     var target = '', body = raw, tm;
     if ((tm = body.match(/[@＠]\s*([^\s\d@＠][^\s@＠]{0,11})/))) { target = tm[1]; body = body.replace(tm[0], ' '); }
