@@ -1005,7 +1005,7 @@ function renderBookings() {
       <div class="bk-top"><div><div class="bk-time">${esc(time)}</div>
         <div class="bk-meta">${b.status === 'proposed' ? '原希望：' + esc(b.wish) + '　→ 已提議新時間，等客人按接受' : ''}</div></div>
         <span class="badge" style="background:${BK_COLOR[b.status]};color:#fff">${BK_ZH[b.status] || b.status}</span></div>
-      <div style="margin-top:6px"><b>${esc(b.name)}</b>　<a href="tel:${esc(b.phone)}">${esc(b.phone)}</a>　${esc(b.branch)}${b.transferredFrom ? `<span style="color:#6b7280;font-size:12px">（從${esc(b.transferredFrom)}轉來）</span>` : ''}</div>
+      <div style="margin-top:6px"><b>${esc(b.name)}</b>　<a href="tel:${esc(b.phone)}">${esc(b.phone)}</a>　${esc(b.branch)}${b.price ? `　<b style="color:var(--green)">💰 預估 ${esc(/^\d+$/.test(b.price) ? 'NT$ ' + Number(b.price).toLocaleString() : b.price)}</b>` : ''}${b.transferredFrom ? `<span style="color:#6b7280;font-size:12px">（從${esc(b.transferredFrom)}轉來）</span>` : ''}</div>
       <div>📱 ${esc(b.model)}｜${esc(b.issues)}</div>
       ${b.note ? `<div class="bk-meta">備註：${esc(b.note)}</div>` : ''}
       <div class="bk-meta">申請：${esc(String(b.createdAt || '').slice(0, 16).replace('T', ' '))}${b.updatedBy ? '　最後處理：' + esc(b.updatedBy) : ''}</div>
@@ -1059,7 +1059,10 @@ $('bkList').addEventListener('click', async e => {
   if (type === 'confirm') {
     const t = b.proposedTime && b.status === 'proposed' ? b.proposedTime : b.wish;
     if (!await ask(`確認預約並用 LINE 通知 ${b.name}？\n\n時間：${t}`)) return;
-    req.time = t;
+    // 預估金額：會寫在給客人的確認訊息裡（可空白；可打區間，例 1500～2000）
+    const pr = await askText(`預估金額（會一起傳給客人，可空白）\n例：1800　或　1500～2000\n\n${b.model || ''}｜${b.issues || ''}`, b.price || '');
+    if (pr === null) return;
+    req.time = t; req.price = pr.trim().replace(/[元$＄]|NT\$?/gi, '').trim();
   } else if (type === 'propose') {
     const r = await pickTime(b.wish); if (!r) return; Object.assign(req, r);
   } else if (type === 'decline') {

@@ -263,7 +263,7 @@ function renderBk() {
       <button class="del" id="bkClose" title="收起">✕</button></div>` +
     (list.length ? list.map(b => `<div class="bk"><span class="st ${b.status}">${BK_ST[b.status]}</span>
       <span class="tm">${esc(b.confirmedTime || b.proposedTime || b.wish || '')}</span><b>${esc(b.name || '')}</b>
-      <a href="tel:${esc(b.phone || '')}" class="sub">${esc(b.phone || '')}</a><span class="sub">📱 ${esc(b.model || '')}｜${esc(b.issues || '')}</span>${b.note ? `<span class="sub">備註：${esc(b.note)}</span>` : ''}</div>`).join('')
+      <a href="tel:${esc(b.phone || '')}" class="sub">${esc(b.phone || '')}</a><span class="sub">📱 ${esc(b.model || '')}｜${esc(b.issues || '')}</span>${b.price ? `<b style="color:var(--green)">💰 預估 ${esc(/^\d+$/.test(b.price) ? Number(b.price).toLocaleString() : b.price)}</b>` : ''}${b.note ? `<span class="sub">備註：${esc(b.note)}</span>` : ''}</div>`).join('')
       : '<div class="sub" style="padding:6px 0">目前沒有預約</div>');
 }
 $('bkBtn').onclick = () => $('bkPanel').classList.toggle('hidden');

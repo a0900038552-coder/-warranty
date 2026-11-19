@@ -32,7 +32,7 @@
 
 ### `bookings` — 預約（GAS 寫、保固系統頁面處理）
 `branch`（可轉店，轉過會有 `transferredFrom`、`transferredAt`）, `store`(`nanzi`/`dexian`，客人當初用哪個官方帳號預約，LINE 通知一律從這個帳號傳), `lineUserId`, `name`, `phone`, `model`, `issues`, `wish`(希望時間), `note`,
-`status`: `pending` → `proposed`（店家提議改時間，`proposedTime`）→ `confirmed`（`confirmedTime`）；或 `declined`（`declineReason`）；到店後 `done` / `noshow` / `cancelled`（這三種不通知客人）；`createdAt`, `updatedAt/By`。
+`status`: `pending` → `proposed`（店家提議改時間，`proposedTime`）→ `confirmed`（`confirmedTime`；`price` 確認時填的預估金額，可為區間文字，會寫進給客人的確認訊息）；或 `declined`（`declineReason`）；到店後 `done` / `noshow` / `cancelled`（這三種不通知客人）；`createdAt`, `updatedAt/By`。
 同時寫一份到 Google 試算表（指令碼屬性 `BOOKING_SHEET_ID`）。
 
 ### `slot_blocks` — 不開放預約的時段

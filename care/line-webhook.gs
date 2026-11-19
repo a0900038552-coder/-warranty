@@ -616,9 +616,12 @@ function staffAction_(req) {
 
   if (req.type === 'confirm') {
     var time = req.time || b.proposedTime || b.wish;
+    var price = String(req.price || '').trim();
+    var priceTxt = !price ? '' : /^\d+$/.test(price) ? 'NT$ ' + Number(price).toLocaleString() : price.replace(/(\d{4,})/g, function (n) { return Number(n).toLocaleString(); }) + ' 元';
     text = '✅ 您的預約已確認\n\n🕐 ' + time + '\n📍 復原者' + b.branch + '（' + STORE_ADDR[b.branch] + '）\n📱 ' + b.model + '｜' + b.issues +
+           (priceTxt ? '\n💰 預估費用：' + priceTxt + '\n（實際費用以到店檢測結果為準）' : '') +
            '\n\n如需更改時間，請直接在此聊天室告訴我們，謝謝！';
-    upd.status = 'confirmed'; upd.confirmedTime = time;
+    upd.status = 'confirmed'; upd.confirmedTime = time; if (price) upd.price = price;
   } else if (req.type === 'propose') {
     if (!req.time) return { ok: false, error: '請選擇新的時間' };
     text = '🔄 關於您的預約\n\n您希望的時間（' + b.wish + '）目前無法安排，' + (req.reason ? '原因：' + req.reason + '。' : '') +
