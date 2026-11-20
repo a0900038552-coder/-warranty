@@ -555,7 +555,7 @@ function printConfirm(b, d) {
     <button data-pv="print" style="border:0;background:var(--red);color:#fff;border-radius:8px;padding:8px 14px;font:inherit;font-weight:700">🖨 列印／PDF</button></div>
     <iframe style="flex:1;border:0;width:100%" title="商品確認書"></iframe>`;
   document.body.appendChild(box);
-  const fr = box.querySelector('iframe'); fr.srcdoc = html;
+  const fr = box.querySelector('iframe'), fd = fr.contentDocument; fd.open(); fd.write(html); fd.close();   // 用 write 才不會多一筆「上一頁」紀錄
   box.querySelector('[data-pv="back"]').onclick = () => { box.remove(); if (history.state && history.state.pv) history.back(); };
   box.querySelector('[data-pv="print"]').onclick = () => { try { fr.contentWindow.focus(); fr.contentWindow.print(); } catch { toast('⚠️ 這台手機不能直接列印，請用電腦開'); } };
   // 手機的「返回」手勢／按鍵也能關掉，不會跳離庫存頁
