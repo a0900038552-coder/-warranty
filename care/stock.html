@@ -57,6 +57,13 @@ tr.detail td{background:#fafbfc}
 .dgrid label{display:block;font-size:12px;color:var(--mute)}
 .dgrid input,.dgrid select,.dgrid textarea{width:100%;border:1px solid #d1d5db;border-radius:8px;padding:6px 8px;background:#fff;color:var(--ink)}
 .dgrid textarea{min-height:60px}
+.ph{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start}
+.ph figure{position:relative;width:96px;margin:0}
+.ph img{width:96px;height:96px;object-fit:cover;border-radius:10px;border:1px solid #e5e7eb;display:block;background:#f3f4f6}
+.ph figure.cover img{outline:3px solid #d71920}
+.ph figcaption{display:flex;justify-content:space-between;font-size:12px;margin-top:2px}
+.ph figcaption button{border:0;background:none;cursor:pointer;color:var(--mute);padding:0 2px;font-size:12px}
+.ph .add{width:96px;height:96px;border:2px dashed #d1d5db;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;color:var(--mute);font-size:13px;background:#fff}
 .hint{color:var(--mute);font-size:12px;margin-top:10px}
 #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#fff;padding:10px 16px;border-radius:10px;transition:.25s;z-index:99}
 #toast.show{transform:translateX(-50%) translateY(0)}
@@ -118,6 +125,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { reportLogin } from './guard.js?v=20261116';
 import { cachedDocs, expireCache } from './cache.js?v=20261117';
 import { requirePin, homeBranch } from './pin.js?v=20261118';
+import { ask } from './ask.js?v=20261116';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, addDoc, deleteDoc, onSnapshot, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 const app = initializeApp({ apiKey: "AIzaSyD04ZMXIt8Oo3hjm5qsMaKiLXYzp_9YKwA", authDomain: "care-warranty.firebaseapp.com", projectId: "care-warranty",
@@ -198,7 +206,7 @@ function publishLine(m) {
     .filter(x => num(x.d.price) != null && !x.d.lineHide)
     .sort((a, b) => (b.b.date || '').localeCompare(a.b.date || ''))
     .map(({ b, d }) => ({ id: b.id, model: niceModel(buyModel(b)), branch: b.branch || '', price: num(d.price), color: d.color || '', cond: d.cond || '',
-      battery: d.battery || '', waterproof: !!d.waterproof, box: !!d.box, cable: !!d.cable, acc: d.acc || '' }));
+      battery: d.battery || '', waterproof: !!d.waterproof, box: !!d.box, cable: !!d.cable, acc: d.acc || '', photos: (d.photos || []).slice(0, MAX_PH) }));
   const json = JSON.stringify(items);
   let last = null; try { last = localStorage.getItem('line-showcase'); } catch {}
   if (json === last) return;
@@ -253,6 +261,7 @@ function render() {
         <div><label>顏色</label><input data-k="color" data-id="${b.id}" value="${esc(d.color)}" placeholder="例：遠峰藍"></div>
         <div><label>電池健康度（%）</label><input data-k="battery" data-id="${b.id}" value="${esc(d.battery)}" inputmode="numeric" placeholder="例：86"></div>
         <div><label>其他配件</label><input data-k="acc" data-id="${b.id}" value="${esc(d.acc)}" placeholder="例：原廠殼、發票"></div>
+        <div style="grid-column:1/-1"><label>照片（給 LINE 客人看・紅框＝封面，最多 ${MAX_PH} 張）</label><div class="ph">${(d.photos || []).map((pid, i) => `<figure class="${i ? '' : 'cover'}"><img src="${thumb(pid)}" alt="照片${i + 1}" loading="lazy"><figcaption>${i ? `<button data-phcover="${b.id}" data-i="${i}" title="設為封面">★ 封面</button>` : '<span style="color:#d71920;font-weight:700">封面</span>'}<button data-phdel="${b.id}" data-i="${i}" title="刪除">✕</button></figcaption></figure>`).join('')}${(d.photos || []).length < MAX_PH ? `<label class="add">${uploading[b.id] ? '上傳中…' : '📷<span>加照片</span>'}<input type="file" accept="image/*" multiple hidden data-phadd="${b.id}"${uploading[b.id] ? ' disabled' : ''}></label>` : ''}</div></div>
         <div><label>LINE 官方帳號</label><label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" data-k="lineHide" data-id="${b.id}"${d.lineHide ? ' checked' : ''}> 不要給客人看到這台</label></div>
         <div><label>狀態</label><select data-k="status" data-id="${b.id}">${Object.entries(STATUS).map(([k, l]) => `<option value="${k}"${(d.status || 'auto') === k ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
         <div style="grid-column:1/-1"><label>備註（賣家、收購原因、預計售價…）</label><textarea data-k="note" data-id="${b.id}">${esc(d.note)}</textarea></div>
@@ -265,7 +274,7 @@ function render() {
     return `<tr class="row">
       <td>${esc((b.date || '').slice(5).replace('-', '/'))}<br><span class="mute">${esc((b.date || '').slice(0, 4))}</span>${b.manual ? '<br><span class="pill other" title="不是從每日登打帶進來的，是手動新增">手動</span>' : ''}</td>
       <td>${esc(b.branch || '')}</td>
-      <td><span class="model">${esc(buyModel(b))}</span>${d.color ? `<br><span class="mute">${esc(d.color)}</span>` : ''}</td>
+      <td><span class="model">${esc(buyModel(b))}</span>${d.color ? `<br><span class="mute">${esc(d.color)}</span>` : ''}${(d.photos || []).length ? `<br><span class="mute" title="有照片">📷 ${d.photos.length}</span>` : ''}</td>
       <td class="n">${money(cost)}</td>
       <td class="n"><input type="text" class="px" data-k="price" data-id="${b.id}" value="${esc(d.price)}" placeholder="建議" inputmode="numeric">${pxHint(d.price, cost)}</td>
       <td class="n"><input type="text" class="px" data-k="minPrice" data-id="${b.id}" value="${esc(d.minPrice)}" placeholder="最低" inputmode="numeric">${pxHint(d.minPrice, cost)}</td>
@@ -325,6 +334,53 @@ document.addEventListener('click', async e => {
   try { await deleteDoc(doc(db, 'used_stock', b.dataset.mdel)); delete details[b.dataset.mdel]; open = null; render(); toast('已刪除'); }
   catch (er) { toast('⚠️ 刪除失敗：' + er.message); }
 });
+// ───── 照片：手機上按「加照片」可直接拍照；先在手機裡縮小（長邊 1280、約 200KB）再傳到老闆的 Google 雲端硬碟 ─────
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbxBK7c2Oledgo-jT-kRnueuU8grZxVinuocyp2iLI8u-c5Q94fZSeiemH0UkeAqdjfTlw/exec';
+const MAX_PH = 6, uploading = {};
+function thumb(id) { return 'https://lh3.googleusercontent.com/d/' + id + '=w240'; }
+function shrink(file) {
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, 1280 / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+      res(c.toDataURL('image/jpeg', 0.82));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('這個檔案不是照片，或格式手機看不懂（HEIC 請改用拍照）')); };
+    img.src = url;
+  });
+}
+async function gas(body) {
+  const r = await fetch(GAS_URL + '?action=usedPhoto', { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ idToken: await auth.currentUser.getIdToken(), ...body }) });
+  const j = await r.json(); if (!j.ok) throw new Error(j.error || '上傳失敗'); return j;
+}
+$('list').addEventListener('change', async e => {
+  const inp = e.target.closest('[data-phadd]'); if (!inp || !inp.files.length) return;
+  const id = inp.dataset.phadd, d = details[id] || {}, files = [...inp.files].slice(0, MAX_PH - (d.photos || []).length);
+  uploading[id] = true; render();
+  let ok = 0;
+  for (const f of files) {
+    try {
+      const j = await gas({ data: await shrink(f), name: (buyModel(allBuys().find(b => b.id === id) || {}) || 'used') + '-' + Date.now() });
+      const cur = (details[id] || {}).photos || [];
+      save(id, 'photos', cur.concat(j.id)); ok++;
+    } catch (er) { toast('⚠️ ' + er.message); }
+  }
+  delete uploading[id]; render();
+  if (ok) toast(`已加 ${ok} 張照片${(details[id].photos || []).length === ok ? '（第一張是封面）' : ''}`);
+});
+document.addEventListener('click', async e => {
+  const c = e.target.closest('[data-phcover]');
+  if (c) { const id = c.dataset.phcover, arr = [...(details[id].photos || [])], [x] = arr.splice(+c.dataset.i, 1); arr.unshift(x); save(id, 'photos', arr); render(); return; }
+  const del = e.target.closest('[data-phdel]'); if (!del) return;
+  const id = del.dataset.phdel, arr = [...(details[id].photos || [])], i = +del.dataset.i;
+  if (!(await ask('刪除這張照片？'))) return;
+  const [gone] = arr.splice(i, 1); save(id, 'photos', arr); render();
+  gas({ del: gone }).catch(() => {});   // 雲端硬碟那份順便丟到垃圾桶；失敗也不影響
+});
+
 $('q').oninput = render; $('br').onchange = render; $('reload').onclick = () => { expireCache('stock'); loadLedger(); };
 </script>
 </body>

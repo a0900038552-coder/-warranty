@@ -58,6 +58,7 @@ function doPost(e) {
     if (p.action === 'staff') return json_(staffAction_(JSON.parse(e.postData.contents || '{}')));
     if (p.action === 'login') return json_(loginAlert_(JSON.parse(e.postData.contents || '{}')));
     if (p.action === 'refundNotice') return json_(refundNotice_(JSON.parse(e.postData.contents || '{}')));
+    if (p.action === 'usedPhoto') return json_(usedPhoto_(JSON.parse(e.postData.contents || '{}')));
     if (p.store === 'quote') { handleQuoteWebhook_(p, JSON.parse(e.postData.contents || '{}')); return ok_(); }
     var store = STORES[p.store];
     if (!store) return ok_();
@@ -685,12 +686,17 @@ function usedShowcase_(store) {
     body.push({ type: 'text', text: '$' + Number(it.price).toLocaleString('en-US'), size: 'xxl', weight: 'bold', color: '#d71920', margin: 'md' });
     lines.forEach(function (l) { body.push({ type: 'text', text: l, size: 'sm', color: '#374151', wrap: true }); });
     var label = (it.model + (it.color ? ' ' + it.color : '')).slice(0, 40);
-    return { type: 'bubble', size: 'kilo',
+    var photos = (it.photos || []).filter(String), gallery = 'https://a0900038552-coder.github.io/-warranty/care/photos.html?t=' +
+      encodeURIComponent(label + '（' + it.branch + '）$' + it.price) + '&p=' + photos.join(',');
+    var foot = [{ type: 'button', style: 'primary', color: '#d71920', height: 'sm',
+      action: { type: 'message', label: '💬 我有興趣', text: '我有興趣：' + label + '（' + it.branch + '）$' + it.price } }];
+    if (photos.length > 1) foot.unshift({ type: 'button', style: 'secondary', height: 'sm', action: { type: 'uri', label: '📷 看全部照片（' + photos.length + '）', uri: gallery } });
+    var bubble = { type: 'bubble', size: 'kilo',
       body: { type: 'box', layout: 'vertical', spacing: 'xs', contents: body },
-      footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [
-        { type: 'button', style: 'primary', color: '#d71920', height: 'sm',
-          action: { type: 'message', label: '💬 我有興趣', text: '我有興趣：' + label + '（' + it.branch + '）$' + it.price } }
-      ] } };
+      footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: foot } };
+    if (photos.length) bubble.hero = { type: 'image', url: photoUrl_(photos[0]), size: 'full', aspectRatio: '1:1', aspectMode: 'cover',
+      action: { type: 'uri', label: '看照片', uri: gallery } };
+    return bubble;
   });
   return [
     { type: 'text', text: '📱 目前中古機現貨 ' + items.length + ' 台（' + store.branch + '的排前面）\n左右滑動看更多 👉\n\n有興趣按「我有興趣」，店員會盡快回覆您；也歡迎直接到店看機 😊' +
@@ -698,6 +704,30 @@ function usedShowcase_(store) {
     { type: 'flex', altText: '中古機現貨 ' + items.length + ' 台', quickReply: quick, contents: { type: 'carousel', contents: bubbles } }
   ];
 }
+/* 中古機照片：庫存頁上傳 → 存到老闆 Google 雲端硬碟「復原者中古機照片」資料夾（知道連結的人可看），回傳檔案 ID
+ * LINE 卡片用 https://lh3.googleusercontent.com/d/<ID>=w1000 顯示。只有員工帳號能上傳／刪除。
+ */
+var PHOTO_FOLDER = '復原者中古機照片';
+function usedPhoto_(req) {
+  var who = UrlFetchApp.fetch('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' + FIREBASE_API_KEY, {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true, payload: JSON.stringify({ idToken: req.idToken || '' }) });
+  if (who.getResponseCode() !== 200) return { ok: false, error: '登入已失效，請重新整理頁面' };
+  var staff = String((JSON.parse(who.getContentText()).users || [{}])[0].email || '').toLowerCase();
+  if (ALLOWED_EMAILS.indexOf(staff) < 0 || staff === BOT_EMAIL) return { ok: false, error: '沒有權限' };
+  var it = DriveApp.getFoldersByName(PHOTO_FOLDER), folder = it.hasNext() ? it.next() : DriveApp.createFolder(PHOTO_FOLDER);
+  if (req.del) {   // 刪除：只刪這個資料夾裡的檔案
+    try { var f = DriveApp.getFileById(String(req.del)); if (f.getParents().hasNext() && f.getParents().next().getId() === folder.getId()) f.setTrashed(true); } catch (e) {}
+    return { ok: true };
+  }
+  var data = String(req.data || '').replace(/^data:image\/\w+;base64,/, '');
+  if (!data || data.length > 4000000) return { ok: false, error: '照片太大或是空的' };
+  var file = folder.createFile(Utilities.newBlob(Utilities.base64Decode(data), 'image/jpeg', String(req.name || 'photo').slice(0, 80) + '.jpg'));
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  file.setDescription('上傳：' + staff);
+  return { ok: true, id: file.getId() };
+}
+function photoUrl_(id, w) { return 'https://lh3.googleusercontent.com/d/' + id + '=w' + (w || 1000); }
+
 function usedInterest_(ev, store, token, raw) {
   var m = raw.match(/（(楠梓店|德賢店)）/), at = m ? m[1] : store.branch;
   var k = at === '德賢店' ? 'dexian' : 'nanzi', phone = String(STORE_PHONE[k] || '').replace(/[^\d+]/g, '');

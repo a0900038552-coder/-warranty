@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>中古機照片｜復原者手機維修</title>
+<link rel="icon" type="image/png" sizes="32x32" href="icon-32.png?v=2">
+<style>
+*{box-sizing:border-box;margin:0}
+body{font:15px/1.6 system-ui,-apple-system,"Noto Sans TC",sans-serif;background:#f4f5f7;color:#16181d}
+header{background:#16181d;color:#fff;padding:14px 16px;position:sticky;top:0;z-index:2}
+header small{display:block;color:#f5b400;font-weight:700;font-size:12px;letter-spacing:.05em}
+header b{font-size:17px}
+main{max-width:640px;margin:0 auto;padding:12px}
+img{display:block;width:100%;border-radius:12px;background:#e5e7eb;margin-bottom:12px;min-height:200px}
+.note{color:#6b7280;font-size:13px;text-align:center;padding:8px 0 24px}
+</style>
+</head>
+<body>
+<header><small>復原者手機維修・中古機現貨</small><b id="t">中古機照片</b></header>
+<main id="m"></main>
+<p class="note">實際機況與庫存以門市為準・回到 LINE 按「我有興趣」店員會回覆您</p>
+<script>
+// 只顯示網址帶進來的照片（Google 雲端硬碟公開連結），不讀任何資料庫
+const p = new URLSearchParams(location.search);
+const t = (p.get('t') || '').slice(0, 80);
+if (t) { document.getElementById('t').textContent = t; document.title = t + '｜復原者手機維修'; }
+const ids = (p.get('p') || '').split(',').map(s => s.trim()).filter(s => /^[\w-]{10,80}$/.test(s)).slice(0, 8);
+const m = document.getElementById('m');
+if (!ids.length) m.innerHTML = '<p class="note">這台還沒有照片</p>';
+ids.forEach((id, i) => {
+  const img = document.createElement('img');
+  img.src = 'https://lh3.googleusercontent.com/d/' + id + '=w1400';
+  img.alt = (t || '中古機') + ' 照片 ' + (i + 1);
+  img.loading = i ? 'lazy' : 'eager';
+  m.appendChild(img);
+});
+</script>
+</body>
+</html>
