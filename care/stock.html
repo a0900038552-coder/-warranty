@@ -84,7 +84,7 @@ tr.detail td{background:#fafbfc}
 <section id="app" class="hidden">
   <header><div class="hd">
     <div class="logo">📱 中古機庫存<small>USED PHONE STOCK</small></div>
-    <a class="hbtn" href="ledger.html">📝 每日登打</a><a class="hbtn" href="notes.html">📒 退貨／待辦</a><a class="hbtn" href="quotes.html">💰 報價</a><a class="hbtn" href="./">← 保固系統</a>
+    <a class="hbtn" href="ledger.html">📝 每日登打</a><a class="hbtn" href="notes.html">📒 退貨／待辦</a><a class="hbtn" href="quotes.html">💰 報價</a><a class="hbtn" href="watch.html">⚠️ 注意客人</a><a class="hbtn" href="./">← 保固系統</a>
   </div></header>
   <main>
     <div class="bar">
@@ -132,6 +132,7 @@ import { reportLogin } from './guard.js?v=20261116';
 import { cachedDocs, expireCache } from './cache.js?v=20261117';
 import { requirePin, homeBranch, isAway } from './pin.js?v=20261118';
 import { ask } from './ask.js?v=20261116';
+import { checkPhone, badgeHtml, addWatch } from './watch.js?v=20261121';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, addDoc, deleteDoc, onSnapshot, query, where, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 const app = initializeApp({ apiKey: "AIzaSyD04ZMXIt8Oo3hjm5qsMaKiLXYzp_9YKwA", authDomain: "care-warranty.firebaseapp.com", projectId: "care-warranty",
@@ -379,6 +380,11 @@ document.addEventListener('click', async e => {
     if (!(await ask(`確認已收到「${r.model}」的訂金 ${money(num(r.deposit))}？\n（${r.method === 'bank' ? '匯款末五碼 ' + r.last5 : 'LINE Pay'}）\n\n按確定後，機器人會用 LINE 通知客人保留 3 天。`, { ok: '收到了，通知客人' }))) return;
   } else {
     if (!(await ask(`取消「${r.model}」的保留？\n取消後這台會重新出現在 LINE 現貨。`, { ok: '取消保留' }))) return;
+    const key = r.phone || (r.userId ? 'L_' + r.userId : '');
+    if (key && await ask(`客人是「逾期沒來取、也沒聯絡」嗎？\n要記一筆到「⚠️ 注意客人」嗎？`, { ok: '記一筆', cancel: '不用（客人有講／其他原因）', danger: false })) {
+      addWatch(db, auth.currentUser.email, { phone: key, name: r.name || '', branch: r.branch, type: '保留逾期未取', note: `${r.model}，保留到 ${r.holdUntil || '—'}，訂金 ${money(num(r.deposit) || 0)}`, ref: 'resv:' + r.id })
+        .then(() => toast('已記到「注意客人」')).catch(er => toast('⚠️ ' + er.message));
+    }
     if (r.source === 'store') {   // 現場保留：沒有 LINE，直接改資料
       try { await setDoc(doc(db, 'reservations', r.id), { status: 'cancelled', cancelledAt: new Date().toISOString(), cancelledBy: auth.currentUser.email, updatedAt: new Date().toISOString() }, { merge: true }); toast('已取消保留'); }
       catch (er) { toast('⚠️ ' + er.message); }
@@ -407,7 +413,7 @@ function holdForm({ title, sub, ext, dep = '', from = '' }) {
       <div><label>保留天數</label><div class="days">${DAYS.map((d, i) => `<button type="button" data-d="${d}" class="${i ? '' : 'on'}">${d} 天</button>`).join('')}</div>
         <div class="mute" id="hu" style="font-size:12px;margin-top:4px"></div></div>
       ${ext ? '' : `<div><label>客人姓名 *</label><input name="name" required placeholder="例：王先生"></div>
-      <div><label>電話</label><input name="phone" inputmode="tel" placeholder="09xxxxxxxx"></div>
+      <div><label>電話 <span data-hw></span></label><input name="phone" inputmode="tel" placeholder="09xxxxxxxx"></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div><label>訂金</label><input name="deposit" inputmode="numeric" value="${dep}"></div>
         <div><label>付款方式</label><select name="method">${Object.entries(PAY).filter(([k]) => k !== 'bank').map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}<option value="bank">匯款</option></select></div></div>
       <div><label>備註（給店員看）</label><input name="note" placeholder="例：週六下午來取、要送滿版貼"></div>`}
@@ -415,6 +421,7 @@ function holdForm({ title, sub, ext, dep = '', from = '' }) {
         <button class="hbtn" style="background:var(--ink);color:#fff;border-color:var(--ink);font-weight:700">${ext ? '延長' : '保留'}</button></div></form>`;
     document.body.appendChild(w);
     const f = w.querySelector('form'); let days = DAYS[0];
+    if (f.phone) f.phone.addEventListener('change', async () => { w.querySelector('[data-hw]').innerHTML = badgeHtml(await checkPhone(db, f.phone.value)); });
     const show = () => { w.querySelector('#hu').textContent = '保留到 ' + (from ? (() => { const d = new Date(from + 'T00:00:00'); d.setDate(d.getDate() + days); return ymd(d); })() : addDays(days)) + ' 營業結束'; };
     show();
     w.querySelector('.days').onclick = e => { const b = e.target.closest('[data-d]'); if (!b) return; days = +b.dataset.d; [...w.querySelectorAll('.days button')].forEach(x => x.classList.toggle('on', x === b)); show(); };

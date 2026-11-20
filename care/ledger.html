@@ -150,7 +150,7 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
     <button class="hbtn" id="printBtn">🖨 列印</button>
     <button class="hbtn" id="xlsxBtn">⬇ 匯出 Excel</button>
     <button class="hbtn" id="impBtn">📥 匯入舊報表</button><button class="hbtn hidden" id="undoImp" title="把這個月恢復成匯入前的樣子">↩️ 還原上次匯入</button><input type="file" id="impFile" accept=".xlsx,.xls" class="hidden">
-    <button class="hbtn" id="bkBtn" title="預約">📅 預約<span class="nbadge hidden" id="bkBadge"></span></button><a class="hbtn" href="notes.html" id="notesLink">📒 退貨／待辦<span class="nbadge hidden" id="notesBadge"></span></a><a class="hbtn" href="quotes.html">💰 報價</a><a class="hbtn" href="stock.html">📱 中古機庫存</a>
+    <button class="hbtn" id="bkBtn" title="預約">📅 預約<span class="nbadge hidden" id="bkBadge"></span></button><a class="hbtn" href="notes.html" id="notesLink">📒 退貨／待辦<span class="nbadge hidden" id="notesBadge"></span></a><a class="hbtn" href="quotes.html">💰 報價</a><a class="hbtn" href="stock.html">📱 中古機庫存</a><a class="hbtn" href="watch.html">⚠️ 注意客人</a>
     <a class="hbtn" href="./">← 保固系統</a>
   </div></header>
   <main>
@@ -186,6 +186,7 @@ import { requirePin, isUnlocked, homeBranch, isAway } from './pin.js?v=20261118'
 import { parseTransfer, settle } from './transfer.js?v=20261117';
 import { pickPost } from './credit.js?v=20261118';
 import { ask } from './ask.js?v=20261116';
+import { checkPhone, peekPhone, fillWatch, watchKey } from './watch.js?v=20261121';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, deleteDoc, onSnapshot, query, where, getDocs, getDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { CATS, parseItems, warrantyFields, dateFromType, ymd, normPhone, refundInfo, refundRecord } from './rules.js?v=20261115b';
@@ -263,8 +264,9 @@ function renderBk() {
       <button class="del" id="bkClose" title="收起">✕</button></div>` +
     (list.length ? list.map(b => `<div class="bk"><span class="st ${b.status}">${BK_ST[b.status]}</span>
       <span class="tm">${esc(b.confirmedTime || b.proposedTime || b.wish || '')}</span><b>${esc(b.name || '')}</b>
-      <a href="tel:${esc(b.phone || '')}" class="sub">${esc(b.phone || '')}</a><span class="sub">📱 ${esc(b.model || '')}｜${esc(b.issues || '')}</span>${b.price ? `<b style="color:var(--green)">💰 預估 ${esc(/^\d+$/.test(b.price) ? Number(b.price).toLocaleString() : b.price)}</b>` : ''}${b.note ? `<span class="sub">備註：${esc(b.note)}</span>` : ''}</div>`).join('')
+      <a href="tel:${esc(b.phone || '')}" class="sub">${esc(b.phone || '')}</a><span data-watch="${esc(b.phone || '')}"></span><span class="sub">📱 ${esc(b.model || '')}｜${esc(b.issues || '')}</span>${b.price ? `<b style="color:var(--green)">💰 預估 ${esc(/^\d+$/.test(b.price) ? Number(b.price).toLocaleString() : b.price)}</b>` : ''}${b.note ? `<span class="sub">備註：${esc(b.note)}</span>` : ''}</div>`).join('')
       : '<div class="sub" style="padding:6px 0">目前沒有預約</div>');
+  fillWatch(db, $('bkPanel'));
 }
 $('bkBtn').onclick = () => $('bkPanel').classList.toggle('hidden');
 $('bkPanel').addEventListener('click', e => { if (e.target.id === 'bkClose') $('bkPanel').classList.add('hidden'); });
@@ -365,7 +367,7 @@ function rowHTML(r, ghost) {
     <td><input data-f="note" value="${v('note')}"></td>
     <td class="num"><input data-f="cost" value="${v('cost')}" inputmode="text" enterkeyhint="next"></td>
     <td class="ro" data-p>${ghost ? '' : fmt(profit(r))}</td>
-    <td><input data-f="phone" value="${v('phone')}" inputmode="tel"></td>
+    <td style="position:relative"><input data-f="phone" value="${v('phone')}" inputmode="tel"><span data-wm style="position:absolute;right:2px;top:50%;transform:translateY(-50%)">${wMark(r.phone)}</span></td>
     <td><input data-f="ticket" value="${v('ticket')}"></td>
     <td data-w>${ghost ? '' : wtyChip(r)}</td>
     <td>${ghost ? '' : `<button class="del" title="刪除這列" data-del="${r.id}">✕</button>`}</td>
@@ -1335,6 +1337,19 @@ $('xlsxBtn').onclick = () => {
   });
   XLSX.writeFile(wb, `${y}年${m}月 銷售報表（${br}）.xlsx`);
 };
+
+// ───── 注意客人：打電話號碼時，有紀錄就在旁邊跳 ⚠️（每支電話只讀 1 次，30 分鐘內不重讀）─────
+function wMark(phone) {
+  const w = peekPhone(phone); if (!w) return '';
+  const es = w.entries || [], tip = es.slice(-5).map(e => `${e.date} ${e.branch} ${e.type}${e.note ? '：' + e.note : ''}`).join('\n');
+  return `<a href="watch.html?p=${encodeURIComponent(w.id)}" target="_blank" title="注意客人（${es.length} 筆）\n${esc(tip)}" style="text-decoration:none;font-size:15px">⚠️</a>`;
+}
+$('days').addEventListener('change', async e => {
+  const el = e.target.closest('input[data-f="phone"]'); if (!el || !watchKey(el.value)) return;
+  const w = await checkPhone(db, el.value), sp = el.closest('td')?.querySelector('[data-wm]');
+  if (sp) sp.innerHTML = wMark(el.value);
+  if (w) toast(`⚠️ 這位客人在「注意客人」有 ${(w.entries || []).length} 筆紀錄（最近：${(w.entries || []).slice(-1)[0]?.type || ''}），把滑鼠移到 ⚠️ 看內容`);
+});
 </script>
 </body>
 </html>

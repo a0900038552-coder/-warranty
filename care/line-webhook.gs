@@ -849,6 +849,11 @@ function depositPostback_(ev, store, token, userId) {
       '\n\n店員對完帳會再通知您，保留 ' + HOLD_DAYS + ' 天，取機時禮包一起幫您準備好 😊');
   }
 }
+// 這位 LINE 客人在「注意客人」有紀錄嗎？（讀 1 筆）
+function watchNote_(userId) {
+  var w = userId ? getDoc_('watchlist/L_' + userId) : null;
+  return w ? '\n⚠️ 注意客人：之前有紀錄（例如保留逾期未取），請到「注意客人」頁查看' : '';
+}
 function depositLast5_(ev, store, token, userId, five) {
   var d = CacheService.getScriptCache().get('dep_' + userId);
   if (!d || JSON.parse(d).m !== 'bank') return false;
@@ -873,7 +878,7 @@ function depositFinish_(ev, store, token, userId, last5) {
     bundle: '', bundleDesc: '', bundleAdd: 0, status: 'pending', holdUntil: '', createdAt: now, updatedAt: now });
   c.remove('dep_' + userId);
   notifyOwner_('💰 新的中古機訂金（待對帳）\n' + itemTitle_(it) + '（' + it.branch + '）售價 ' + money_(it.price) + '\n訂金 ' + money_(dep) + '・' +
-    (d.m === 'bank' ? '匯款 末五碼 ' + last5 : 'LINE Pay') + '\n客人：' + (name || '（LINE 名稱讀不到）') + '\n對完帳請到「中古機庫存」按「✅ 收到訂金」。');
+    (d.m === 'bank' ? '匯款 末五碼 ' + last5 : 'LINE Pay') + '\n客人：' + (name || '（LINE 名稱讀不到）') + watchNote_(userId) + '\n對完帳請到「中古機庫存」按「✅ 收到訂金」。');
   var bs = bundles_();
   var msgs = [{ type: 'text', text: '收到！已幫您登記「' + itemTitle_(it) + '」，店員對完帳會通知您 🙏' }];
   if (bs.length) msgs.push({ type: 'flex', altText: '🎁 選擇您的禮包', contents: { type: 'bubble', size: 'mega',
@@ -1650,7 +1655,7 @@ function backupFolder_() {
 }
 // 系統用到的全部資料表（若 Google 不允許自動列出，就用這份清單）
 var BACKUP_COLLECTIONS = ['records', 'bookings', 'care_bindings', 'line_users', 'slot_blocks', 'ledger', 'ledger_meta', 'ledger_cash', 'ledger_bak', 'ledger_bak_rows',
-  'quotes', 'web_prices', 'used_stock', 'settings', 'credit', 'todos', 'transfers', 'reservations'];
+  'quotes', 'web_prices', 'used_stock', 'settings', 'credit', 'todos', 'transfers', 'reservations', 'watchlist'];
 function listCollections_() {
   try { var got = listCollectionsApi_(); BACKUP_COLLECTIONS.forEach(function (c) { if (got.indexOf(c) < 0) got.push(c); }); return got; }
   catch (e) { return BACKUP_COLLECTIONS.slice(); }

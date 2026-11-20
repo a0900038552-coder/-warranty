@@ -177,6 +177,7 @@ th{color:var(--mute);font-weight:600}
   <a href="quotes.html" style="border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:99px;padding:7px 16px;font-weight:600;text-decoration:none">💰 報價</a>
   <a href="stock.html" style="border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:99px;padding:7px 16px;font-weight:600;text-decoration:none">📱 中古機庫存</a>
   <a href="notes.html" style="border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:99px;padding:7px 16px;font-weight:600;text-decoration:none">📒 退貨／待辦</a>
+  <a href="watch.html" style="border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:99px;padding:7px 16px;font-weight:600;text-decoration:none">⚠️ 注意客人</a>
   <button data-tab="manage">⚙️ 管理</button>
 </nav>
 
@@ -287,6 +288,7 @@ import { reportLogin } from './guard.js?v=20261116';
 import { cachedDocs } from './cache.js?v=20261117';
 import { requirePin, homeBranch } from './pin.js?v=20261118';
 import { ask, askText } from './ask.js?v=20261116';
+import { checkPhone, fillWatch, addWatch, badgeHtml } from './watch.js?v=20261121';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch, query, where, getDocs, getCountFromServer, limit, orderBy }
@@ -631,7 +633,7 @@ function formHTML(p) {
     <div><label>分店 *</label><select name="branch">${BRANCHES.map(b => `<option>${b}</option>`).join('')}</select></div>
     <div><label>維修／取件日期 *</label><input name="repairDate" type="date" required></div>
     <div><label>客人姓名 *</label><input name="name" required></div>
-    <div><label>電話 *</label><input name="phone" type="tel" inputmode="numeric" placeholder="09xxxxxxxx" required></div>
+    <div><label>電話 * <span id="addWatch"></span></label><input name="phone" type="tel" inputmode="numeric" placeholder="09xxxxxxxx" required></div>
     <div><label>品項 *</label><input name="type" placeholder="例：iPhone 13 電池" required></div>
     <div><label>保固類別</label><select name="category">${catOpts}</select><div class="hint">輸入品項後會自動判斷，可手動修改</div><div class="hint" data-multi style="color:var(--red);font-weight:700"></div></div>
     <div data-other class="hidden"><label>保固天數（依店家告知）</label><input name="otherDays" type="number" min="0" value="0"></div>
@@ -1005,12 +1007,13 @@ function renderBookings() {
       <div class="bk-top"><div><div class="bk-time">${esc(time)}</div>
         <div class="bk-meta">${b.status === 'proposed' ? '原希望：' + esc(b.wish) + '　→ 已提議新時間，等客人按接受' : ''}</div></div>
         <span class="badge" style="background:${BK_COLOR[b.status]};color:#fff">${BK_ZH[b.status] || b.status}</span></div>
-      <div style="margin-top:6px"><b>${esc(b.name)}</b>　<a href="tel:${esc(b.phone)}">${esc(b.phone)}</a>　${esc(b.branch)}${b.price ? `　<b style="color:var(--green)">💰 預估 ${esc(/^\d+$/.test(b.price) ? 'NT$ ' + Number(b.price).toLocaleString() : b.price)}</b>` : ''}${b.transferredFrom ? `<span style="color:#6b7280;font-size:12px">（從${esc(b.transferredFrom)}轉來）</span>` : ''}</div>
+      <div style="margin-top:6px"><b>${esc(b.name)}</b>　<a href="tel:${esc(b.phone)}">${esc(b.phone)}</a> <span data-watch="${esc(b.phone)}"></span>　${esc(b.branch)}${b.price ? `　<b style="color:var(--green)">💰 預估 ${esc(/^\d+$/.test(b.price) ? 'NT$ ' + Number(b.price).toLocaleString() : b.price)}</b>` : ''}${b.transferredFrom ? `<span style="color:#6b7280;font-size:12px">（從${esc(b.transferredFrom)}轉來）</span>` : ''}</div>
       <div>📱 ${esc(b.model)}｜${esc(b.issues)}</div>
       ${b.note ? `<div class="bk-meta">備註：${esc(b.note)}</div>` : ''}
       <div class="bk-meta">申請：${esc(String(b.createdAt || '').slice(0, 16).replace('T', ' '))}${b.updatedBy ? '　最後處理：' + esc(b.updatedBy) : ''}</div>
       ${acts ? `<div class="row-actions">${acts}</div>` : ''}</div>`;
   }).join('') : '<div class="panel hint">目前沒有預約。</div>';
+  fillWatch(db, $('bkList'));   // 注意客人：每支電話只讀 1 次（30 分鐘內不重讀）
 }
 
 function renderSlots() {
@@ -1082,6 +1085,10 @@ $('bkList').addEventListener('click', async e => {
     const res = await fetch(GAS_URL + '?action=staff', { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(req) });
     const j = await res.json();
     if (!j.ok) throw new Error(j.error || '失敗');
+    if (type === 'noshow') {   // 預約未到 → 自動記到「注意客人」
+      addWatch(db, auth.currentUser.email, { phone: b.phone, name: b.name, branch: b.branch, type: '預約未到', note: `預約 ${b.confirmedTime || b.wish || ''}（${b.model || ''} ${b.issues || ''}）`.trim(), ref: 'booking:' + b.id })
+        .then(() => toast('已標記未到，並記到「⚠️ 注意客人」')).catch(() => {});
+    }
     toast(type === 'transfer' ? `🔀 已轉到${req.to}${req.notify ? '，並用 LINE 通知客人' : '（未通知客人）'}` : ['done', 'noshow', 'cancel'].includes(type) ? '已更新狀態（未通知客人）' : '✅ 已用 LINE 通知客人');
   } catch (er) {
     toast('⚠️ ' + er.message);
@@ -1094,6 +1101,12 @@ $('branchFilter').addEventListener('change', () => { renderBookings(); renderSlo
 function toast(m) { const t = $('toast'); t.textContent = m; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2800); }
 function localStorageGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
 function localStorageSet(k, v) { try { localStorage.setItem(k, v); } catch {} }
+
+// 新增保固時輸入電話 → 有「注意客人」紀錄就提醒
+document.addEventListener('change', async e => {
+  const el = e.target.closest('input[name="phone"]'); if (!el || !$('addWatch')) return;
+  $('addWatch').innerHTML = badgeHtml(await checkPhone(db, el.value));
+});
 </script>
 </body>
 </html>

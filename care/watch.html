@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" type="image/png" sizes="32x32" href="icon-32.png?v=2">
+<link rel="icon" type="image/png" sizes="16x16" href="icon-16.png?v=2">
+<link rel="apple-touch-icon" href="apple-touch-icon.png?v=2">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1e2027">
+<title>復原者 注意客人</title>
+<style>
+:root{--ink:#16181d;--mute:#6b7280;--line:#e5e7eb;--bg:#f4f5f7;--red:#d71920;--green:#15803d;--blue:#2a78d6;--amber:#b45309}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.5}
+button,input,select,textarea{font:inherit}
+.hidden{display:none!important}
+#login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.login-box{background:#fff;border-radius:14px;padding:28px 24px;width:100%;max-width:360px}
+.login-box input{width:100%;border:1px solid #d1d5db;border-radius:8px;padding:9px 10px;margin-bottom:10px}
+header{background:var(--ink);color:#fff;padding:10px 16px;border-bottom:4px solid var(--red);position:sticky;top:0;z-index:20}
+.hd{display:flex;align-items:center;gap:10px;flex-wrap:wrap;max-width:1100px;margin:0 auto}
+.logo{font-weight:900;font-size:16px;margin-right:auto}.logo small{display:block;font-weight:400;font-size:11px;color:#a1a6b0;letter-spacing:2px}
+.hbtn{background:none;border:1px solid #555;color:#ddd;border-radius:8px;padding:5px 11px;cursor:pointer;text-decoration:none;font-size:13px}
+main{max-width:1100px;margin:0 auto;padding:12px 12px 60px}
+h2{font-size:17px;margin:18px 0 8px;display:flex;align-items:center;gap:8px}
+h2 .cnt{font-size:12px;background:var(--ink);color:#fff;border-radius:99px;padding:1px 8px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:4px}
+select,input[type=text],input[type=date]{border:1px solid #d1d5db;border-radius:8px;padding:7px 9px;background:#fff;color:var(--ink)}
+.btn{border:0;border-radius:8px;padding:8px 14px;background:var(--ink);color:#fff;font-weight:700;cursor:pointer;white-space:nowrap}
+.btn.ghost{background:#fff;color:var(--ink);border:1px solid #d1d5db;font-weight:600}
+.btn.green{background:var(--green)}
+.btn.sm{padding:5px 10px;font-size:13px}
+.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px}
+.form{display:grid;grid-template-columns:130px 90px 84px 1fr 1.6fr 110px 1fr auto;gap:8px;align-items:end}
+.form label{display:block;font-size:12px;color:var(--mute);margin-bottom:2px}
+.form input,.form select{width:100%}
+@media (max-width:820px){.form{grid-template-columns:1fr 1fr}.form .wide{grid-column:1/-1}}
+.form{grid-template-columns:150px 120px 110px 140px 1fr auto}
+@media (max-width:820px){.form{grid-template-columns:1fr 1fr}.form .wide{grid-column:1/-1}}
+table{border-collapse:collapse;width:100%}
+td{padding:6px;border-top:1px solid #f0f0f0;vertical-align:top}
+.person{border-left:4px solid var(--red)}
+.person .top{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.person .ph{font-size:17px;font-weight:800;font-variant-numeric:tabular-nums}
+.tag{font-size:12px;padding:1px 8px;border-radius:99px;background:#fee2e2;color:#b91c1c;font-weight:700}
+.del{border:0;background:none;color:#9ca3af;cursor:pointer;font-size:13px;padding:0 4px}.del:hover{color:var(--red)}
+.empty{color:var(--mute);font-size:13px;padding:6px 2px}
+.hint{color:var(--mute);font-size:12px;margin-top:6px;line-height:1.7}
+.focus{outline:3px solid #f5b400}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#fff;padding:10px 16px;border-radius:10px;transition:.25s;z-index:99}
+#toast.show{transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+<section id="login" class="hidden">
+  <form class="login-box" id="loginForm"><h3 style="margin-bottom:12px">復原者 注意客人</h3>
+    <input name="email" type="email" placeholder="帳號（Email）" required><input name="pw" type="password" placeholder="密碼" required>
+    <button class="hbtn" style="width:100%;background:var(--ink);color:#fff;padding:9px">登入</button></form>
+</section>
+<section id="app" class="hidden">
+  <header><div class="hd">
+    <div class="logo">⚠️ 注意客人<small>WATCH LIST</small></div>
+    <a class="hbtn" href="ledger.html">📝 每日登打</a><a class="hbtn" href="stock.html">📱 中古機庫存</a><a class="hbtn" href="./">← 保固系統</a>
+  </div></header>
+  <main>
+    <div class="card">
+      <form class="form" id="addForm">
+        <div><label>電話 *</label><input type="text" id="aPhone" inputmode="tel" placeholder="09xxxxxxxx" autocomplete="off"></div>
+        <div><label>姓名</label><input type="text" id="aName" placeholder="例：王先生" autocomplete="off"></div>
+        <div><label>分店</label><select id="aBr"><option>楠梓店</option><option>德賢店</option></select></div>
+        <div><label>發生什麼事</label><select id="aType"></select></div>
+        <div class="wide"><label>說明（只寫事實：日期、經過）</label><input type="text" id="aNote" placeholder="例：11/20 預約換螢幕，沒來也沒接電話" autocomplete="off"></div>
+        <button class="btn">＋ 記一筆</button>
+      </form>
+      <p class="hint">
+        記在這裡的電話，之後在<b>預約清單、每日登打、保固新增、中古機現場保留</b>輸入或出現時，旁邊會跳出 <span class="tag">⚠️ 注意</span>，滑鼠移上去（或點進來）看紀錄。<b>預約按「未到」</b>會自動記一筆。<br>
+        ⚖️ 請只寫<b>客觀事實</b>（哪天、哪間店、發生什麼事），不要寫罵人、猜測或跟交易無關的事。這是個人資料，只給店內同事看，不能傳給別人；客人如果要求查看或更正，要照實處理。誤記或事情已經解決的，請刪掉。
+      </p>
+    </div>
+    <div class="bar" style="display:flex;gap:8px;align-items:center;margin:14px 0 8px">
+      <input type="text" id="q" placeholder="🔍 搜尋電話、姓名…" style="flex:1;max-width:320px" autocomplete="off">
+      <span class="hint" style="margin:0" id="cnt"></span>
+    </div>
+    <div id="list"><p class="empty">讀取中…</p></div>
+  </main>
+</section>
+<div id="toast"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { reportLogin } from './guard.js?v=20261116';
+import { ask } from './ask.js?v=20261116';
+import { homeBranch } from './pin.js?v=20261118';
+import { WATCH_TYPES, watchKey, addWatch } from './watch.js?v=20261121';
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+const app = initializeApp({ apiKey: "AIzaSyD04ZMXIt8Oo3hjm5qsMaKiLXYzp_9YKwA", authDomain: "care-warranty.firebaseapp.com", projectId: "care-warranty",
+  storageBucket: "care-warranty.firebasestorage.app", messagingSenderId: "29512690431", appId: "1:29512690431:web:f0c2dd1cd6acb03d197aca" });
+const auth = getAuth(app), db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) });
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function toast(m) { const t = $('toast'); t.textContent = m; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2400); }
+const who = () => (auth.currentUser && auth.currentUser.email) || '';
+const focusId = watchKey(new URLSearchParams(location.search).get('p') || '');
+let started = false, people = [], focused = false;
+
+onAuthStateChanged(auth, u => { $('login').classList.toggle('hidden', !!u); $('app').classList.toggle('hidden', !u); if (u) { start(); reportLogin(auth, '注意客人'); } });
+$('loginForm').onsubmit = async e => { e.preventDefault(); try { await signInWithEmailAndPassword(auth, e.target.email.value.trim(), e.target.pw.value); } catch { toast('⚠️ 登入失敗'); } };
+
+function start() {
+  if (started) return; started = true;
+  $('aType').innerHTML = WATCH_TYPES.map(t => `<option>${t}</option>`).join('');
+  $('aBr').value = homeBranch(who()) || '楠梓店';
+  if (focusId && !focusId.startsWith('L_')) $('q').value = focusId;
+  // 名單通常只有幾十筆，整份同步（有快取，重開頁面不一定重讀）
+  onSnapshot(collection(db, 'watchlist'), s => { people = s.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => (p.entries || []).length); render(); });
+}
+function render() {
+  const q = $('q').value.trim().toLowerCase(), qd = q.replace(/\D/g, '');
+  const list = people.filter(p => !q || (qd.length >= 3 && String(p.phone || p.id).includes(qd)) || String(p.name || '').toLowerCase().includes(q) || p.id === focusId)
+    .sort((a, b) => String(b.lastAt || '').localeCompare(a.lastAt || ''));
+  $('cnt').textContent = `共 ${people.length} 人${q ? `，符合 ${list.length} 人` : ''}`;
+  $('list').innerHTML = list.length ? list.map(p => {
+    const es = [...(p.entries || [])].sort((a, b) => String(b.at || b.date).localeCompare(a.at || a.date));
+    return `<div class="card person${p.id === focusId ? ' focus' : ''}" id="p_${esc(p.id)}">
+      <div class="top"><span class="ph">${p.id.startsWith('L_') ? 'LINE 客人' : esc(p.phone || p.id)}</span><b>${esc(p.name || '')}</b><span class="tag">⚠️ ${es.length} 筆</span>
+        <button class="del" data-delall="${esc(p.id)}" style="margin-left:auto">刪除這個人</button></div>
+      <table>${es.map(e => `<tr><td style="white-space:nowrap;color:var(--mute);width:1%">${esc(e.date)}</td><td style="white-space:nowrap;width:1%">${esc(e.branch)}</td>
+        <td style="white-space:nowrap;width:1%"><b>${esc(e.type)}</b></td><td>${esc(e.note || '')}<div style="font-size:11px;color:#9ca3af">${esc(String(e.by || '').split('@')[0])}</div></td>
+        <td style="width:1%"><button class="del" data-del="${esc(p.id)}" data-at="${esc(e.at)}" title="刪除這筆">✕</button></td></tr>`).join('')}</table></div>`;
+  }).join('') : `<p class="empty">${q ? '沒有符合的紀錄' : '目前沒有紀錄'}</p>`;
+  if (focusId && !focused && $('p_' + focusId)) { focused = true; $('p_' + focusId).scrollIntoView({ block: 'center' }); }
+}
+$('q').oninput = render;
+$('addForm').onsubmit = async e => {
+  e.preventDefault();
+  const phone = $('aPhone').value, note = $('aNote').value.trim();
+  if (!watchKey(phone)) return toast('⚠️ 電話要 09 開頭 10 碼');
+  try {
+    await addWatch(db, who(), { phone, name: $('aName').value.trim(), branch: $('aBr').value, type: $('aType').value, note });
+    toast('已記一筆'); $('aPhone').value = $('aName').value = $('aNote').value = '';
+  } catch (er) { toast('⚠️ ' + er.message); }
+};
+document.addEventListener('click', async e => {
+  const d = e.target.closest('[data-del]');
+  if (d) {
+    const p = people.find(x => x.id === d.dataset.del); if (!p) return;
+    if (!(await ask('刪除這筆紀錄？'))) return;
+    const rest = (p.entries || []).filter(x => x.at !== d.dataset.at);
+    try {
+      if (rest.length) await setDoc(doc(db, 'watchlist', p.id), { entries: rest, count: rest.length, updatedAt: new Date().toISOString(), updatedBy: who() }, { merge: true });
+      else await deleteDoc(doc(db, 'watchlist', p.id));
+      try { sessionStorage.removeItem('watch.' + p.id); } catch {}
+      toast('已刪除');
+    } catch (er) { toast('⚠️ ' + er.message); }
+    return;
+  }
+  const a = e.target.closest('[data-delall]');
+  if (a) {
+    if (!(await ask('把這個人的紀錄全部刪除？\n（事情已經解決、或記錯人時用）'))) return;
+    try { await deleteDoc(doc(db, 'watchlist', a.dataset.delall)); try { sessionStorage.removeItem('watch.' + a.dataset.delall); } catch {} toast('已全部刪除'); } catch (er) { toast('⚠️ ' + er.message); }
+  }
+});
+</script>
+</body>
+</html>
