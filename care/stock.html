@@ -502,7 +502,7 @@ function checkForm(b, d) {
         <div><label>電池健康度（%）</label><input name="battery" value="${esc(c.battery ?? d.battery ?? '')}" inputmode="numeric"></div>
         ${CHECK_ITEMS.map(fld).join('')}
         <div><label>防拆標籤編號</label><input name="seal" value="${esc(c.seal || '')}" placeholder="貼標籤後填"></div>
-        <div><label>本店保固天數</label><input name="days" value="${esc(c.days ?? '')}" inputmode="numeric" placeholder="例：30"></div>
+        <div><label>本店保固天數</label><input name="days" value="${esc(c.days ?? '30')}" inputmode="numeric"></div>
         <div style="grid-column:1/-1"><label>其他說明（會印在確認書上）</label><input name="memo" value="${esc(c.memo || '')}" placeholder="例：背蓋右下角小刮傷"></div>
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="hbtn" data-x style="color:var(--ink);border-color:#d1d5db;background:#fff">取消</button>
@@ -538,10 +538,11 @@ function printConfirm(b, d) {
     ${c.memo ? `<div class="box"><b>其他說明：</b>${esc(c.memo)}</div>` : ''}
     <div class="box"><b>注意事項</b><br>
       1. 本機為中古商品，外觀、功能已依上表現場檢測，並經買方親自確認。<br>
-      2. 本店保固：自交機日起 ${esc(c.days || '＿＿')} 天，限非人為因素之功能故障；摔機、進水、螢幕破裂、自行或非本店拆修者不在保固範圍。<br>
-      3. 本機已貼本店防拆保固標籤（編號 ${esc(c.seal || '＿＿＿＿')}）。標籤破損、撕除或經非本店人員拆修者，不適用本店保固；但不影響本店依法應負之瑕疵擔保責任。<br>
+      2. 本店保固：自交機日起 ${esc(c.days || '30')} 天，限非人為因素之功能故障；摔機、進水、螢幕破裂、自行或非本店拆修者不在保固範圍。可另外加購 Repair CARE+ 延長保固（詳洽門市）。<br>
+      3. 本機已貼本店防拆保固標籤（編號 ${esc(c.seal || '＿＿＿＿')}）。標籤破損、撕除或經非本店人員拆修者，不適用本店保固。<br>
       4. 請於交機時以「*#06#」核對 IMEI 與本確認書相符。<br>
-      5. 交機前請確認帳號、密碼已由您本人設定；本店不保留任何您的個人資料。</div>
+      5. 交機前請確認帳號、密碼已由您本人設定；本店不保留任何您的個人資料。<br>
+      6. 本店為免用統一發票商家，交易以本確認書及收據為憑。</div>
     <div class="box">買方已於門市親自檢視本機，確認外觀與功能與上表相符，並了解上述注意事項。</div>
     <div class="sig"><div>買方簽名：</div><div>經手人員：</div></div>
     <div class="sig"><div>買方電話：</div><div>日期：</div></div>
