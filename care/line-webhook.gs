@@ -716,7 +716,7 @@ function usedShowcase_(store) {
     return bubble;
   });
   return [
-    { type: 'text', text: '📱 目前中古機現貨 ' + items.length + ' 台（' + store.branch + '的排前面）\n左右滑動看更多 👉\n\n有興趣按「我有興趣」，店員會盡快回覆您；也歡迎直接到店看機 😊' +
+    { type: 'text', text: '📱 目前中古機現貨 ' + items.length + ' 台（' + store.branch + '的排前面）\n左右滑動看更多 👉\n\n想買就按「💰 我要保留」填訂單；想先問問題按「💬 先問問題」，店員會盡快回覆您。也歡迎直接到店看機 😊' +
       (more ? '\n\n（還有 ' + more + ' 台沒列出，告訴我們想找的機型幫您查）' : '') },
     { type: 'flex', altText: '中古機現貨 ' + items.length + ' 台', quickReply: quick, contents: { type: 'carousel', contents: bubbles } }
   ];
