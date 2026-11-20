@@ -189,13 +189,15 @@ function match() {
 
 // LINE 官方帳號「中古機現貨」：在庫＋有建議售價＋沒勾「不上架」的機子，整理成一份清單給機器人讀（只放客人看得到的欄位，不含成本、IMEI、最低價）
 // 清單有變才寫一次（settings/used_showcase），機器人每次只讀這 1 筆，省讀取額度
+// 客人看的機型名稱：「17 256G」→「iPhone 17 256G」（已經寫品牌的不動）
+const niceModel = m => /^\s*(1[1-9]|[6-9]|x[rs]?|se\d?)(\b|\s|plus|pro|max|mini|p)/i.test(m) && !/iphone/i.test(m) ? 'iPhone ' + m.trim().replace(/^(x[rs]?|se)/i, c => c.toUpperCase()) : m;
 let lineTimer = null;
 function publishLine(m) {
   if (!ledgerReady) return;   // 每日登打的收購紀錄還沒讀完，先不要發布（不然會少機子）
   const items = allBuys().filter(b => m[b.id]?.status === 'stock').map(b => ({ b, d: details[b.id] || {} }))
     .filter(x => num(x.d.price) != null && !x.d.lineHide)
     .sort((a, b) => (b.b.date || '').localeCompare(a.b.date || ''))
-    .map(({ b, d }) => ({ id: b.id, model: buyModel(b), branch: b.branch || '', price: num(d.price), color: d.color || '', cond: d.cond || '',
+    .map(({ b, d }) => ({ id: b.id, model: niceModel(buyModel(b)), branch: b.branch || '', price: num(d.price), color: d.color || '', cond: d.cond || '',
       battery: d.battery || '', waterproof: !!d.waterproof, box: !!d.box, cable: !!d.cable, acc: d.acc || '' }));
   const json = JSON.stringify(items);
   let last = null; try { last = localStorage.getItem('line-showcase'); } catch {}
