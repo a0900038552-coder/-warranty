@@ -105,6 +105,7 @@ tr.detail td{background:#fafbfc}
     </table></div>
     <p class="hint">
       📥 <b>自動進庫存</b>：每日登打寫「支出:中古機回收:機型」（例：支出:中古機回收:14 PRO 256G，金額 -8000）就會出現在這裡，收購成本＝那一列的金額。<br>
+      📢 <b>LINE 官方帳號現貨</b>：在庫、而且有填<b>建議售價</b>的機子，客人在 LINE 問「有什麼二手機」就看得到（只給看機型、顏色、機況、電池、配件和建議售價；成本、IMEI、最低價不會給）。不想給看的，在「詳細」勾「不要給客人看到這台」。賣掉後打開這頁就會自動下架。<br>
       ✅ <b>自動標成已售出</b>：之後登打「機型 中古機」（例：14 PRO 256G 中古機，成本 -8000），機型和成本對得上就會自動配對，顯示售價與毛利。對不上的可在「詳細」裡手動改狀態。<br>
       ✏️ IMEI、機況、氣密／盒裝／原廠線打勾後會自動儲存。
     </p>
@@ -139,7 +140,7 @@ const buyModel = r => String(r.item || '').replace(BUY_RE, '').trim();
 const isSale = r => /中古機/.test(r.item || '') && !/^\s*支出/.test(r.item) && !/損料|盒裝|回收/.test(r.item);
 const saleModel = r => String(r.item || '').split('中古機')[0].trim();
 
-let buys = [], sales = [], details = {}, scope = 'stock', open = null, unsubD = null;
+let buys = [], sales = [], details = {}, scope = 'stock', open = null, unsubD = null, ledgerReady = false;
 const manualBuys = () => Object.entries(details).filter(([, d]) => d.manual && !d.deleted)
   .map(([id, d]) => ({ id, date: d.date || '', branch: d.branch || '', item: '支出:中古機回收:' + (d.model || ''), amount: String(-(num(d.cost) ?? 0)), manual: true }));
 const allBuys = () => buys.concat(manualBuys());
@@ -165,6 +166,7 @@ async function loadLedger() {
   const parts = [getDocs(query(collection(db, 'ledger'), where('bm', 'in', now)))];
   for (let i = 0; i < past.length; i += 30) { const ch = past.slice(i, i + 30); parts.push(cachedDocs(query(collection(db, 'ledger'), where('bm', 'in', ch)), 'stock-' + ch[0] + '-' + ch.length)); }
   sales = (await Promise.all(parts)).flatMap(s => s.docs.map(d => ({ id: d.id, ...d.data() }))).filter(isSale);
+  ledgerReady = true;
   render();
 }
 
@@ -185,6 +187,28 @@ function match() {
   return res;
 }
 
+// LINE 官方帳號「中古機現貨」：在庫＋有建議售價＋沒勾「不上架」的機子，整理成一份清單給機器人讀（只放客人看得到的欄位，不含成本、IMEI、最低價）
+// 清單有變才寫一次（settings/used_showcase），機器人每次只讀這 1 筆，省讀取額度
+let lineTimer = null;
+function publishLine(m) {
+  if (!ledgerReady) return;   // 每日登打的收購紀錄還沒讀完，先不要發布（不然會少機子）
+  const items = allBuys().filter(b => m[b.id]?.status === 'stock').map(b => ({ b, d: details[b.id] || {} }))
+    .filter(x => num(x.d.price) != null && !x.d.lineHide)
+    .sort((a, b) => (b.b.date || '').localeCompare(a.b.date || ''))
+    .map(({ b, d }) => ({ id: b.id, model: buyModel(b), branch: b.branch || '', price: num(d.price), color: d.color || '', cond: d.cond || '',
+      battery: d.battery || '', waterproof: !!d.waterproof, box: !!d.box, cable: !!d.cable, acc: d.acc || '' }));
+  const json = JSON.stringify(items);
+  let last = null; try { last = localStorage.getItem('line-showcase'); } catch {}
+  if (json === last) return;
+  clearTimeout(lineTimer);
+  lineTimer = setTimeout(async () => {
+    try {
+      await setDoc(doc(db, 'settings', 'used_showcase'), { json, count: items.length, updatedAt: new Date().toISOString(), updatedBy: auth.currentUser.email });
+      try { localStorage.setItem('line-showcase', json); } catch {}
+    } catch (e) { console.warn('LINE 中古機清單更新失敗', e); }
+  }, 2000);
+}
+
 // 售價下面的小字：跟收購成本比，賺多少（低於成本顯示紅字）
 function pxHint(v, cost) {
   const p = num(v); if (p == null) return '';
@@ -195,6 +219,7 @@ const STATUS = { auto: '自動判斷', stock: '在庫', sold: '已售出', retur
 function render() {
   if (!allBuys().length) { $('list').innerHTML = '<tr><td colspan="13" class="mute" style="padding:16px">還沒有收購紀錄。每日登打寫「支出:中古機回收:機型」就會出現在這裡。</td></tr>'; $('tiles').innerHTML = ''; return; }
   const m = match(), today = ymd(new Date()), q = $('q').value.trim().toLowerCase(), br = $('br').value;
+  publishLine(m);
   const rows = allBuys().map(b => ({ b, d: details[b.id] || {}, m: m[b.id] }))
     .filter(x => !br || x.b.branch === br)
     .sort((a, b) => (b.b.date || '').localeCompare(a.b.date || ''));
@@ -220,12 +245,13 @@ function render() {
       const p = (num(mm.sale.amount) ?? 0) - cost;
       st = `<span class="pill sold">已售 ${esc((mm.sale.date || '').slice(5).replace('-', '/'))}</span> <span class="mute">${money(num(mm.sale.amount))}・毛利 <b style="color:${p >= 0 ? 'var(--green)' : 'var(--red)'}">${money(p)}</b></span>${mm.costDiff ? '<br><span class="warn">⚠️ 售出那列的成本跟收購金額不同，請確認</span>' : ''}`;
     } else if (mm.status === 'sold') st = `<span class="pill sold">已售出</span>`;
-    else if (mm.status === 'stock') st = `<span class="pill ${age > 30 ? 'old' : 'stock'}">在庫 ${age} 天</span>`;
+    else if (mm.status === 'stock') st = `<span class="pill ${age > 30 ? 'old' : 'stock'}">在庫 ${age} 天</span><br><span class="mute" style="font-size:12px">${d.lineHide ? '🚫 LINE 不上架' : num(d.price) != null ? '📢 LINE 上架中' : '填建議售價才會上 LINE'}</span>`;
     else st = `<span class="pill other">${STATUS[mm.status] || mm.status}</span>`;
     const det = open === b.id ? `<tr class="detail"><td colspan="13"><div class="dgrid">
         <div><label>顏色</label><input data-k="color" data-id="${b.id}" value="${esc(d.color)}" placeholder="例：遠峰藍"></div>
         <div><label>電池健康度（%）</label><input data-k="battery" data-id="${b.id}" value="${esc(d.battery)}" inputmode="numeric" placeholder="例：86"></div>
         <div><label>其他配件</label><input data-k="acc" data-id="${b.id}" value="${esc(d.acc)}" placeholder="例：原廠殼、發票"></div>
+        <div><label>LINE 官方帳號</label><label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" data-k="lineHide" data-id="${b.id}"${d.lineHide ? ' checked' : ''}> 不要給客人看到這台</label></div>
         <div><label>狀態</label><select data-k="status" data-id="${b.id}">${Object.entries(STATUS).map(([k, l]) => `<option value="${k}"${(d.status || 'auto') === k ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
         <div style="grid-column:1/-1"><label>備註（賣家、收購原因、預計售價…）</label><textarea data-k="note" data-id="${b.id}">${esc(d.note)}</textarea></div>
         ${b.manual ? `<div><label>收購日</label><input type="date" data-k="date" data-id="${b.id}" value="${esc(d.date)}"></div>

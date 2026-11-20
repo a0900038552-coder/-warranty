@@ -114,6 +114,8 @@ function handleEvent_(ev, store, token) {
     var acc = raw.match(/^接受改約\s*#?([A-Za-z0-9]+)$/);
     if (acc) { acceptProposal_(ev, store, token, userId, acc[1]); return; }
     if (/^(配件|配件好康|看配件|配件型錄|配件優惠|配件專區)$/.test(raw.trim())) { reply_(ev.replyToken, token, accessoryCarousel_(storeKey_(store))); return; }
+    if (/^我有興趣[:：]/.test(raw.trim())) { usedInterest_(ev, store, token, raw.trim()); return; }
+    if (isUsedShopIntent_(raw)) { reply_(ev.replyToken, token, usedShowcase_(store)); autoLog_(store.branch, raw.replace(/\s+/g, ''), '中古機現貨', ''); return; }
     var text = raw.replace(/[\s\-－]/g, '');
     // 只有「單獨一支手機號碼」或「CARE+ 手機號碼」才登錄；
     // 預約、詢問等夾帶電話的訊息（例：王先生0912345678明天換電池）不觸發
@@ -647,6 +649,62 @@ function accessoryCarousel_(k) {
     { type: 'text', text: '🎁 2026 秋冬配件好康\n左右滑動看更多 👉　全系列預訂 9 折、現場施工' },
     { type: 'flex', altText: '配件好康：' + ACC_CARDS.map(function (c) { return c.alt; }).join('、'), contents: { type: 'carousel', contents: bubbles } }
   ];
+}
+
+/* ───────── 中古機現貨（客人在 LINE 問「有什麼二手機」→ 左右滑動的卡片） ─────────
+ * 清單由「中古機庫存」頁（care/stock.html）自動整理寫到 settings/used_showcase（在庫＋有建議售價＋沒勾不上架）。
+ * 只放客人看得到的欄位，不含成本、IMEI、最低價。每次查詢只讀 1 筆資料。
+ */
+function isUsedShopIntent_(raw) {
+  var t = String(raw || '').replace(/\s+/g, '');
+  if (/^(中古機|二手機)$/.test(t)) return false;   // 圖文選單「二手收購」按鈕送出的字，交給原本的收購回覆
+  if (/收購|回收|估價|折抵|舊機換|我要賣|想賣|賣給|賣掉|收嗎|收不收|收二手|收中古/.test(t)) return false;   // 客人要賣給我們，不是要買
+  if (/^(看)?(中古機|二手機)(現貨|庫存|有哪些)$/.test(t)) return true;
+  return /中古|二手|福利機|整新機/.test(t) && /買|賣|有|看|挑|推薦|庫存|現貨|哪些|什麼|價|款|機型|預算/.test(t);
+}
+function usedShowcase_(store) {
+  var doc = getDoc_('settings/used_showcase'), items = [];
+  try { items = JSON.parse((doc && doc.json) || '[]'); } catch (e) {}
+  var k = storeKey_(store), phone = String(STORE_PHONE[k] || '').replace(/[^\d+]/g, '');
+  var quick = { items: [{ type: 'action', action: { type: 'uri', label: '📞 打電話給' + store.branch, uri: 'tel:' + phone } }] };
+  if (!items.length) return [{ type: 'text', quickReply: quick,
+    text: '您好～目前中古機現貨剛好都賣完了 🙏\n\n可以告訴我們想找的機型、容量和預算，有適合的貨會優先通知您 😊' }];
+  items.sort(function (a, b) { return (a.branch === store.branch ? 0 : 1) - (b.branch === store.branch ? 0 : 1); });   // 這間店的排前面
+  var more = items.length > 12 ? items.length - 12 : 0;
+  var bubbles = items.slice(0, 12).map(function (it) {
+    var extra = [it.waterproof ? '氣密正常' : '', it.box ? '盒裝' : '', it.cable ? '原廠線' : '', it.acc].filter(String).join('・');
+    var lines = [];
+    if (it.cond) lines.push('機況：' + it.cond);
+    if (it.battery) lines.push('電池健康度：' + String(it.battery).replace(/%$/, '') + '%');
+    if (extra) lines.push('附：' + extra);
+    var body = [
+      { type: 'text', text: it.branch || '門市', size: 'xs', color: '#d71920', weight: 'bold' },
+      { type: 'text', text: it.model || '中古機', size: 'lg', weight: 'bold', wrap: true },
+    ];
+    if (it.color) body.push({ type: 'text', text: it.color, size: 'sm', color: '#6b7280', wrap: true });
+    body.push({ type: 'text', text: '$' + Number(it.price).toLocaleString('en-US'), size: 'xxl', weight: 'bold', color: '#d71920', margin: 'md' });
+    lines.forEach(function (l) { body.push({ type: 'text', text: l, size: 'sm', color: '#374151', wrap: true }); });
+    var label = (it.model + (it.color ? ' ' + it.color : '')).slice(0, 40);
+    return { type: 'bubble', size: 'kilo',
+      body: { type: 'box', layout: 'vertical', spacing: 'xs', contents: body },
+      footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [
+        { type: 'button', style: 'primary', color: '#d71920', height: 'sm',
+          action: { type: 'message', label: '💬 我有興趣', text: '我有興趣：' + label + '（' + it.branch + '）$' + it.price } }
+      ] } };
+  });
+  return [
+    { type: 'text', text: '📱 目前中古機現貨 ' + items.length + ' 台（' + store.branch + '的排前面）\n左右滑動看更多 👉\n\n有興趣按「我有興趣」，店員會盡快回覆您；也歡迎直接到店看機 😊' +
+      (more ? '\n\n（還有 ' + more + ' 台沒列出，告訴我們想找的機型幫您查）' : '') },
+    { type: 'flex', altText: '中古機現貨 ' + items.length + ' 台', quickReply: quick, contents: { type: 'carousel', contents: bubbles } }
+  ];
+}
+function usedInterest_(ev, store, token, raw) {
+  var m = raw.match(/（(楠梓店|德賢店)）/), at = m ? m[1] : store.branch;
+  var k = at === '德賢店' ? 'dexian' : 'nanzi', phone = String(STORE_PHONE[k] || '').replace(/[^\d+]/g, '');
+  var msg = '收到！這台在「' + at + '」（' + STORE_ADDR[at] + '）。\n店員看到訊息會盡快回覆您 🙏\n\n想先保留或到店看機，也可以直接打電話：' + phone +
+    '\n營業時間：週一～週六 11:00–21:00（週日公休）\n\n※ 中古機數量有限，實際庫存以門市為準';
+  reply_(ev.replyToken, token, [{ type: 'text', text: msg,
+    quickReply: { items: [{ type: 'action', action: { type: 'uri', label: '📞 打電話給' + at, uri: 'tel:' + phone } }] } }]);
 }
 
 var STORE_ADDR = { '楠梓店': '高雄市楠梓區楠梓路10號', '德賢店': '高雄市楠梓區德賢路258號' };

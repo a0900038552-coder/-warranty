@@ -83,7 +83,10 @@
 id = `{來源key}_{hash}`；`src`, `site`, `model`, `modelKey`, `item`, `part`, `price`, `run`, `updated`。來源見 GAS `WEB_SOURCES`。
 
 ### `used_stock` — 中古機庫存
-`date`, `branch`, `model`, `cost`(收購成本), `imei`, `cond`, `price`, `minPrice`, `note`, `manual`, `createdAt/By`, `updatedAt/By`。
+`date`, `branch`, `model`, `cost`(收購成本), `imei`, `cond`, `price`, `minPrice`, `note`, `manual`, `color`, `battery`, `acc`, `waterproof`, `box`, `cable`, `status`, `lineHide`(不在 LINE 上架), `createdAt/By`, `updatedAt/By`。
+
+### `settings/used_showcase` — LINE 中古機現貨清單
+`json`（在庫＋有建議售價＋沒勾 `lineHide` 的機子：model, branch, price, color, cond, battery, waterproof, box, cable, acc；**不含**成本、IMEI、最低價）、`count`、`updatedAt/By`。由 `stock.html` 開頁時自動整理，清單有變才寫；GAS `usedShowcase_` 讀這 1 筆組成 LINE 卡片。
 
 ### 備份
 GAS `backupFirestore()` 每月 1 號 03:00 把資料表備份到 Google Drive。清單在 GAS 的 `BACKUP_COLLECTIONS`。

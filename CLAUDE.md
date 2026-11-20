@@ -28,7 +28,7 @@
 | `index.html` | 保固管理（Repair CARE+）：查保固、手動新增、Excel 匯入、預約時段管理、LINE 綁定狀態 | `records`、`slot_blocks` |
 | `ledger.html` | 每日登打（銷售報表）：輸入時自動存檔，並**自動連動**保固、調貨、購物金 | `ledger`、`ledger_meta`、`ledger_cash`、`ledger_bak*`、`settings/staff`、`records`、`transfers`、`credit` |
 | `quotes.html` | 報價查詢（報價小幫手／復原者Ai機器人記下的群組報價） | `quotes` |
-| `stock.html` | 中古機庫存 | `used_stock` |
+| `stock.html` | 中古機庫存；自動整理 LINE「中古機現貨」清單 | `used_stock`、`settings/used_showcase` |
 | `notes.html` | 退貨／待辦：廠商購物金、兩店調貨欠條、待辦 | `credit`、`todos`、`transfers` |
 | `line-webhook.gs` | GAS 後端：LINE webhook、CARE+ 綁定、預約、自動回覆（讀 Google 試算表）、報價機器人、比價爬蟲、每月備份 | 見 `docs/line-webhook.md` |
 | `rules.js` | **保固規則唯一來源**（分類、天數、退修）— 保固系統和每日登打共用 | — |
