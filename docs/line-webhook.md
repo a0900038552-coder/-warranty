@@ -54,3 +54,10 @@ Google Apps Script，一支程式處理所有 LINE 事件。**改完要手動貼
 - 試算表分頁第一次建立：開 `<exec>?action=depositSetup`。帳號、收款碼都放試算表，不寫進程式（repo 公開）。
 - 訂金規則（`DEP_RULES`，付款前顯示）：驗機不符全退；對帳前取消全退；對帳後客人個人因素或逾期 → 扣禮包原價（試算表「訂金禮包」第 5 欄）後退餘額。店員在庫存頁取消時選原因，系統算應退金額並可 LINE 通知。
 - 到期前一天提醒：`resvReminder`（每天 12:00，觸發條件用 `<exec>?action=resvReminderSetup` 建立），只推給 LINE 客人，推過標 `reminded`。
+
+## 線上訂單（`orderStart_`、`orderGet_`、`orderSubmit_`、`orderView_`、`orderPayInfo_`、`orderReport_`）
+- 現貨卡片「💰 我要保留」（`act=dep`）→ 有填付款設定時回「📝 填寫訂單」連結：`booking/order.html?t=<token>`（token 暫存 6 小時，綁 LINE 帳號）。
+- 訂單頁 `?action=orderGet&t=`：商品、檢測報告（`used_stock.check`）、IMEI 奇數位顯示偶數位 *、禮包、付款方式、對帳期限。送出 `?action=orderSubmit`（姓名、手機、禮包、付款方式、同意）→ 建立 `reservations`（pending、reported=false、orderNo、viewKey）並通知老闆。
+- 完成頁顯示付款資訊＋「回到 LINE 回報付款」（`line.me/R/oaMessage/<basicId>/?訂單 Uxxxxxxx`；basicId 由 `/v2/bot/info` 取得並存指令碼屬性）。
+- 客人在 LINE 傳「訂單 Uxxxxxxx」→ 回付款資訊（免費回覆）→ 匯款回 5 碼／LINE Pay 按「我已付款」（`act=opaid`）→ reported=true、通知老闆。
+- 查看／下載 PDF：`booking/order.html?k=<viewKey>`（`?action=orderView`，電話、末五碼部分遮蔽），用瀏覽器列印存 PDF。

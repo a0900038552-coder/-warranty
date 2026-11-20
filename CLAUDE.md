@@ -53,6 +53,7 @@
 | `staff-system.html` | 內部系統 V2（員工、請假、公告、庫存調撥、薪資…）|
 | `checkin.html` | 打卡機（`attendance`） |
 | `booking/index.html` | LINE LIFF 預約表單（圖文選單「立即預約」），送出後由 GAS 建立 `bookings` |
+| `booking/order.html` | 中古機線上訂單：`?t=` 填單（檢測報告、IMEI 遮一半、流程、注意事項、禮包、付款方式、同意）→ GAS 建 `reservations`；`?k=` 查看訂單／下載 PDF |
 | `dm/` | 2026 秋冬配件 DM 網頁＋圖 |
 
 ## 專案規則（改程式時一定要遵守）

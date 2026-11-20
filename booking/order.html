@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" type="image/png" sizes="32x32" href="../care/icon-32.png?v=2">
+<title>中古機訂單｜復原者手機維修</title>
+<style>
+:root{--ink:#16181d;--red:#d71920;--mute:#6b7280;--line:#e5e7eb;--bg:#f4f5f7;--green:#15803d}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;background:var(--bg);color:var(--ink);font-size:15px;line-height:1.6;padding-bottom:110px}
+header{background:var(--ink);color:#fff;padding:16px 18px 14px;border-bottom:4px solid var(--red)}
+header small{display:block;color:#a1a6b0;font-size:12px;letter-spacing:2px}
+header h1{font-size:21px;font-weight:900;letter-spacing:1px;margin-top:2px}
+main{padding:12px;max-width:640px;margin:0 auto}
+.card{background:#fff;border-radius:14px;padding:16px;margin-bottom:12px;border:1px solid var(--line)}
+.card h2{font-size:15px;font-weight:800;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.card h2::before{content:"";width:4px;height:16px;background:var(--red);border-radius:2px}
+.prod{display:flex;gap:12px;align-items:flex-start}
+.prod img{width:96px;height:96px;object-fit:cover;border-radius:10px;background:#eee;flex:none}
+.prod b{font-size:17px;display:block}
+.price{font-size:22px;font-weight:900;color:var(--red)}
+.mute{color:var(--mute);font-size:13px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+td{padding:7px 4px;border-top:1px solid #f0f0f0;vertical-align:top}
+td:first-child{color:var(--mute);width:42%}
+td:last-child{text-align:right}
+td.bad{color:var(--red);font-weight:700}
+ol,ul{padding-left:20px}li{margin:3px 0}
+.opt{display:flex;gap:10px;align-items:flex-start;border:1.5px solid #d1d5db;border-radius:12px;padding:12px;margin-top:8px;cursor:pointer;background:#fff}
+.opt input{width:20px;height:20px;margin-top:2px;accent-color:var(--red);flex:none}
+.opt.on{border-color:var(--red);background:#fff5f5}
+.opt b{display:block}
+label.f{display:block;font-size:13px;font-weight:700;color:#374151;margin:10px 0 5px}
+input.t{width:100%;border:1px solid #d1d5db;border-radius:10px;padding:12px;font:inherit;background:#fff}
+.agree{display:flex;gap:10px;align-items:flex-start;font-weight:700}
+.agree input{width:22px;height:22px;accent-color:var(--red);flex:none;margin-top:1px}
+.err{color:var(--red);font-size:14px;font-weight:700;margin-top:8px;min-height:1em}
+.bar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);padding:12px 14px calc(12px + env(safe-area-inset-bottom))}
+.bar button,.btn{display:block;width:100%;border:none;border-radius:12px;padding:15px;font:inherit;font-size:17px;font-weight:900;background:var(--red);color:#fff;letter-spacing:1px;text-align:center;text-decoration:none;cursor:pointer}
+.btn.dark{background:var(--ink)}.btn.ghost{background:#fff;color:var(--ink);border:1.5px solid #d1d5db}
+.bar button:disabled{background:#9ca3af}
+.big{text-align:center;padding:30px 16px}
+.big .ok{width:68px;height:68px;border-radius:50%;background:var(--green);color:#fff;font-size:36px;line-height:68px;margin:0 auto 12px}
+.pay{background:#f8fafc;border:1px dashed #cbd5e1;border-radius:12px;padding:12px;margin-top:10px;text-align:left}
+.pay img{display:block;width:220px;max-width:100%;margin:8px auto}
+.status{display:inline-block;border-radius:99px;padding:2px 12px;font-weight:800;font-size:13px;background:#fff4d6;color:#a16207}
+.sig{display:none}
+@media print{
+  body{background:#fff;padding:0;font-size:12px}header{background:#fff;color:#000;border-bottom:3px solid var(--red)}header small{color:#555}
+  .bar,.np{display:none!important}.card{border:1px solid #ccc;break-inside:avoid;padding:10px;margin-bottom:8px}
+  .sig{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:16px}.sig div{border-top:1px solid #000;padding-top:4px}
+  @page{size:A4;margin:12mm}
+}
+</style>
+</head>
+<body>
+<header><small>復原者手機維修・中古機</small><h1 id="title">中古機訂單</h1></header>
+<main id="m"><div class="card big"><p class="mute">讀取中…</p></div></main>
+<div class="bar hidden" id="bar" style="display:none"><button id="go">確認送出訂單</button></div>
+
+<script>
+const GAS = 'https://script.google.com/macros/s/AKfycbxBK7c2Oledgo-jT-kRnueuU8grZxVinuocyp2iLI8u-c5Q94fZSeiemH0UkeAqdjfTlw/exec';
+const P = new URLSearchParams(location.search), T = (P.get('t') || '').replace(/\W/g, ''), K = (P.get('k') || '').replace(/\W/g, '');
+const $ = id => document.getElementById(id), m = $('m');
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const money = n => '$' + Number(n || 0).toLocaleString('en-US');
+const photo = id => 'https://lh3.googleusercontent.com/d/' + id + '=w400';
+const CHECK = [['ver', '銷售國家版本'], ['carrier', '是否有電信業者鎖定'], ['account', 'iCloud／Google 帳號已退出'], ['orig', '原廠保固到期時間'], ['look', '螢幕外觀'],
+  ['screen', '螢幕功能狀況'], ['touch', '觸控狀況'], ['battery', '電池健康度'], ['grade', '機身新舊程度'], ['bio', '臉部／指紋辨識'], ['cell', '4G／5G 網路'], ['wifi', 'Wi-Fi'],
+  ['bt', '藍牙'], ['fcam', '前鏡頭拍照'], ['rcam', '後鏡頭拍照'], ['btn', '機身所有按鈕'], ['spk', '喇叭和聽筒'], ['mic', '麥克風錄音'], ['port', '充電口'], ['qi', '無線充電'],
+  ['nfc', 'NFC'], ['prox', '距離感應'], ['light', '自動亮度感應']];
+
+function checkCard(c, imei) {
+  if (!c || !Object.keys(c).length) return `<div class="card"><h2>檢測報告</h2><p class="mute">這台的檢測報告整理中，到店時會現場驗機給您看。</p></div>`;
+  const rows = [['IMEI', imei ? imei + '<div class="mute" style="font-size:11px">部分號碼以 * 隱藏，取機時用「*#06#」核對完整號碼</div>' : '—'],
+    ...CHECK.filter(([k]) => c[k]).map(([k, l]) => [l, esc(k === 'battery' ? String(c[k]).replace(/%$/, '') + '%' : c[k])])];
+  return `<div class="card"><h2>檢測報告</h2><table>${rows.map(([l, v]) => `<tr><td>${l}</td><td class="${v === '異常' ? 'bad' : ''}">${v}</td></tr>`).join('')}</table>
+    ${c.memo ? `<p style="margin-top:8px"><b>其他說明：</b>${esc(c.memo)}</p>` : ''}<p class="mute" style="margin-top:6px">驗機日期：${esc(c.date || '')}</p></div>`;
+}
+function flowCard(holdDays) {
+  return `<div class="card"><h2>購買流程</h2><ol>
+    <li><b>填訂單</b>：確認商品資訊、檢測報告、注意事項，選禮包和付款方式，勾選同意後送出。</li>
+    <li><b>付訂金</b>：售價 $5,000 以下訂金 $1,000，每多 $5,000 加 $1,000。LINE Pay 掃碼，或銀行匯款後回覆末五碼。</li>
+    <li><b>對帳確認</b>：下一個營業日下午 3 點前確認入帳（星期日順延至星期一）。確認後保留 ${holdDays} 天，到期前一天提醒；查無款項自動取消。</li>
+    <li><b>到店取機</b>：訂購人本人攜帶身分證件到門市核對身分；用「*#06#」核對 IMEI，親自檢查外觀與功能，滿意後簽署商品確認書、支付尾款，貼防拆標籤後交機。</li>
+    <li><b>售後保固</b>：本店保固 30 天，可加購 Repair CARE+ 延長保固。</li></ol></div>`;
+}
+function noteCard() {
+  return `<div class="card"><h2>注意事項</h2><ol>
+    <li>中古商品：照片與檢測報告為驗機當時狀況，外觀以實機為準。</li>
+    <li>只限門市取機，不提供寄送。</li>
+    <li>訂金規則：<ul>
+      <li>到店驗機，機況與說明不符或不滿意：訂金全額退還。</li>
+      <li>付款後、店員確認入帳之前取消：訂金全額退還（尚未為您備貨）。</li>
+      <li>店員確認入帳後（已開始為您備貨），因個人因素取消或超過保留期限未取機：扣除所選禮包原價後，退還其餘訂金。</li></ul></li>
+    <li>防範詐騙：匯款人須為訂購人本人。取機時核對訂購人身分證件，資料不符本店有權暫停交機並退回款項。</li>
+    <li>每台僅一台，以完成對帳的先後為準；價格以訂單送出時為準。</li>
+    <li>本店保固 30 天，限非人為因素之功能故障；摔機、進水、螢幕破裂、自行或非本店拆修者不在保固範圍。</li>
+    <li>防拆標籤破損、撕除或經非本店人員拆修者，不適用本店保固。</li>
+    <li>本店為免用統一發票商家，交易以商品確認書及收據為憑。</li>
+    <li>訂單資料只用於本次交易、對帳與保固服務。</li></ol></div>`;
+}
+function prodCard(it, dep, shop) {
+  return `<div class="card"><div class="prod">${(it.photos || [])[0] ? `<img src="${photo(it.photos[0])}" alt="">` : ''}<div>
+    <b>${esc(it.model)}</b><span class="mute">${esc(it.color || '')}</span><div class="price">${money(it.price)}</div>
+    <div>訂金 <b style="color:var(--red)">${money(dep)}</b>・取機門市：<b>${esc(it.branch)}</b></div>
+    <div class="mute">${esc(shop.addr || '')}　${esc(shop.tel || '')}</div></div></div></div>`;
+}
+
+async function fill() {
+  let d;
+  try { d = await fetch(GAS + '?action=orderGet&t=' + T).then(r => r.json()); } catch { d = { ok: false, error: '網路不穩，請重新整理' }; }
+  if (!d.ok) { m.innerHTML = `<div class="card big"><p style="font-weight:700">${esc(d.error)}</p></div>`; return; }
+  const it = d.item, bs = d.bundles || [];
+  $('title').textContent = '填寫訂單';
+  m.innerHTML = prodCard(it, d.deposit, d.shop) + checkCard(d.check, d.imei) + flowCard(d.holdDays) + noteCard() +
+    (bs.length ? `<div class="card"><h2>🎁 選擇禮包</h2>${bs.map((b, i) => `<label class="opt"><input type="radio" name="bundle" value="${i}"><div><b>${esc(b.name)}　${b.add ? '+' + money(b.add) + '（取機時付）' : '免費'}</b>
+      <span class="mute">${esc(b.desc)}</span>${b.value ? `<div class="mute" style="font-size:12px">禮包原價 ${money(b.value)}（對帳後取消時從訂金扣除）</div>` : ''}</div></label>`).join('')}</div>` : '') +
+    `<div class="card"><h2>付款方式</h2>
+      ${d.pay.lp ? `<label class="opt"><input type="radio" name="method" value="linepay"><div><b>💚 LINE Pay</b><span class="mute">送出後顯示收款碼</span></div></label>` : ''}
+      ${d.pay.bank ? `<label class="opt"><input type="radio" name="method" value="bank"><div><b>🏦 銀行匯款</b><span class="mute">送出後顯示帳號，匯款後回覆末五碼</span></div></label>` : ''}
+      <p class="mute" style="margin-top:8px">請在 <b>${esc(d.deadline)}</b>前付款並回報，逾時保留會自動取消。</p></div>
+    <div class="card"><h2>訂購人資料</h2>
+      <label class="f">姓名（須與身分證件、匯款帳戶相同）</label><input class="t" id="name" autocomplete="name" placeholder="例：王小明">
+      <label class="f">手機號碼</label><input class="t" id="phone" inputmode="tel" autocomplete="tel" placeholder="09xxxxxxxx"></div>
+    <div class="card"><label class="agree"><input type="checkbox" id="agree"><span>我已閱讀並同意以上檢測報告、購買流程、注意事項與訂金規則</span></label><div class="err" id="err"></div></div>`;
+  m.querySelectorAll('.opt input').forEach(x => x.addEventListener('change', () => m.querySelectorAll(`.opt input[name="${x.name}"]`).forEach(y => y.closest('.opt').classList.toggle('on', y.checked))));
+  if (!d.pay.lp !== !d.pay.bank) { const only = m.querySelector('input[name="method"]'); if (only) { only.checked = true; only.closest('.opt').classList.add('on'); } }
+  $('bar').style.display = 'block';
+  $('go').onclick = async () => {
+    const err = $('err'); err.textContent = '';
+    const body = { t: T, name: $('name').value.trim(), phone: $('phone').value.trim(), agree: $('agree').checked,
+      bundle: (m.querySelector('input[name="bundle"]:checked') || {}).value ?? '', method: (m.querySelector('input[name="method"]:checked') || {}).value || '' };
+    if (bs.length && body.bundle === '') return err.textContent = '請選擇禮包';
+    if (!body.method) return err.textContent = '請選擇付款方式';
+    if (!body.name) return err.textContent = '請填寫姓名';
+    if (!/^09\d{8}$/.test(body.phone.replace(/\D/g, ''))) return err.textContent = '請填寫正確的手機號碼';
+    if (!body.agree) return err.textContent = '請勾選「我已閱讀並同意」';
+    $('go').disabled = true; $('go').textContent = '送出中…';
+    let r;
+    try { r = await fetch(GAS + '?action=orderSubmit', { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) }).then(x => x.json()); }
+    catch { r = { ok: false, error: '網路不穩，請再按一次' }; }
+    if (!r.ok) { err.textContent = r.error; $('go').disabled = false; $('go').textContent = '確認送出訂單'; return; }
+    done(r, it);
+  };
+}
+function done(r, it) {
+  $('bar').style.display = 'none'; scrollTo(0, 0);
+  $('title').textContent = '訂單已送出';
+  const lineUrl = r.basicId ? `https://line.me/R/oaMessage/${encodeURIComponent(r.basicId)}/?${encodeURIComponent('訂單 ' + r.orderNo)}` : '';
+  m.innerHTML = `<div class="card big"><div class="ok">✓</div><h2 style="font-size:20px">訂單 ${esc(r.orderNo)}</h2><p>${esc(it.model)}｜訂金 <b style="color:var(--red)">${money(r.deposit)}</b></p>
+    <div class="pay">${r.method === 'bank' && r.bank ? `<b>🏦 匯款資訊</b><br>${esc(r.bank.bank)}<br>帳號：<b style="font-size:18px">${esc(r.bank.acct)}</b>${r.bank.holder ? '<br>戶名：' + esc(r.bank.holder) : ''}
+      <p class="mute" style="margin-top:6px">⚠️ 請用訂購人本人的帳戶匯款。匯好後回到 LINE 回覆「帳號末五碼」。</p>`
+      : `<b>💚 LINE Pay 收款碼</b>${r.lpImg ? `<img src="${esc(r.lpImg)}" alt="LINE Pay 收款碼">` : ''}<p class="mute">付好後回到 LINE 按「✅ 我已付款」。</p>`}
+      <p class="mute">請在 <b>${esc(r.deadline)}</b>前付款並回報，逾時保留會自動取消。</p></div>
+    ${lineUrl ? `<a class="btn" style="margin-top:14px" href="${lineUrl}">📲 回到 LINE 回報付款</a>` : '<p style="margin-top:12px">請回到 LINE，傳「訂單 ' + esc(r.orderNo) + '」給我們，會有專人確認。</p>'}
+    <a class="btn ghost" style="margin-top:10px" href="?k=${esc(r.viewKey)}">📄 查看訂單／下載 PDF</a></div>`;
+}
+async function view() {
+  let d;
+  try { d = await fetch(GAS + '?action=orderView&k=' + K).then(r => r.json()); } catch { d = { ok: false, error: '網路不穩，請重新整理' }; }
+  if (!d.ok) { m.innerHTML = `<div class="card big"><p style="font-weight:700">${esc(d.error)}</p></div>`; return; }
+  const o = d.order;
+  $('title').textContent = '訂單 ' + o.orderNo;
+  m.innerHTML = `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:17px">訂單 ${esc(o.orderNo)}</b><span class="status">${esc(o.status)}</span></div>
+      <table style="margin-top:8px">
+      <tr><td>商品</td><td><b>${esc(o.model)}</b></td></tr><tr><td>售價</td><td>${money(o.price)}</td></tr><tr><td>訂金</td><td>${money(o.deposit)}（${o.method === 'bank' ? '匯款' + (o.last5 ? ' 末碼 ' + esc(o.last5) : '') : 'LINE Pay'}）</td></tr>
+      ${o.bundle ? `<tr><td>禮包</td><td>${esc(o.bundle)}${o.bundleAdd ? '（+' + money(o.bundleAdd) + '）' : ''}<div class="mute">${esc(o.bundleDesc || '')}</div></td></tr>` : ''}
+      <tr><td>尾款（取機時付）</td><td><b>${money(Number(o.price) - Number(o.deposit) + Number(o.bundleAdd || 0))}</b></td></tr>
+      <tr><td>取機門市</td><td>${esc(o.branch)}<div class="mute">${esc(d.shop.addr || '')} ${esc(d.shop.tel || '')}</div></td></tr>
+      <tr><td>訂購人</td><td>${esc(o.name)} ${esc(o.phone)}</td></tr>
+      ${o.holdUntil ? `<tr><td>保留到</td><td><b>${esc(o.holdUntil)}</b> 營業結束</td></tr>` : o.confirmBy ? `<tr><td>對帳期限</td><td>${esc(o.confirmBy)}</td></tr>` : ''}
+      <tr><td>同意條款時間</td><td>${esc(new Date(o.agreedAt).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false }))}</td></tr></table></div>` +
+    checkCard(d.check, o.imei) + flowCard(d.holdDays) + noteCard() +
+    `<div class="card sig"><div>訂購人簽名：</div><div>經手人員：</div></div>
+     <div class="np"><button class="btn dark" onclick="print()">📄 下載 PDF／列印</button><p class="mute" style="text-align:center;margin-top:6px">iPhone：按下後選「分享」→「儲存到檔案」；Android：選「另存為 PDF」</p></div>`;
+}
+if (K) view(); else if (T) fill(); else m.innerHTML = '<div class="card big"><p>請從 LINE 的「💰 我要保留」打開這個頁面</p></div>';
+</script>
+</body>
+</html>

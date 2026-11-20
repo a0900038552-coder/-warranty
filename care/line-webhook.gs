@@ -60,6 +60,7 @@ function doPost(e) {
     if (p.action === 'refundNotice') return json_(refundNotice_(JSON.parse(e.postData.contents || '{}')));
     if (p.action === 'usedPhoto') return json_(usedPhoto_(JSON.parse(e.postData.contents || '{}')));
     if (p.action === 'resv') return json_(resvAction_(JSON.parse(e.postData.contents || '{}')));
+    if (p.action === 'orderSubmit') return json_(orderSubmit_(JSON.parse(e.postData.contents || '{}')));
     if (p.store === 'quote') { handleQuoteWebhook_(p, JSON.parse(e.postData.contents || '{}')); return ok_(); }
     var store = STORES[p.store];
     if (!store) return ok_();
@@ -80,6 +81,8 @@ function doGet(e) {
   if (p.action === 'autoReplySetup') return json_({ url: setupAutoReply() });
   if (p.action === 'depositSetup') return json_({ url: setupDeposit() });
   if (p.action === 'resvReminderSetup') return json_(setupResvReminder());
+  if (p.action === 'orderGet') return json_(orderGet_(String(p.t || '')));
+  if (p.action === 'orderView') return json_(orderView_(String(p.k || '')));
   if (p.action === 'autoReplyTest') {   // 測試：這句話在某間店會不會觸發自動回覆（不會真的傳訊息）
     var st = STORES[p.store] || STORES.nanzi, rows = autoReplyRows_(), q = String(p.q || '').replace(/\s+/g, '').toLowerCase(), hit = -1;
     for (var i = 0; i < rows.length; i++) { var r = rows[i]; if ((r.branch === '全部' || r.branch === st.branch) && r.keys.some(function (k) { return q.indexOf(k) >= 0; })) { hit = i; break; } }
@@ -117,6 +120,8 @@ function handleEvent_(ev, store, token) {
   if (ev.type === 'message' && ev.message.type === 'text') {
     var raw = String(ev.message.text || '');
     if (/^\s*\d{5}\s*$/.test(raw) && depositLast5_(ev, store, token, userId, raw.trim())) return;   // 匯款末五碼
+    var onum = raw.match(/訂單\s*[#＃]?\s*(U\d{7})/i);
+    if (onum) { orderPayInfo_(ev, store, token, userId, onum[1].toUpperCase()); return; }
     if (/^📅\s*預約申請/.test(raw)) { handleBooking_(ev, store, token, userId, raw); return; }
     var acc = raw.match(/^接受改約\s*#?([A-Za-z0-9]+)$/);
     if (acc) { acceptProposal_(ev, store, token, userId, acc[1]); return; }
@@ -432,16 +437,18 @@ function toFields_(obj) {
   return f;
 }
 
+function fromVal_(v) {
+  if ('stringValue' in v) return v.stringValue;
+  if ('integerValue' in v) return Number(v.integerValue);
+  if ('doubleValue' in v) return v.doubleValue;
+  if ('booleanValue' in v) return v.booleanValue;
+  if ('mapValue' in v) return fromFields_(v.mapValue.fields);
+  if ('arrayValue' in v) return (v.arrayValue.values || []).map(fromVal_);
+  return null;
+}
 function fromFields_(fields) {
   var o = {};
-  Object.keys(fields || {}).forEach(function (k) {
-    var v = fields[k];
-    if ('stringValue' in v) o[k] = v.stringValue;
-    else if ('integerValue' in v) o[k] = Number(v.integerValue);
-    else if ('doubleValue' in v) o[k] = v.doubleValue;
-    else if ('booleanValue' in v) o[k] = v.booleanValue;
-    else o[k] = null;
-  });
+  Object.keys(fields || {}).forEach(function (k) { o[k] = fromVal_(fields[k]); });
   return o;
 }
 
@@ -697,7 +704,7 @@ function usedShowcase_(store) {
     var photos = (it.photos || []).filter(String), gallery = 'https://a0900038552-coder.github.io/-warranty/care/photos.html?t=' +
       encodeURIComponent(label + '（' + it.branch + '）$' + it.price) + '&p=' + photos.join(',');
     var foot = [{ type: 'button', style: 'primary', color: '#d71920', height: 'sm',
-      action: { type: 'postback', label: '💰 付訂金保留', data: 'act=dep&id=' + it.id, displayText: '我想付訂金保留：' + label } },
+      action: { type: 'postback', label: '💰 我要保留', data: 'act=dep&id=' + it.id, displayText: '我要保留：' + label } },
       { type: 'button', style: 'link', height: 'sm',
       action: { type: 'message', label: '💬 先問問題', text: '我有興趣：' + label + '（' + it.branch + '）$' + it.price } }];
     if (photos.length > 1) foot.unshift({ type: 'button', style: 'secondary', height: 'sm', action: { type: 'uri', label: '📷 看全部照片（' + photos.length + '）', uri: gallery } });
@@ -744,7 +751,7 @@ function photoUrl_(id, w) { return 'https://lh3.googleusercontent.com/d/' + id +
  * 資料表 reservations：status pending（客人回報已付，待店員對帳）→ paid（店員確認，開始保留 3 天）→ done／cancelled
  */
 var HOLD_DAYS = 3;
-var DEP_RULES = '・到店驗機，機況與說明不符或不滿意：訂金全額退還\n・店員確認收到訂金前取消：全額退還\n・確認後因個人因素取消、或超過保留期限未取機：扣除所選禮包原價（已為您備貨）後，退還其餘訂金';
+var DEP_RULES = '・到店驗機，機況與說明不符或不滿意：訂金全額退還\n・付款後、店員確認入帳之前取消：訂金全額退還（尚未為您備貨）\n・店員確認入帳後（已開始為您備貨），因個人因素取消或超過保留期限未取機：扣除所選禮包原價後，退還其餘訂金';
 function depositOf_(price) { return Math.max(1, Math.ceil(Number(price || 0) / 5000)) * 1000; }   // 5000 以下 1000，每 5000 加 1000
 function setupDeposit() {
   var ss = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('BOOKING_SHEET_ID'));
@@ -838,6 +845,7 @@ function depositPostback_(ev, store, token, userId) {
     var myPending = activeResv_().filter(function (r) { return r.userId === userId && r.status === 'pending'; });
     if (myPending.length) return reply_(ev.replyToken, token, '您目前有一筆訂金（' + myPending[0].model + '）還在等店員對帳，確認後才能再保留其他機子 🙏\n有問題可以直接回覆訊息。');
     var dep = depositOf_(it.price), ps = paySetting_(it.branch);
+    if (q.act === 'dep' && (ps.acct || ps.lpImg)) return orderStart_(ev, store, token, userId, it, dep);
     if (q.act === 'dep') {
       var btns = [];
       if (ps.acct) btns.push({ type: 'button', style: 'primary', color: '#d71920', height: 'sm', action: { type: 'postback', label: '🏦 銀行匯款', data: 'act=pay&m=bank&id=' + it.id, displayText: '我用匯款付訂金' } });
@@ -866,6 +874,7 @@ function depositPostback_(ev, store, token, userId) {
         quickReply: { items: [{ type: 'action', action: { type: 'postback', label: '✅ 我已付款', data: 'act=paid', displayText: '我已用 LINE Pay 付訂金' } }] } }]);
   }
   if (q.act === 'paid') return depositFinish_(ev, store, token, userId, '');
+  if (q.act === 'opaid') return orderReport_(ev, store, token, userId, String(q.r || '').replace(/[^\w-]/g, ''), '');
   if (q.act === 'bdl') {
     var r = getDoc_('reservations/' + String(q.r || '').replace(/[^\w-]/g, ''));
     if (!r || r.userId !== userId) return;
@@ -883,6 +892,7 @@ function watchNote_(userId) {
 }
 function depositLast5_(ev, store, token, userId, five) {
   var d = CacheService.getScriptCache().get('dep_' + userId);
+  if (d && JSON.parse(d).rid) { orderReport_(ev, store, token, userId, JSON.parse(d).rid, five); return true; }
   if (!d || JSON.parse(d).m !== 'bank') return false;
   depositFinish_(ev, store, token, userId, five);
   return true;
@@ -919,6 +929,120 @@ function depositFinish_(ev, store, token, userId, last5) {
         action: { type: 'postback', label: (b.name + (b.add ? ' +' + b.add : '')).slice(0, 20), data: 'act=bdl&r=' + rid + '&b=' + i, displayText: '我選：' + b.name } }; }) } } });
   return reply_(ev.replyToken, token, msgs);
 }
+/* ───────── 線上訂單（booking/order.html）─────────
+ * 現貨卡片「💰 我要保留」→ 回一個訂單連結（ord_<token> 暫存 6 小時，綁 LINE 帳號）
+ * → 訂單頁讀 orderGet（商品、檢測報告、IMEI 遮一半、禮包、付款方式）→ 客人填姓名電話、選禮包付款、勾同意 → orderSubmit 建立 reservations（pending、reported=false）
+ * → 完成頁顯示付款資訊＋「回 LINE 回報」（傳「訂單 Uxxxxxxx」）→ 機器人回付款資訊 → 客人回末五碼／按「我已付款」→ reported=true、通知老闆 → 店員對帳按「收到訂金」
+ */
+var ORDER_URL = 'https://a0900038552-coder.github.io/-warranty/booking/order.html';
+var SHOP_INFO = { '楠梓店': { addr: '高雄市楠梓區楠梓路10號', tel: '0900-038-552' }, '德賢店': { addr: '高雄市楠梓區德賢路258號', tel: '0971-626-883' } };
+function maskImei_(s) { return String(s || '').replace(/\D/g, '').split('').map(function (c, i) { return i % 2 === 0 ? c : '*'; }).join(''); }
+function basicId_(k) {
+  var props = PropertiesService.getScriptProperties(), v = props.getProperty('BASIC_ID_' + k);
+  if (v) return v;
+  var st = STORES[k]; if (!st) return '';
+  var j = lineGet_('https://api.line.me/v2/bot/info', prop_(st.tokenProp));
+  v = (j && j.basicId) || '';
+  if (v) props.setProperty('BASIC_ID_' + k, v);
+  return v;
+}
+function orderStart_(ev, store, token, userId, it, dep) {
+  var t = Utilities.getUuid().replace(/-/g, '');
+  CacheService.getScriptCache().put('ord_' + t, JSON.stringify({ id: it.id, userId: userId, store: storeKey_(store) }), 21600);
+  return reply_(ev.replyToken, token, [{ type: 'flex', altText: '填寫訂單：' + itemTitle_(it), contents: { type: 'bubble', size: 'kilo',
+    body: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [
+      { type: 'text', text: '📝 填寫訂單', weight: 'bold', size: 'lg' },
+      { type: 'text', text: itemTitle_(it), wrap: true, weight: 'bold' },
+      { type: 'text', text: it.branch + '・售價 ' + money_(it.price) + '・訂金 ' + money_(dep), size: 'sm', color: '#6b7280', wrap: true },
+      { type: 'text', text: '訂單裡有完整的檢測報告、購買流程和注意事項，確認後再送出 👍\n（連結 6 小時內有效）', size: 'xs', color: '#6b7280', wrap: true, margin: 'md' }] },
+    footer: { type: 'box', layout: 'vertical', contents: [{ type: 'button', style: 'primary', color: '#d71920', height: 'sm',
+      action: { type: 'uri', label: '📝 填寫訂單', uri: ORDER_URL + '?t=' + t } }] } } }]);
+}
+function orderItem_(id) {
+  var it = showcaseItem_(id); if (!it) return null;
+  var u = getDoc_('used_stock/' + id) || {}, c = u.check || {};
+  var chk = {}; Object.keys(c).forEach(function (k) { if (k !== 'by' && k !== 'seal') chk[k] = c[k]; });
+  return { it: it, check: chk, imei: maskImei_(u.imei), inspector: String(c.by || '').split('@')[0] ? '已驗機' : '' };
+}
+function orderGet_(t) {
+  var d = CacheService.getScriptCache().get('ord_' + t.replace(/\W/g, ''));
+  if (!d) return { ok: false, error: '這個訂單連結已過期，請回 LINE 再按一次「💰 我要保留」' };
+  d = JSON.parse(d);
+  var o = orderItem_(d.id);
+  if (!o) return { ok: false, error: '不好意思，這台剛剛已經賣出或下架了' };
+  if (activeResv_().some(function (r) { return r.usedId === d.id; })) return { ok: false, error: '不好意思，這台剛剛已經被其他客人保留了' };
+  var ps = paySetting_(o.it.branch);
+  return { ok: true, item: o.it, check: o.check, imei: o.imei, deposit: depositOf_(o.it.price), holdDays: HOLD_DAYS,
+    bundles: bundles_(), pay: { bank: !!ps.acct, lp: !!ps.lpImg }, deadline: deadlineLabel_(confirmBy_()), shop: SHOP_INFO[o.it.branch] || {} };
+}
+function orderSubmit_(req) {
+  var c = CacheService.getScriptCache(), t = String(req.t || '').replace(/\W/g, ''), d = c.get('ord_' + t);
+  if (!d) return { ok: false, error: '這個訂單連結已過期，請回 LINE 再按一次「💰 我要保留」' };
+  d = JSON.parse(d);
+  var name = String(req.name || '').trim().slice(0, 30), phone = String(req.phone || '').replace(/\D/g, '');
+  if (!req.agree) return { ok: false, error: '請勾選「我已閱讀並同意」' };
+  if (!name) return { ok: false, error: '請填寫訂購人姓名' };
+  if (!/^09\d{8}$/.test(phone)) return { ok: false, error: '請填寫正確的手機號碼（09 開頭 10 碼）' };
+  var o = orderItem_(d.id); if (!o) return { ok: false, error: '不好意思，這台剛剛已經賣出或下架了' };
+  var act = activeResv_();
+  if (act.some(function (r) { return r.usedId === d.id; })) return { ok: false, error: '不好意思，這台剛剛已經被其他客人保留了' };
+  if (act.some(function (r) { return r.userId === d.userId && r.status === 'pending'; })) return { ok: false, error: '您已經有一筆訂單還在等對帳，確認後才能再訂其他機子' };
+  var ps = paySetting_(o.it.branch), method = req.method === 'linepay' ? 'linepay' : 'bank';
+  if ((method === 'bank' && !ps.acct) || (method === 'linepay' && !ps.lpImg)) return { ok: false, error: '這個付款方式目前無法使用，請選另一種' };
+  var bs = bundles_(), b = req.bundle != null && req.bundle !== '' ? bs[Number(req.bundle)] : null;
+  if (bs.length && !b) return { ok: false, error: '請選擇禮包' };
+  var now = new Date(), dep = depositOf_(o.it.price), orderNo = 'U' + Utilities.formatDate(now, 'Asia/Taipei', 'MMdd') + ('00' + Math.floor(Math.random() * 1000)).slice(-3);
+  var viewKey = Utilities.getUuid().replace(/-/g, '').slice(0, 24), st = STORES[d.store] || storeByBranch_(o.it.branch);
+  var rid = createDoc_('reservations', { usedId: o.it.id, model: itemTitle_(o.it), branch: o.it.branch, price: Number(o.it.price), deposit: dep,
+    method: method, last5: '', reported: false, userId: d.userId, store: d.store, name: name, phone: phone, lineName: lineName_(d.userId, prop_(st.tokenProp)),
+    bundle: b ? b.name : '', bundleDesc: b ? b.desc : '', bundleAdd: b ? b.add : 0, bundleValue: b ? b.value : 0,
+    orderNo: orderNo, viewKey: viewKey, imeiMasked: o.imei, agreedAt: now.toISOString(), status: 'pending', holdUntil: '', confirmBy: confirmBy_(now),
+    createdAt: now.toISOString(), updatedAt: now.toISOString() });
+  c.remove('ord_' + t);
+  var w = getDoc_('watchlist/' + phone) || (d.userId ? getDoc_('watchlist/L_' + d.userId) : null);
+  notifyOwner_('📝 新訂單 ' + orderNo + '（等客人付款）\n' + itemTitle_(o.it) + '（' + o.it.branch + '）售價 ' + money_(o.it.price) + '\n訂金 ' + money_(dep) + '・' + (method === 'bank' ? '匯款' : 'LINE Pay') +
+    '\n訂購人：' + name + ' ' + phone + (b ? '\n禮包：' + b.name : '') + (w ? '\n⚠️ 這位客人在「注意客人」有紀錄' : '') + '\n對帳期限：' + deadlineLabel_(confirmBy_(now)));
+  return { ok: true, orderNo: orderNo, viewKey: viewKey, id: rid, deposit: dep, method: method, deadline: deadlineLabel_(confirmBy_(now)),
+    bank: method === 'bank' ? { bank: ps.bank, acct: ps.acct, holder: ps.holder } : null, lpImg: method === 'linepay' ? ps.lpImg : '', basicId: basicId_(d.store) };
+}
+function orderView_(k) {
+  k = k.replace(/\W/g, ''); if (k.length < 16) return { ok: false, error: '找不到訂單' };
+  var r = fsQuery_('reservations', { fieldFilter: { field: { fieldPath: 'viewKey' }, op: 'EQUAL', value: { stringValue: k } } }, 1)[0];
+  if (!r) return { ok: false, error: '找不到訂單' };
+  var u = getDoc_('used_stock/' + r.usedId) || {}, c = u.check || {}, chk = {};
+  Object.keys(c).forEach(function (x) { if (x !== 'by' && x !== 'seal') chk[x] = c[x]; });
+  var ST = { pending: r.reported ? '已回報付款，等待對帳' : '等待付款', paid: '已確認訂金，保留中', done: '已取機', cancelled: '已取消', expired: '逾期未對帳，已取消' };
+  return { ok: true, order: { orderNo: r.orderNo, model: r.model, branch: r.branch, price: r.price, deposit: r.deposit, method: r.method, last5: r.last5 ? '*' + String(r.last5).slice(-3) : '',
+    name: r.name, phone: String(r.phone || '').replace(/^(\d{4})\d{3}/, '$1***'), bundle: r.bundle, bundleDesc: r.bundleDesc, bundleAdd: r.bundleAdd, bundleValue: r.bundleValue,
+    imei: r.imeiMasked || '', status: ST[r.status] || r.status, holdUntil: r.holdUntil || '', confirmBy: r.confirmBy ? deadlineLabel_(r.confirmBy) : '', agreedAt: r.agreedAt || r.createdAt },
+    check: chk, holdDays: HOLD_DAYS, shop: SHOP_INFO[r.branch] || {} };
+}
+function orderPayInfo_(ev, store, token, userId, orderNo) {
+  var r = fsQuery_('reservations', { fieldFilter: { field: { fieldPath: 'orderNo' }, op: 'EQUAL', value: { stringValue: orderNo } } }, 3)
+    .filter(function (x) { return x.userId === userId; })[0];
+  if (!r) return reply_(ev.replyToken, token, '找不到這張訂單，請確認訂單編號，或直接回覆訊息讓店員協助 🙏');
+  var view = ORDER_URL + '?k=' + r.viewKey;
+  if (r.status !== 'pending') return reply_(ev.replyToken, token, '訂單 ' + orderNo + '：' + ({ paid: '已確認訂金，保留到 ' + r.holdUntil, done: '已取機', cancelled: '已取消', expired: '逾期未對帳，已取消' }[r.status] || r.status) + '\n訂單內容：' + view);
+  if (r.reported) return reply_(ev.replyToken, token, '訂單 ' + orderNo + ' 已收到您的付款回報，店員會在 ' + deadlineLabel_(r.confirmBy) + '前完成對帳 🙏\n訂單內容：' + view);
+  CacheService.getScriptCache().put('dep_' + userId, JSON.stringify({ rid: r._id }), 21600);
+  var ps = paySetting_(r.branch), head = '訂單 ' + orderNo + '｜' + r.model + '\n訂金 ' + money_(r.deposit) + '，請在 ' + deadlineLabel_(r.confirmBy) + '前付款。\n';
+  if (r.method === 'bank') return reply_(ev.replyToken, token, head + '\n🏦 ' + ps.bank + '\n帳號：' + ps.acct + (ps.holder ? '\n戶名：' + ps.holder : '') +
+    '\n\n⚠️ 請用「訂購人本人」的帳戶匯款。\n匯好後，直接在這裡回覆您的「帳號末五碼」（5 個數字），會有專人確認 👍\n\n訂單內容／下載 PDF：' + view);
+  return reply_(ev.replyToken, token, [{ type: 'text', text: head + '\n請用 LINE Pay 掃下面的收款碼，付好後按「✅ 我已付款」，會有專人確認 👍\n\n訂單內容／下載 PDF：' + view },
+    { type: 'image', originalContentUrl: ps.lpImg, previewImageUrl: ps.lpImg,
+      quickReply: { items: [{ type: 'action', action: { type: 'postback', label: '✅ 我已付款', data: 'act=opaid&r=' + r._id, displayText: '我已用 LINE Pay 付訂金' } }] } }]);
+}
+function orderReport_(ev, store, token, userId, rid, last5) {
+  var r = getDoc_('reservations/' + rid);
+  if (!r || r.userId !== userId) return reply_(ev.replyToken, token, '找不到您的訂單，請直接回覆訊息讓店員協助 🙏');
+  if (r.status !== 'pending') return reply_(ev.replyToken, token, '這張訂單目前狀態：' + r.status + '，有問題請直接回覆訊息 🙏');
+  patchDoc_('reservations/' + rid, { reported: true, last5: last5 || r.last5 || '', reportedAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+  CacheService.getScriptCache().remove('dep_' + userId);
+  notifyOwner_('💰 客人回報已付款（待對帳）\n訂單 ' + r.orderNo + '｜' + r.model + '（' + r.branch + '）\n訂金 ' + money_(r.deposit) + '・' + (r.method === 'bank' ? '匯款 末五碼 ' + last5 : 'LINE Pay') +
+    '\n訂購人：' + r.name + ' ' + r.phone + '\n⚠️ 請看網銀／LINE Pay 實際入帳，匯款人姓名要是「' + r.name + '」\n期限：' + deadlineLabel_(r.confirmBy));
+  return reply_(ev.replyToken, token, '收到！訂單 ' + r.orderNo + ' 已登記您的付款' + (last5 ? '（末五碼 ' + last5 + '）' : '') + '。\n店員會在 ' + deadlineLabel_(r.confirmBy) + '前完成對帳並通知您 🙏\n（查不到款項的話，保留會自動取消）');
+}
+
 // 員工在庫存頁按：paid（收到訂金，開始保留）／cancel（取消保留，可選擇通知客人）／done（已取機）
 function resvAction_(req) {
   var who = UrlFetchApp.fetch('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' + FIREBASE_API_KEY, {
