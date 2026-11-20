@@ -166,7 +166,13 @@ async function start() {
   if (!unsubD) unsubD = onSnapshot(collection(db, 'used_stock'), s => { s.docChanges().forEach(c => { if (c.type === 'removed') delete details[c.doc.id]; }); s.docs.forEach(d => details[d.id] = { ...d.data(), ...(pend[d.id] || {}) }); safeRender(); });
   // LINE 客人付訂金保留的機子（待對帳／保留中），資料很少，即時同步
   if (!unsubR) unsubR = onSnapshot(query(collection(db, 'reservations'), where('status', 'in', ['pending', 'paid'])), s => {
-    resv = {}; s.docs.forEach(d => { const r = { id: d.id, ...d.data() }; resv[r.usedId] = r; }); safeRender();
+    resv = {}; const now = Date.now();
+    s.docs.forEach(d => {
+      const r = { id: d.id, ...d.data() };
+      // 待對帳超過期限（下一個營業日下午 3 點）→ 自動取消，機子重新上架
+      if (r.status === 'pending' && r.confirmBy && Date.parse(r.confirmBy) < now) { setDoc(doc(db, 'reservations', r.id), { status: 'expired', updatedAt: new Date().toISOString() }, { merge: true }).catch(() => {}); return; }
+      resv[r.usedId] = r;
+    }); safeRender();
   });
   await loadLedger();
 }
@@ -282,6 +288,9 @@ function render() {
         <div><label>電池健康度（%）</label><input data-k="battery" data-id="${b.id}" value="${esc(d.battery)}" inputmode="numeric" placeholder="例：86"></div>
         <div><label>其他配件</label><input data-k="acc" data-id="${b.id}" value="${esc(d.acc)}" placeholder="例：原廠殼、發票"></div>
         <div style="grid-column:1/-1"><label>照片（給 LINE 客人看・紅框＝封面，最多 ${MAX_PH} 張）</label><div class="ph">${(d.photos || []).map((pid, i) => `<figure class="${i ? '' : 'cover'}"><img src="${thumb(pid)}" alt="照片${i + 1}" loading="lazy"><figcaption>${i ? `<button data-phcover="${b.id}" data-i="${i}" title="設為封面">★ 封面</button>` : '<span style="color:#d71920;font-weight:700">封面</span>'}<button data-phdel="${b.id}" data-i="${i}" title="刪除">✕</button></figcaption></figure>`).join('')}${(d.photos || []).length < MAX_PH ? `<label class="add">${uploading[b.id] ? '上傳中…' : '📷<span>加照片</span>'}<input type="file" accept="image/*" multiple hidden data-phadd="${b.id}"${uploading[b.id] ? ' disabled' : ''}></label>` : ''}</div></div>
+        <div style="grid-column:1/-1;display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:8px 10px">
+          <b>📋 商品確認書</b>${d.check ? `<span class="mute">已驗機 ${esc(d.check.date || '')}・${esc(String(d.check.by || '').split('@')[0])}${d.check.seal ? '・標籤 ' + esc(d.check.seal) : ''}</span>` : '<span class="mute" style="color:var(--red)">還沒驗機</span>'}
+          <button class="more" data-chk="${b.id}">${d.check ? '✏️ 修改驗機表' : '📋 填驗機表'}</button>${d.check ? `<button class="more" data-cprint="${b.id}">🖨 列印商品確認書</button>` : ''}</div>
         <div><label>LINE 官方帳號</label><label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" data-k="lineHide" data-id="${b.id}"${d.lineHide ? ' checked' : ''}> 不要給客人看到這台</label></div>
         <div><label>狀態</label><select data-k="status" data-id="${b.id}">${Object.entries(STATUS).map(([k, l]) => `<option value="${k}"${(d.status || 'auto') === k ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
         <div style="grid-column:1/-1"><label>備註（賣家、收購原因、預計售價…）</label><textarea data-k="note" data-id="${b.id}">${esc(d.note)}</textarea></div>
@@ -360,7 +369,7 @@ function resvHtml(r, today) {
   const bundle = r.bundle ? `🎁 ${esc(r.bundle)}${num(r.bundleAdd) ? `（+${money(num(r.bundleAdd))}）` : ''}${num(r.bundleValue) ? `<span class="mute">・原價 ${money(num(r.bundleValue))}，對帳後要備貨</span>` : ''}` : (r.source === 'store' ? '' : '<span class="mute">還沒選禮包</span>');
   const head = r.status === 'paid'
     ? `<span class="pill" style="background:#fde2e2;color:var(--red)">🔒 已訂・保留到 ${esc((r.holdUntil || '').slice(5).replace('-', '/'))}</span>${(r.holdUntil || '') < today ? ' <b style="color:var(--red)">已過期</b>' : ''}`
-    : `<span class="pill" style="background:#fff4d6;color:#a16207">💰 待對帳</span>`;
+    : `<span class="pill" style="background:#fff4d6;color:#a16207">💰 待對帳</span>${r.confirmBy ? ` <b style="color:#a16207">${new Date(r.confirmBy).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: 'numeric', hour12: false, timeZone: 'Asia/Taipei' })} 前</b>` : ''}<br><span style="color:var(--red)">⚠️ 看網銀實際入帳，匯款人姓名要跟客人一致</span>`;
   const btns = (r.status === 'pending' ? `<button class="more" data-rv="${r.id}" data-op="paid" style="color:var(--green);font-weight:700">✅ 收到訂金</button>` : '')
     + (r.status === 'paid' ? `<button class="more" data-ext="${r.id}">⏩ 延長</button>` : '')
     + `<button class="more" data-rv="${r.id}" data-op="cancel" style="color:var(--red)">取消保留</button>`;
@@ -465,6 +474,95 @@ document.addEventListener('click', async e => {
     try { await setDoc(doc(db, 'reservations', r.id), { holdUntil: ymd(d), holdDays: (num(r.holdDays) || 0) + o.days, reminded: false, updatedAt: new Date().toISOString(), updatedBy: auth.currentUser.email }, { merge: true }); toast('已延長到 ' + ymd(d)); }
     catch (er) { toast('⚠️ ' + er.message); }
   }
+});
+
+// ───── 驗機表／商品確認書（一人檢測；列印給客人簽名，貼防拆標籤）─────
+const SHOP = { '楠梓店': { addr: '高雄市楠梓區楠梓路10號', tel: '0900-038-552' }, '德賢店': { addr: '高雄市楠梓區德賢路258號', tel: '0971-626-883' } };
+const OK3 = ['正常', '異常', '無此功能'];
+const CHECK_ITEMS = [
+  ['ver', '銷售國家版本', 'text', '台灣公司貨'], ['carrier', '是否有電信業者鎖定', ['否', '是'], '否'], ['account', 'iCloud／Google 帳號已退出', ['是', '否'], '是'],
+  ['orig', '原廠保固到期時間', 'text', '已過保'], ['look', '螢幕外觀', 'text', '螢幕無痕'], ['screen', '螢幕功能狀況', 'text', '螢幕顯示完好'],
+  ['touch', '觸控狀況', 'text', '螢幕觸控全區域正常'], ['grade', '機身新舊程度', ['（99新）幾乎全新或僅拆封未啟用，些許細微痕跡', '（95新）輕微使用痕跡', '（9成新）明顯使用痕跡、小刮傷', '（85新）多處刮傷或小碰傷', '（8成新以下）明顯碰傷、掉漆'], ''],
+  ['bio', '臉部／指紋辨識', OK3, '正常'], ['cell', '4G／5G 網路', OK3, '正常'], ['wifi', 'Wi-Fi', OK3, '正常'], ['bt', '藍牙', OK3, '正常'],
+  ['fcam', '前鏡頭拍照', OK3, '正常'], ['rcam', '後鏡頭拍照', OK3, '正常'], ['btn', '機身所有按鈕', OK3, '正常'], ['spk', '喇叭和聽筒', OK3, '正常'],
+  ['mic', '麥克風錄音', OK3, '正常'], ['port', '充電口', OK3, '正常'], ['qi', '無線充電', OK3, '正常'], ['nfc', 'NFC', OK3, '正常'],
+  ['prox', '距離感應', OK3, '正常'], ['light', '自動亮度感應', OK3, '正常']];
+function checkForm(b, d) {
+  const c = d.check || {};
+  return new Promise(resolve => {
+    const w = document.createElement('div'); w.id = 'holdBox';
+    const fld = ([k, label, type, def]) => {
+      const v = c[k] ?? def;
+      const input = Array.isArray(type) ? `<select name="${k}">${type.map(o => `<option${o === v ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select>` : `<input name="${k}" value="${esc(v)}">`;
+      return `<div><label>${esc(label)}</label>${input}</div>`;
+    };
+    w.innerHTML = `<form style="max-width:640px;max-height:90vh;overflow:auto"><b style="font-size:17px">📋 驗機表：${esc(buyModel(b))}</b>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div><label>IMEI（列印時完整顯示，給客人核對）</label><input name="imei" value="${esc(d.imei || '')}" inputmode="numeric"></div>
+        <div><label>電池健康度（%）</label><input name="battery" value="${esc(c.battery ?? d.battery ?? '')}" inputmode="numeric"></div>
+        ${CHECK_ITEMS.map(fld).join('')}
+        <div><label>防拆標籤編號</label><input name="seal" value="${esc(c.seal || '')}" placeholder="貼標籤後填"></div>
+        <div><label>本店保固天數</label><input name="days" value="${esc(c.days ?? '')}" inputmode="numeric" placeholder="例：30"></div>
+        <div style="grid-column:1/-1"><label>其他說明（會印在確認書上）</label><input name="memo" value="${esc(c.memo || '')}" placeholder="例：背蓋右下角小刮傷"></div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="hbtn" data-x style="color:var(--ink);border-color:#d1d5db;background:#fff">取消</button>
+        <button class="hbtn" style="background:var(--ink);color:#fff;border-color:var(--ink);font-weight:700">儲存驗機表</button></div></form>`;
+    document.body.appendChild(w);
+    const f = w.querySelector('form');
+    w.querySelector('[data-x]').onclick = () => { w.remove(); resolve(null); };
+    f.onsubmit = e => {
+      e.preventDefault();
+      const o = { date: ymd(new Date()), by: auth.currentUser.email };
+      ['battery', 'seal', 'days', 'memo', ...CHECK_ITEMS.map(x => x[0])].forEach(k => o[k] = f[k].value.trim());
+      w.remove(); resolve({ check: o, imei: f.imei.value.trim() });
+    };
+  });
+}
+function printConfirm(b, d) {
+  const c = d.check || {}, sh = SHOP[b.branch] || {}, price = num(d.price);
+  const rows = [['IMEI', d.imei || '（未填）'], ['電池健康度', c.battery ? c.battery + '%' : ''], ...CHECK_ITEMS.map(([k, l]) => [l, c[k] || ''])];
+  const html = `<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="utf-8"><title>商品確認書 ${esc(buyModel(b))}</title><style>
+    *{box-sizing:border-box}body{font-family:"Noto Sans TC","Microsoft JhengHei",sans-serif;color:#111;margin:0;padding:18px;font-size:12.5px}
+    h1{font-size:20px;margin:0}h1 small{font-size:12px;font-weight:400;color:#555;margin-left:8px}.hd{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #d71920;padding-bottom:6px;margin-bottom:10px}
+    table{width:100%;border-collapse:collapse}td,th{border:1px solid #bbb;padding:4px 7px;text-align:left;vertical-align:top}th{background:#f3f4f6;width:30%;font-weight:600}
+    .two{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}.box{border:1px solid #bbb;padding:8px 10px;margin-top:10px;line-height:1.7}
+    .sig{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:18px}.sig div{border-top:1px solid #111;padding-top:4px}
+    @page{size:A4;margin:12mm}@media print{.np{display:none}}</style></head><body>
+    <div class="np" style="margin-bottom:10px"><button onclick="print()" style="padding:8px 16px;font-size:15px">🖨 列印／存成 PDF</button></div>
+    <div class="hd"><div><h1>商品確認書<small>中古機・現場驗機</small></h1>復原者手機維修 ${esc(b.branch)}｜${esc(sh.addr || '')}｜${esc(sh.tel || '')}</div><div>確認日期：＿＿＿年＿＿月＿＿日</div></div>
+    <table><tr><th>機型</th><td>${esc(buyModel(b))}${d.color ? '　' + esc(d.color) : ''}</td></tr><tr><th>售價</th><td>${price != null ? '$' + price.toLocaleString('en-US') : ''}</td></tr>
+      <tr><th>驗機日期／人員</th><td>${esc(c.date || '')}　${esc(String(c.by || '').split('@')[0])}</td></tr><tr><th>防拆標籤編號</th><td>${esc(c.seal || '')}</td></tr></table>
+    <h3 style="margin:12px 0 6px;font-size:14px">檢測報告</h3>
+    <div class="two"><table>${rows.slice(0, Math.ceil(rows.length / 2)).map(([l, v]) => `<tr><th>${esc(l)}</th><td>${esc(v)}</td></tr>`).join('')}</table>
+      <table>${rows.slice(Math.ceil(rows.length / 2)).map(([l, v]) => `<tr><th>${esc(l)}</th><td>${esc(v)}</td></tr>`).join('')}</table></div>
+    ${c.memo ? `<div class="box"><b>其他說明：</b>${esc(c.memo)}</div>` : ''}
+    <div class="box"><b>注意事項</b><br>
+      1. 本機為中古商品，外觀、功能已依上表現場檢測，並經買方親自確認。<br>
+      2. 本店保固：自交機日起 ${esc(c.days || '＿＿')} 天，限非人為因素之功能故障；摔機、進水、螢幕破裂、自行或非本店拆修者不在保固範圍。<br>
+      3. 本機已貼本店防拆保固標籤（編號 ${esc(c.seal || '＿＿＿＿')}）。標籤破損、撕除或經非本店人員拆修者，不適用本店保固；但不影響本店依法應負之瑕疵擔保責任。<br>
+      4. 請於交機時以「*#06#」核對 IMEI 與本確認書相符。<br>
+      5. 交機前請確認帳號、密碼已由您本人設定；本店不保留任何您的個人資料。</div>
+    <div class="box">買方已於門市親自檢視本機，確認外觀與功能與上表相符，並了解上述注意事項。</div>
+    <div class="sig"><div>買方簽名：</div><div>經手人員：</div></div>
+    <div class="sig"><div>買方電話：</div><div>日期：</div></div>
+    </body></html>`;
+  const win = window.open('', '_blank');
+  if (!win) return toast('⚠️ 瀏覽器擋住了新視窗，請允許彈出視窗後再按一次');
+  win.document.write(html); win.document.close();
+}
+document.addEventListener('click', async e => {
+  const k = e.target.closest('[data-chk]');
+  if (k) {
+    const b = allBuys().find(x => x.id === k.dataset.chk); if (!b) return;
+    const o = await checkForm(b, details[b.id] || {}); if (!o) return;
+    save(b.id, 'check', o.check);
+    if (o.imei !== ((details[b.id] || {}).imei || '')) save(b.id, 'imei', o.imei);
+    if (o.check.battery && o.check.battery !== ((details[b.id] || {}).battery || '')) save(b.id, 'battery', o.check.battery);
+    render(); toast('驗機表已儲存');
+    return;
+  }
+  const pr = e.target.closest('[data-cprint]');
+  if (pr) { const b = allBuys().find(x => x.id === pr.dataset.cprint); if (b) printConfirm(b, details[b.id] || {}); }
 });
 
 // ───── 照片：手機上按「加照片」可直接拍照；先在手機裡縮小（長邊 1280、約 200KB）再傳到老闆的 Google 雲端硬碟 ─────

@@ -84,7 +84,7 @@
 id = `{來源key}_{hash}`；`src`, `site`, `model`, `modelKey`, `item`, `part`, `price`, `run`, `updated`。來源見 GAS `WEB_SOURCES`。
 
 ### `used_stock` — 中古機庫存
-`date`, `branch`, `model`, `cost`(收購成本), `imei`, `cond`, `price`, `minPrice`, `note`, `manual`, `color`, `battery`, `acc`, `waterproof`, `box`, `cable`, `status`, `lineHide`(不在 LINE 上架), `photos`(照片的 Google 雲端硬碟檔案 ID 陣列，第一張是封面), `createdAt/By`, `updatedAt/By`。
+`date`, `branch`, `model`, `cost`(收購成本), `imei`, `cond`, `price`, `minPrice`, `note`, `manual`, `color`, `battery`, `acc`, `waterproof`, `box`, `cable`, `status`, `check`(驗機表：ver, carrier, account, orig, look, screen, touch, grade, bio, cell, wifi, bt, fcam, rcam, btn, spk, mic, port, qi, nfc, prox, light, battery, seal 防拆標籤編號, days 本店保固天數, memo, date, by), `lineHide`(不在 LINE 上架), `photos`(照片的 Google 雲端硬碟檔案 ID 陣列，第一張是封面), `createdAt/By`, `updatedAt/By`。
 
 ### `watchlist` — 注意客人（經常預約不來、保留逾期未取、付款／糾紛等）
 文件 ID＝09 開頭 10 碼電話；只有 LINE、沒有電話的用 `L_<LINE userId>`（查詢只要 getDoc 1 筆）。
@@ -92,7 +92,7 @@ id = `{來源key}_{hash}`；`src`, `site`, `model`, `modelKey`, `item`, `part`, 
 來源：`watch.html` 手動記；保固系統預約按「未到」自動記；庫存頁取消保留時可選擇記「保留逾期未取」。共用模組 `care/watch.js`（`checkPhone` 每支電話 30 分鐘內只讀 1 次）。只寫客觀事實（個資，只給店內同事看）。
 
 ### `reservations` — LINE 中古機訂金保留
-`usedId`(庫存那台的 id), `model`, `branch`, `price`, `deposit`(5000 以下 1000，每 5000 加 1000), `method`(bank／linepay), `last5`(客人匯款帳號末五碼), `userId`(LINE), `store`(nanzi／dexian，哪個官方帳號), `name`(LINE 名稱), `bundle`, `bundleDesc`, `bundleAdd`(禮包加價), `bundleValue`(禮包原價，客人個人因素取消／逾期時從訂金扣), `refund`(取消時應退金額), `cancelReason`, `reminded`(到期前一天已提醒；延長時改回 false), `status`(pending 待對帳 → paid 保留中 → done 已取機／cancelled), `holdUntil`(YYYY-MM-DD), `source`(store＝店員現場保留，沒有 userId；沒有這欄＝LINE), `phone`, `note`, `holdDays`(3/7/14/21/30，可延長累加), `method` 現場另有 cash／pxpay／none, `createdAt`, `paidAt/By`, `cancelledAt/By`, `doneAt/By`, `updatedAt/By`。
+`usedId`(庫存那台的 id), `model`, `branch`, `price`, `deposit`(5000 以下 1000，每 5000 加 1000), `method`(bank／linepay), `last5`(客人匯款帳號末五碼), `userId`(LINE), `store`(nanzi／dexian，哪個官方帳號), `name`(LINE 名稱), `bundle`, `bundleDesc`, `bundleAdd`(禮包加價), `bundleValue`(禮包原價，客人個人因素取消／逾期時從訂金扣), `refund`(取消時應退金額), `cancelReason`, `reminded`(到期前一天已提醒；延長時改回 false), `status`(pending 待對帳 → paid 保留中 → done 已取機／cancelled／expired 逾期未對帳自動取消), `confirmBy`(待對帳期限：下一個營業日 15:00，週日順延週一), `holdUntil`(YYYY-MM-DD), `source`(store＝店員現場保留，沒有 userId；沒有這欄＝LINE), `phone`, `note`, `holdDays`(3/7/14/21/30，可延長累加), `method` 現場另有 cash／pxpay／none, `createdAt`, `paidAt/By`, `cancelledAt/By`, `doneAt/By`, `updatedAt/By`。
 LINE 的由 GAS 建立、現場的由 `stock.html`「🔒 現場保留」直接建立（status 直接是 paid）；店員在 `stock.html` 按「收到訂金／取消保留」（經 GAS `?action=resv` 通知客人）；每日登打賣出後庫存頁自動改 done。有 pending／paid 的機子不會出現在 LINE 現貨。
 
 ### `settings/used_showcase` — LINE 中古機現貨清單

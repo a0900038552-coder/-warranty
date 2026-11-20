@@ -795,10 +795,25 @@ function fsQuery_(col, where, max) {
   return JSON.parse(res.getContentText()).filter(function (x) { return x.document; })
     .map(function (x) { var o = fromFields_(x.document.fields); o._id = x.document.name.split('/').pop(); return o; });
 }
-function activeResv_() {
-  return fsQuery_('reservations', { fieldFilter: { field: { fieldPath: 'status' }, op: 'IN',
-    value: { arrayValue: { values: [{ stringValue: 'pending' }, { stringValue: 'paid' }] } } } });
+// 待對帳的期限：下一個營業日下午 3 點（星期日公休 → 順延到星期一）。過了還沒按「收到訂金」就自動取消、機子重新上架
+function confirmBy_(from) {
+  var d = new Date((from || new Date()).getTime() + 864e5);
+  if (Utilities.formatDate(d, 'Asia/Taipei', 'u') === '7') d = new Date(d.getTime() + 864e5);
+  return Utilities.formatDate(d, 'Asia/Taipei', 'yyyy-MM-dd') + 'T15:00:00+08:00';
 }
+function activeResv_() {
+  var now = Date.now();
+  return fsQuery_('reservations', { fieldFilter: { field: { fieldPath: 'status' }, op: 'IN',
+    value: { arrayValue: { values: [{ stringValue: 'pending' }, { stringValue: 'paid' }] } } } })
+    .filter(function (r) {
+      if (r.status === 'pending' && r.confirmBy && Date.parse(r.confirmBy) < now) {   // 逾期沒對帳 → 自動取消
+        patchDoc_('reservations/' + r._id, { status: 'expired', updatedAt: new Date().toISOString() });
+        return false;
+      }
+      return true;
+    });
+}
+function deadlineLabel_(iso) { var d = new Date(iso); return Utilities.formatDate(d, 'Asia/Taipei', 'M/d') + '（' + WD_ZH[Number(Utilities.formatDate(d, 'Asia/Taipei', 'u')) % 7] + '）下午 3 點'; }
 function showcaseItem_(id) {
   var doc = getDoc_('settings/used_showcase'), items = [];
   try { items = JSON.parse((doc && doc.json) || '[]'); } catch (e) {}
@@ -820,6 +835,8 @@ function depositPostback_(ev, store, token, userId) {
     var mine = null, taken = activeResv_().filter(function (r) { if (r.usedId === q.id && r.userId === userId) mine = r; return r.usedId === q.id; });
     if (mine) return reply_(ev.replyToken, token, '這台已經幫您登記保留了 👍\n' + (mine.status === 'paid' ? '保留到 ' + mine.holdUntil + '。' : '店員確認收到訂金後會通知您。'));
     if (taken.length) return reply_(ev.replyToken, token, '不好意思，這台剛剛已經有其他客人付訂金保留了 🙏\n可以再傳「有什麼二手機」看看其他現貨。');
+    var myPending = activeResv_().filter(function (r) { return r.userId === userId && r.status === 'pending'; });
+    if (myPending.length) return reply_(ev.replyToken, token, '您目前有一筆訂金（' + myPending[0].model + '）還在等店員對帳，確認後才能再保留其他機子 🙏\n有問題可以直接回覆訊息。');
     var dep = depositOf_(it.price), ps = paySetting_(it.branch);
     if (q.act === 'dep') {
       var btns = [];
@@ -885,12 +902,12 @@ function depositFinish_(ev, store, token, userId, last5) {
   var now = new Date().toISOString(), name = lineName_(userId, token), dep = depositOf_(it.price);
   var rid = createDoc_('reservations', { usedId: it.id, model: itemTitle_(it), branch: it.branch, price: Number(it.price), deposit: dep,
     method: d.m === 'bank' ? 'bank' : 'linepay', last5: last5 || '', userId: userId, store: d.store || storeKey_(store), name: name,
-    bundle: '', bundleDesc: '', bundleAdd: 0, bundleValue: 0, status: 'pending', holdUntil: '', createdAt: now, updatedAt: now });
+    bundle: '', bundleDesc: '', bundleAdd: 0, bundleValue: 0, status: 'pending', holdUntil: '', confirmBy: confirmBy_(), createdAt: now, updatedAt: now });
   c.remove('dep_' + userId);
-  notifyOwner_('💰 新的中古機訂金（待對帳）\n' + itemTitle_(it) + '（' + it.branch + '）售價 ' + money_(it.price) + '\n訂金 ' + money_(dep) + '・' +
+  notifyOwner_('💰 新的中古機訂金（待對帳）\n請在 ' + deadlineLabel_(confirmBy_()) + '前對帳，逾時自動取消\n⚠️ 對帳請看網銀實際入帳，並確認匯款人姓名跟客人一致\n' + itemTitle_(it) + '（' + it.branch + '）售價 ' + money_(it.price) + '\n訂金 ' + money_(dep) + '・' +
     (d.m === 'bank' ? '匯款 末五碼 ' + last5 : 'LINE Pay') + '\n客人：' + (name || '（LINE 名稱讀不到）') + watchNote_(userId) + '\n對完帳請到「中古機庫存」按「✅ 收到訂金」。');
   var bs = bundles_();
-  var msgs = [{ type: 'text', text: '收到！已幫您登記「' + itemTitle_(it) + '」，店員對完帳會通知您 🙏' }];
+  var msgs = [{ type: 'text', text: '收到！已幫您登記「' + itemTitle_(it) + '」。\n店員會在 ' + deadlineLabel_(confirmBy_()) + '前完成對帳並通知您 🙏\n（若到時查不到款項，這次保留會自動取消）' }];
   if (bs.length) msgs.push({ type: 'flex', altText: '🎁 選擇您的禮包', contents: { type: 'bubble', size: 'mega',
     body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [{ type: 'text', text: '🎁 感謝訂購！選一個禮包', weight: 'bold', size: 'lg' }]
       .concat(bs.map(function (b) { return { type: 'box', layout: 'vertical', spacing: 'xs', contents: [
