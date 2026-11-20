@@ -19,7 +19,7 @@ main{padding:12px;max-width:640px;margin:0 auto}
 .card h2::before{content:"";width:4px;height:16px;background:var(--red);border-radius:2px}
 .prod{display:flex;gap:12px;align-items:flex-start}
 .prod img{width:96px;height:96px;object-fit:cover;border-radius:10px;background:#eee;flex:none}
-.prod b{font-size:17px;display:block}
+.prod .nm{font-size:17px;display:block;font-weight:800}
 .price{font-size:22px;font-weight:900;color:var(--red)}
 .mute{color:var(--mute);font-size:13px}
 table{width:100%;border-collapse:collapse;font-size:14px}
@@ -104,8 +104,8 @@ function noteCard() {
 }
 function prodCard(it, dep, shop) {
   return `<div class="card"><div class="prod">${(it.photos || [])[0] ? `<img src="${photo(it.photos[0])}" alt="">` : ''}<div>
-    <b>${esc(it.model)}</b><span class="mute">${esc(it.color || '')}</span><div class="price">${money(it.price)}</div>
-    <div>訂金 <b style="color:var(--red)">${money(dep)}</b>・取機門市：<b>${esc(it.branch)}</b></div>
+    <span class="nm">${esc(it.model)}</span><span class="mute">${esc(it.color || '')}</span><div class="price">${money(it.price)}</div>
+    <div>訂金 <b style="color:var(--red)">${money(dep)}</b></div><div>取機門市：<b>${esc(it.branch)}</b></div>
     <div class="mute">${esc(shop.addr || '')}　${esc(shop.tel || '')}</div></div></div></div>`;
 }
 
@@ -128,7 +128,7 @@ async function fill() {
     <div class="card"><label class="agree"><input type="checkbox" id="agree"><span>我已閱讀並同意以上檢測報告、購買流程、注意事項與訂金規則</span></label><div class="err" id="err"></div></div>`;
   m.querySelectorAll('.opt input').forEach(x => x.addEventListener('change', () => m.querySelectorAll(`.opt input[name="${x.name}"]`).forEach(y => y.closest('.opt').classList.toggle('on', y.checked))));
   if (!d.pay.lp !== !d.pay.bank) { const only = m.querySelector('input[name="method"]'); if (only) { only.checked = true; only.closest('.opt').classList.add('on'); } }
-  $('bar').style.display = 'block';
+  $('bar').style.display = 'block'; $('go').disabled = false; $('go').textContent = '確認送出訂單';
   $('go').onclick = async () => {
     const err = $('err'); err.textContent = '';
     const body = { t: T, name: $('name').value.trim(), phone: $('phone').value.trim(), agree: $('agree').checked,
