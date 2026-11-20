@@ -254,7 +254,7 @@ function render() {
   const priced = inStock.filter(x => num(x.d.price) != null);
   const avgDays = inStock.length ? Math.round(inStock.reduce((a, x) => a + days(x.b.date, today), 0) / inStock.length) : 0;
   $('tiles').innerHTML = `
-    <div><small>在庫台數</small><b>${inStock.length}</b>${Object.keys(resv).length ? `<span class="mute" style="font-size:12px">　其中 ${Object.keys(resv).length} 台已被 LINE 客人訂</span>` : ''}</div>
+    <div><small>在庫台數</small><b>${inStock.length}</b>${Object.keys(resv).length ? `<span class="mute" style="font-size:12px">　其中 ${Object.keys(resv).length} 台保留中</span>` : ''}</div>
     <div><small>在庫成本合計</small><b>${money(inStock.reduce((a, x) => a + Math.abs(num(x.b.amount) ?? 0), 0))}</b></div>
     <div><small>在庫預估毛利<br><span style="font-weight:400">依建議售價・${priced.length}/${inStock.length} 台已定價</span></small><b style="color:var(--green)">${money(priced.reduce((a, x) => a + num(x.d.price) - Math.abs(num(x.b.amount) ?? 0), 0))}</b></div>
     <div><small>平均庫存天數</small><b>${avgDays} 天</b></div>
@@ -270,7 +270,7 @@ function render() {
       const p = (num(mm.sale.amount) ?? 0) - cost;
       st = `<span class="pill sold">已售 ${esc((mm.sale.date || '').slice(5).replace('-', '/'))}</span> <span class="mute">${money(num(mm.sale.amount))}・毛利 <b style="color:${p >= 0 ? 'var(--green)' : 'var(--red)'}">${money(p)}</b></span>${mm.costDiff ? '<br><span class="warn">⚠️ 售出那列的成本跟收購金額不同，請確認</span>' : ''}`;
     } else if (mm.status === 'sold') st = `<span class="pill sold">已售出</span>`;
-    else if (mm.status === 'stock') st = `<span class="pill ${age > 30 ? 'old' : 'stock'}">在庫 ${age} 天</span><br><span class="mute" style="font-size:12px">${d.lineHide ? '🚫 LINE 不上架' : num(d.price) != null ? '📢 LINE 上架中' : '填建議售價才會上 LINE'}</span>`;
+    else if (mm.status === 'stock') st = `<span class="pill ${age > 30 ? 'old' : 'stock'}">在庫 ${age} 天</span><br><span class="mute" style="font-size:12px">${resv[b.id] ? '🔒 保留中，LINE 暫時下架' : d.lineHide ? '🚫 LINE 不上架' : num(d.price) != null ? '📢 LINE 上架中' : '填建議售價才會上 LINE'}</span>`;
     else st = `<span class="pill other">${STATUS[mm.status] || mm.status}</span>`;
     const rv = resv[b.id];
     if (rv && mm.status === 'sold') autoDone(rv);
