@@ -79,6 +79,7 @@ function doGet(e) {
   if (p.action === 'blocks' && STORES[p.store]) return json_({ blocks: blocksFor_(STORES[p.store].branch) });
   if (p.action === 'autoReplySetup') return json_({ url: setupAutoReply() });
   if (p.action === 'depositSetup') return json_({ url: setupDeposit() });
+  if (p.action === 'resvReminderSetup') return json_(setupResvReminder());
   if (p.action === 'autoReplyTest') {   // 測試：這句話在某間店會不會觸發自動回覆（不會真的傳訊息）
     var st = STORES[p.store] || STORES.nanzi, rows = autoReplyRows_(), q = String(p.q || '').replace(/\s+/g, '').toLowerCase(), hit = -1;
     for (var i = 0; i < rows.length; i++) { var r = rows[i]; if ((r.branch === '全部' || r.branch === st.branch) && r.keys.some(function (k) { return q.indexOf(k) >= 0; })) { hit = i; break; } }
@@ -743,6 +744,7 @@ function photoUrl_(id, w) { return 'https://lh3.googleusercontent.com/d/' + id +
  * 資料表 reservations：status pending（客人回報已付，待店員對帳）→ paid（店員確認，開始保留 3 天）→ done／cancelled
  */
 var HOLD_DAYS = 3;
+var DEP_RULES = '・到店驗機，機況與說明不符或不滿意：訂金全額退還\n・店員確認收到訂金前取消：全額退還\n・確認後因個人因素取消、或超過保留期限未取機：扣除所選禮包原價（已為您備貨）後，退還其餘訂金';
 function depositOf_(price) { return Math.max(1, Math.ceil(Number(price || 0) / 5000)) * 1000; }   // 5000 以下 1000，每 5000 加 1000
 function setupDeposit() {
   var ss = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('BOOKING_SHEET_ID'));
@@ -754,9 +756,13 @@ function setupDeposit() {
   }
   if (!ss.getSheetByName('訂金禮包')) {
     var b = ss.insertSheet('訂金禮包');
-    b.getRange(1, 1, 3, 4).setValues([['啟用（Ｖ＝開）', '名稱（按鈕上的字，20 字內）', '內容（給客人看的說明）', '加價（0＝免費）'],
-      ['Ｖ', '0元加購 基本禮包', '（暫定）基本款玻璃保護貼＋透明保護殼', 0], ['Ｖ', '升級套餐', '（暫定）進階保護貼＋防摔保護殼', 500]]);
-    b.getRange(1, 1, 1, 4).setFontWeight('bold').setBackground('#1e2027').setFontColor('#ffffff'); b.setFrozenRows(1); b.setColumnWidths(1, 4, 220);
+    b.getRange(1, 1, 3, 5).setValues([['啟用（Ｖ＝開）', '名稱（按鈕上的字，20 字內）', '內容（給客人看的說明）', '加價（0＝免費）', '禮包原價（取消時從訂金扣除）'],
+      ['Ｖ', '0元加購 基本禮包', '（暫定）基本款玻璃保護貼＋透明保護殼', 0, 0], ['Ｖ', '升級套餐', '（暫定）進階保護貼＋防摔保護殼', 500, 0]]);
+    b.getRange(1, 1, 1, 5).setFontWeight('bold').setBackground('#1e2027').setFontColor('#ffffff'); b.setFrozenRows(1); b.setColumnWidths(1, 4, 220);
+  }
+  var bs = ss.getSheetByName('訂金禮包');
+  if (bs.getRange(1, 5).getValue() === '') {   // 第 5 欄：禮包原價（客人取消時從訂金扣除）
+    bs.getRange(1, 5).setValue('禮包原價（取消時從訂金扣除）').setFontWeight('bold').setBackground('#1e2027').setFontColor('#ffffff'); bs.setColumnWidth(5, 220);
   }
   CacheService.getScriptCache().removeAll(['pay_settings', 'dep_bundles']);
   return ss.getUrl();
@@ -780,7 +786,8 @@ function paySetting_(branch) {
 }
 function bundles_() {
   return sheetRows_('訂金禮包', 'dep_bundles').filter(function (x) { return String(x[0]).trim() && String(x[1]).trim(); })
-    .map(function (x) { return { name: String(x[1]).trim().slice(0, 20), desc: String(x[2] || '').trim(), add: Number(String(x[3] || '0').replace(/[^\d]/g, '')) || 0 }; });
+    .map(function (x) { return { name: String(x[1]).trim().slice(0, 20), desc: String(x[2] || '').trim(), add: Number(String(x[3] || '0').replace(/[^\d]/g, '')) || 0,
+      value: Number(String(x[4] || '0').replace(/[^\d]/g, '')) || 0 }; });
 }
 function fsQuery_(col, where, max) {
   var res = fsFetch_(fsBase_() + ':runQuery', { method: 'post', payload: JSON.stringify({ structuredQuery: { from: [{ collectionId: col }], where: where, limit: max || 100 } }) });
@@ -826,7 +833,10 @@ function depositPostback_(ev, store, token, userId) {
           { type: 'text', text: it.branch + '・售價 ' + money_(it.price), size: 'sm', color: '#6b7280' },
           { type: 'separator', margin: 'md' },
           { type: 'text', text: '訂金 ' + money_(dep), size: 'xl', weight: 'bold', color: '#d71920', margin: 'md' },
-          { type: 'text', text: '店員確認收到訂金後，幫您保留 ' + HOLD_DAYS + ' 天；訂金會折抵售價。\n付完還有 🎁 禮包可以選！', size: 'sm', wrap: true, color: '#374151' }
+          { type: 'text', text: '店員確認收到訂金後，幫您保留 ' + HOLD_DAYS + ' 天；訂金會折抵售價。\n付完還有 🎁 禮包可以選！', size: 'sm', wrap: true, color: '#374151' },
+          { type: 'separator', margin: 'md' },
+          { type: 'text', text: '📋 訂金規則', size: 'sm', weight: 'bold', margin: 'md' },
+          { type: 'text', text: DEP_RULES, size: 'xs', wrap: true, color: '#6b7280' }
         ] }, footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: btns } } }]);
     }
     // q.act === 'pay'：先記在暫存，客人回報付款後才建立保留
@@ -844,7 +854,7 @@ function depositPostback_(ev, store, token, userId) {
     if (!r || r.userId !== userId) return;
     if (r.bundle) return reply_(ev.replyToken, token, '您已經選好禮包囉：' + r.bundle + ' 👍');
     var b = bundles_()[Number(q.b)]; if (!b) return;
-    patchDoc_('reservations/' + q.r, { bundle: b.name, bundleDesc: b.desc, bundleAdd: b.add, updatedAt: new Date().toISOString() });
+    patchDoc_('reservations/' + q.r, { bundle: b.name, bundleDesc: b.desc, bundleAdd: b.add, bundleValue: b.value, updatedAt: new Date().toISOString() });
     return reply_(ev.replyToken, token, '🎁 已幫您登記：' + b.name + (b.add ? '（取機時加 ' + money_(b.add) + '）' : '（免費）') +
       '\n\n店員對完帳會再通知您，保留 ' + HOLD_DAYS + ' 天，取機時禮包一起幫您準備好 😊');
   }
@@ -875,7 +885,7 @@ function depositFinish_(ev, store, token, userId, last5) {
   var now = new Date().toISOString(), name = lineName_(userId, token), dep = depositOf_(it.price);
   var rid = createDoc_('reservations', { usedId: it.id, model: itemTitle_(it), branch: it.branch, price: Number(it.price), deposit: dep,
     method: d.m === 'bank' ? 'bank' : 'linepay', last5: last5 || '', userId: userId, store: d.store || storeKey_(store), name: name,
-    bundle: '', bundleDesc: '', bundleAdd: 0, status: 'pending', holdUntil: '', createdAt: now, updatedAt: now });
+    bundle: '', bundleDesc: '', bundleAdd: 0, bundleValue: 0, status: 'pending', holdUntil: '', createdAt: now, updatedAt: now });
   c.remove('dep_' + userId);
   notifyOwner_('💰 新的中古機訂金（待對帳）\n' + itemTitle_(it) + '（' + it.branch + '）售價 ' + money_(it.price) + '\n訂金 ' + money_(dep) + '・' +
     (d.m === 'bank' ? '匯款 末五碼 ' + last5 : 'LINE Pay') + '\n客人：' + (name || '（LINE 名稱讀不到）') + watchNote_(userId) + '\n對完帳請到「中古機庫存」按「✅ 收到訂金」。');
@@ -885,7 +895,8 @@ function depositFinish_(ev, store, token, userId, last5) {
     body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [{ type: 'text', text: '🎁 感謝訂購！選一個禮包', weight: 'bold', size: 'lg' }]
       .concat(bs.map(function (b) { return { type: 'box', layout: 'vertical', spacing: 'xs', contents: [
         { type: 'text', text: b.name + '　' + (b.add ? '+' + money_(b.add) : '免費'), weight: 'bold', color: b.add ? '#d71920' : '#16181d', wrap: true },
-        { type: 'text', text: b.desc || ' ', size: 'sm', color: '#6b7280', wrap: true }] }; })) },
+        { type: 'text', text: b.desc || ' ', size: 'sm', color: '#6b7280', wrap: true }].concat(b.value ? [{ type: 'text', text: '禮包原價 ' + money_(b.value) + '（取消時從訂金扣除）', size: 'xs', color: '#9ca3af', wrap: true }] : []) }; }))
+      .concat([{ type: 'text', text: '選好後我們會為您備貨。若對帳後因個人因素取消或逾期未取，會扣除禮包原價後退還其餘訂金。', size: 'xs', color: '#9ca3af', wrap: true }]) },
     footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: bs.map(function (b, i) {
       return { type: 'button', style: i ? 'primary' : 'secondary', color: i ? '#d71920' : undefined, height: 'sm',
         action: { type: 'postback', label: (b.name + (b.add ? ' +' + b.add : '')).slice(0, 20), data: 'act=bdl&r=' + rid + '&b=' + i, displayText: '我選：' + b.name } }; }) } } });
@@ -906,10 +917,15 @@ function resvAction_(req) {
     upd.status = 'paid'; upd.paidAt = now.toISOString(); upd.paidBy = staff; upd.holdUntil = Utilities.formatDate(until, 'Asia/Taipei', 'yyyy-MM-dd');
     text = '✅ 已收到您的訂金 ' + money_(r.deposit) + '\n\n「' + r.model + '」幫您保留到 ' + lbl + ' 營業結束，請到「' + r.branch + '」取機（' + (STORE_ADDR[r.branch] || '') + '）。\n' +
       '尾款 ' + money_(Number(r.price) - Number(r.deposit) + Number(r.bundleAdd || 0)) + (r.bundle ? '（含禮包「' + r.bundle + '」' + (Number(r.bundleAdd) ? ' +' + money_(r.bundleAdd) : '') + '）' : '') +
-      '\n營業時間：週一～週六 11:00–21:00（週日公休）';
+      '\n營業時間：週一～週六 11:00–21:00（週日公休）' +
+      (Number(r.bundleValue) ? '\n\n※ 禮包已為您備貨；若因個人因素取消或逾期未取，會扣除禮包原價 ' + money_(r.bundleValue) + ' 後退還其餘訂金。' : '');
   } else if (req.op === 'cancel') {
     upd.status = 'cancelled'; upd.cancelledAt = now.toISOString(); upd.cancelledBy = staff;
-    if (req.notify) text = '您好，「' + r.model + '」的保留已取消。\n已付的訂金店員會再跟您聯繫退還方式，造成不便很抱歉 🙏';
+    var refund = req.refund != null && req.refund !== '' ? Number(req.refund) : Number(r.deposit || 0);
+    upd.refund = refund; upd.cancelReason = String(req.reason || '').slice(0, 40);
+    if (req.notify) text = '您好，「' + r.model + '」的保留已取消。\n' + (refund > 0 ? '應退還訂金 ' + money_(refund) +
+      (refund < Number(r.deposit || 0) ? '（訂金 ' + money_(r.deposit) + '，扣除禮包「' + (r.bundle || '') + '」原價 ' + money_(Number(r.deposit) - refund) + '）' : '') +
+      '，店員會再跟您聯繫退款方式。' : '依訂金規則，這次訂金無法退還。') + '\n有任何問題歡迎直接回覆訊息 🙏';
   } else if (req.op === 'done') { upd.status = 'done'; upd.doneAt = now.toISOString(); }
   else return { ok: false, error: '不明的動作' };
   patchDoc_('reservations/' + id, upd);
@@ -923,6 +939,25 @@ function resvAction_(req) {
   return { ok: true, sent: sent };
 }
 
+// 保留到期前一天提醒客人（每天中午 12 點跑一次；只提醒 LINE 客人，現場保留的沒有 LINE）
+function setupResvReminder() {
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'resvReminder') ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('resvReminder').timeBased().everyDays(1).atHour(12).inTimezone('Asia/Taipei').create();
+  return { ok: true, at: '每天 12:00' };
+}
+function resvReminder() {
+  var tmr = Utilities.formatDate(new Date(Date.now() + 864e5), 'Asia/Taipei', 'yyyy-MM-dd'), sent = 0;
+  activeResv_().forEach(function (r) {
+    if (r.status !== 'paid' || r.holdUntil !== tmr || r.reminded || !r.userId) return;
+    var st = STORES[r.store] || storeByBranch_(r.branch);
+    var text = '⏰ 提醒您：「' + r.model + '」幫您保留到明天（' + tmr.slice(5).replace('-', '/') + '）營業結束。\n請到「' + r.branch + '」取機（' + (STORE_ADDR[r.branch] || '') + '），營業時間 11:00–21:00。\n\n' +
+      '需要延後的話直接回覆訊息跟我們說 🙏' + (Number(r.bundleValue) ? '\n※ 逾期未取會扣除禮包原價 ' + money_(r.bundleValue) + ' 後退還其餘訂金。' : '');
+    var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', { method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      headers: { Authorization: 'Bearer ' + prop_(st.tokenProp) }, payload: JSON.stringify({ to: r.userId, messages: [{ type: 'text', text: text }] }) });
+    if (res.getResponseCode() === 200) { patchDoc_('reservations/' + r._id, { reminded: true }); sent++; }
+  });
+  return sent;
+}
 function usedInterest_(ev, store, token, raw) {
   var m = raw.match(/（(楠梓店|德賢店)）/), at = m ? m[1] : store.branch;
   var k = at === '德賢店' ? 'dexian' : 'nanzi', phone = String(STORE_PHONE[k] || '').replace(/[^\d+]/g, '');

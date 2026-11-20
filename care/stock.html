@@ -357,7 +357,7 @@ document.addEventListener('click', async e => {
 // ───── LINE 訂金：店員對帳後按「收到訂金」→ 機器人通知客人保留到哪天；取消可選擇要不要通知 ─────
 function resvHtml(r, today) {
   const pay = r.method === 'bank' ? `匯款${r.last5 ? ` 末五碼 <b>${esc(r.last5)}</b>` : ''}` : (PAY[r.method] || 'LINE Pay');
-  const bundle = r.bundle ? `🎁 ${esc(r.bundle)}${num(r.bundleAdd) ? `（+${money(num(r.bundleAdd))}）` : ''}` : (r.source === 'store' ? '' : '<span class="mute">還沒選禮包</span>');
+  const bundle = r.bundle ? `🎁 ${esc(r.bundle)}${num(r.bundleAdd) ? `（+${money(num(r.bundleAdd))}）` : ''}${num(r.bundleValue) ? `<span class="mute">・原價 ${money(num(r.bundleValue))}，對帳後要備貨</span>` : ''}` : (r.source === 'store' ? '' : '<span class="mute">還沒選禮包</span>');
   const head = r.status === 'paid'
     ? `<span class="pill" style="background:#fde2e2;color:var(--red)">🔒 已訂・保留到 ${esc((r.holdUntil || '').slice(5).replace('-', '/'))}</span>${(r.holdUntil || '') < today ? ' <b style="color:var(--red)">已過期</b>' : ''}`
     : `<span class="pill" style="background:#fff4d6;color:#a16207">💰 待對帳</span>`;
@@ -375,29 +375,37 @@ function autoDone(r) {   // 已經在每日登打賣出 → 訂金單自動結�
 document.addEventListener('click', async e => {
   const bt = e.target.closest('[data-rv]'); if (!bt) return;
   const r = Object.values(resv).find(x => x.id === bt.dataset.rv); if (!r) return;
-  let notify = false;
+  let notify = false, refund = null, reason = '';
   if (bt.dataset.op === 'paid') {
     if (!(await ask(`確認已收到「${r.model}」的訂金 ${money(num(r.deposit))}？\n（${r.method === 'bank' ? '匯款末五碼 ' + r.last5 : 'LINE Pay'}）\n\n按確定後，機器人會用 LINE 通知客人保留 3 天。`, { ok: '收到了，通知客人' }))) return;
   } else {
     if (!(await ask(`取消「${r.model}」的保留？\n取消後這台會重新出現在 LINE 現貨。`, { ok: '取消保留' }))) return;
+    // 退多少：對帳前全退；對帳後看原因 — 店的問題／驗機不符全退，客人個人因素或逾期扣禮包原價
+    const dep = num(r.deposit) || 0, bv = num(r.bundleValue) || 0;
+    let personal = false;
+    if (r.status === 'paid') personal = await ask(`取消的原因是？\n\n・客人個人因素、或超過保留期限沒來${bv ? `\n　→ 扣禮包「${r.bundle}」原價 ${money(bv)}，退 ${money(Math.max(0, dep - bv))}` : '（沒有選禮包，訂金全退）'}\n・驗機不符、店的問題\n　→ 訂金全退 ${money(dep)}`,
+      { ok: '客人個人因素／逾期', cancel: '驗機不符／店的問題', danger: false });
+    refund = personal ? Math.max(0, dep - bv) : dep;
+    reason = r.status !== 'paid' ? '對帳前取消' : personal ? '客人個人因素／逾期' : '驗機不符／店的問題';
     const key = r.phone || (r.userId ? 'L_' + r.userId : '');
-    if (key && await ask(`客人是「逾期沒來取、也沒聯絡」嗎？\n要記一筆到「⚠️ 注意客人」嗎？`, { ok: '記一筆', cancel: '不用（客人有講／其他原因）', danger: false })) {
-      addWatch(db, auth.currentUser.email, { phone: key, name: r.name || '', branch: r.branch, type: '保留逾期未取', note: `${r.model}，保留到 ${r.holdUntil || '—'}，訂金 ${money(num(r.deposit) || 0)}`, ref: 'resv:' + r.id })
+    if (personal && key && await ask(`客人是「逾期沒來取、也沒聯絡」嗎？\n要記一筆到「⚠️ 注意客人」嗎？`, { ok: '記一筆', cancel: '不用（客人有講）', danger: false })) {
+      addWatch(db, auth.currentUser.email, { phone: key, name: r.name || '', branch: r.branch, type: '保留逾期未取', note: `${r.model}，保留到 ${r.holdUntil || '—'}，訂金 ${money(dep)}${bv ? `，扣禮包 ${money(bv)}` : ''}`, ref: 'resv:' + r.id })
         .then(() => toast('已記到「注意客人」')).catch(er => toast('⚠️ ' + er.message));
     }
     if (r.source === 'store') {   // 現場保留：沒有 LINE，直接改資料
-      try { await setDoc(doc(db, 'reservations', r.id), { status: 'cancelled', cancelledAt: new Date().toISOString(), cancelledBy: auth.currentUser.email, updatedAt: new Date().toISOString() }, { merge: true }); toast('已取消保留'); }
+      try { await setDoc(doc(db, 'reservations', r.id), { status: 'cancelled', refund, cancelReason: reason, cancelledAt: new Date().toISOString(), cancelledBy: auth.currentUser.email, updatedAt: new Date().toISOString() }, { merge: true });
+        await ask(`已取消保留。\n\n應退客人：${money(refund)}${refund < dep ? `（訂金 ${money(dep)} − 禮包原價 ${money(bv)}）` : ''}`, { ok: '知道了', cancel: '關閉', danger: false }); }
       catch (er) { toast('⚠️ ' + er.message); }
       return;
     }
-    notify = await ask('要用 LINE 通知客人「保留已取消，店員會聯繫退訂金」嗎？', { ok: '通知客人', cancel: '不用通知', danger: false });
+    notify = await ask(`應退客人：${money(refund)}${refund < dep ? `（訂金 ${money(dep)} − 禮包原價 ${money(bv)}）` : ''}\n\n要用 LINE 通知客人「保留已取消、退款金額」嗎？`, { ok: '通知客人', cancel: '不用通知', danger: false });
   }
   bt.disabled = true; bt.textContent = '處理中…';
   try {
     const res = await fetch(GAS_URL + '?action=resv', { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ idToken: await auth.currentUser.getIdToken(), id: r.id, op: bt.dataset.op, notify }) });
+      body: JSON.stringify({ idToken: await auth.currentUser.getIdToken(), id: r.id, op: bt.dataset.op, notify, refund, reason }) });
     const j = await res.json(); if (!j.ok) throw new Error(j.error);
-    toast(bt.dataset.op === 'paid' ? (j.sent ? '已通知客人 ✅' : '已確認，但 LINE 通知沒送出（可能是本月訊息額度用完）') : (notify ? (j.sent ? '已取消並通知客人' : '已取消，通知沒送出') : '已取消保留'));
+    toast(bt.dataset.op === 'paid' ? (j.sent ? '已通知客人 ✅' : '已確認，但 LINE 通知沒送出（可能是本月訊息額度用完）') : (notify ? (j.sent ? `已取消並通知客人（應退 ${money(refund)}）` : `已取消，通知沒送出（應退 ${money(refund)}）`) : `已取消保留（應退 ${money(refund)}）`));
   } catch (er) { toast('⚠️ ' + er.message); bt.disabled = false; }
 });
 
@@ -454,7 +462,7 @@ document.addEventListener('click', async e => {
     const o = await holdForm({ title: '⏩ 延長保留：' + r.model, sub: `目前保留到 ${r.holdUntil || '—'}，從 ${from} 再往後加`, ext: true, from });
     if (!o) return;
     const d = new Date(from + 'T00:00:00'); d.setDate(d.getDate() + o.days);
-    try { await setDoc(doc(db, 'reservations', r.id), { holdUntil: ymd(d), holdDays: (num(r.holdDays) || 0) + o.days, updatedAt: new Date().toISOString(), updatedBy: auth.currentUser.email }, { merge: true }); toast('已延長到 ' + ymd(d)); }
+    try { await setDoc(doc(db, 'reservations', r.id), { holdUntil: ymd(d), holdDays: (num(r.holdDays) || 0) + o.days, reminded: false, updatedAt: new Date().toISOString(), updatedBy: auth.currentUser.email }, { merge: true }); toast('已延長到 ' + ymd(d)); }
     catch (er) { toast('⚠️ ' + er.message); }
   }
 });

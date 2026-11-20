@@ -52,3 +52,5 @@ Google Apps Script，一支程式處理所有 LINE 事件。**改完要手動貼
 - 建立後通知老闆（報價機器人私訊），並跳出試算表「訂金禮包」的選項（postback `act=bdl`）。
 - 店員在庫存頁按「✅ 收到訂金」→ `?action=resv` op=paid → 保留 `HOLD_DAYS`(3) 天並 Push 通知客人（用客人原本那間官方帳號，會用到每月訊息額度）。
 - 試算表分頁第一次建立：開 `<exec>?action=depositSetup`。帳號、收款碼都放試算表，不寫進程式（repo 公開）。
+- 訂金規則（`DEP_RULES`，付款前顯示）：驗機不符全退；對帳前取消全退；對帳後客人個人因素或逾期 → 扣禮包原價（試算表「訂金禮包」第 5 欄）後退餘額。店員在庫存頁取消時選原因，系統算應退金額並可 LINE 通知。
+- 到期前一天提醒：`resvReminder`（每天 12:00，觸發條件用 `<exec>?action=resvReminderSetup` 建立），只推給 LINE 客人，推過標 `reminded`。
