@@ -59,6 +59,7 @@ function doPost(e) {
     if (p.action === 'login') return json_(loginAlert_(JSON.parse(e.postData.contents || '{}')));
     if (p.action === 'refundNotice') return json_(refundNotice_(JSON.parse(e.postData.contents || '{}')));
     if (p.action === 'usedPhoto') return json_(usedPhoto_(JSON.parse(e.postData.contents || '{}')));
+    if (p.action === 'resv') return json_(resvAction_(JSON.parse(e.postData.contents || '{}')));
     if (p.store === 'quote') { handleQuoteWebhook_(p, JSON.parse(e.postData.contents || '{}')); return ok_(); }
     var store = STORES[p.store];
     if (!store) return ok_();
@@ -77,6 +78,7 @@ function doGet(e) {
   var p = (e && e.parameter) || {};
   if (p.action === 'blocks' && STORES[p.store]) return json_({ blocks: blocksFor_(STORES[p.store].branch) });
   if (p.action === 'autoReplySetup') return json_({ url: setupAutoReply() });
+  if (p.action === 'depositSetup') return json_({ url: setupDeposit() });
   if (p.action === 'autoReplyTest') {   // 測試：這句話在某間店會不會觸發自動回覆（不會真的傳訊息）
     var st = STORES[p.store] || STORES.nanzi, rows = autoReplyRows_(), q = String(p.q || '').replace(/\s+/g, '').toLowerCase(), hit = -1;
     for (var i = 0; i < rows.length; i++) { var r = rows[i]; if ((r.branch === '全部' || r.branch === st.branch) && r.keys.some(function (k) { return q.indexOf(k) >= 0; })) { hit = i; break; } }
@@ -109,8 +111,11 @@ function handleEvent_(ev, store, token) {
     return;
   }
 
+  if (ev.type === 'postback') { depositPostback_(ev, store, token, userId); return; }
+
   if (ev.type === 'message' && ev.message.type === 'text') {
     var raw = String(ev.message.text || '');
+    if (/^\s*\d{5}\s*$/.test(raw) && depositLast5_(ev, store, token, userId, raw.trim())) return;   // 匯款末五碼
     if (/^📅\s*預約申請/.test(raw)) { handleBooking_(ev, store, token, userId, raw); return; }
     var acc = raw.match(/^接受改約\s*#?([A-Za-z0-9]+)$/);
     if (acc) { acceptProposal_(ev, store, token, userId, acc[1]); return; }
@@ -666,6 +671,8 @@ function isUsedShopIntent_(raw) {
 function usedShowcase_(store) {
   var doc = getDoc_('settings/used_showcase'), items = [];
   try { items = JSON.parse((doc && doc.json) || '[]'); } catch (e) {}
+  var held = {}; activeResv_().forEach(function (r) { held[r.usedId] = 1; });
+  items = items.filter(function (it) { return !held[it.id]; });   // 已經有人付訂金保留的不顯示
   var k = storeKey_(store), phone = String(STORE_PHONE[k] || '').replace(/[^\d+]/g, '');
   var quick = { items: [{ type: 'action', action: { type: 'uri', label: '📞 打電話給' + store.branch, uri: 'tel:' + phone } }] };
   if (!items.length) return [{ type: 'text', quickReply: quick,
@@ -689,7 +696,9 @@ function usedShowcase_(store) {
     var photos = (it.photos || []).filter(String), gallery = 'https://a0900038552-coder.github.io/-warranty/care/photos.html?t=' +
       encodeURIComponent(label + '（' + it.branch + '）$' + it.price) + '&p=' + photos.join(',');
     var foot = [{ type: 'button', style: 'primary', color: '#d71920', height: 'sm',
-      action: { type: 'message', label: '💬 我有興趣', text: '我有興趣：' + label + '（' + it.branch + '）$' + it.price } }];
+      action: { type: 'postback', label: '💰 付訂金保留', data: 'act=dep&id=' + it.id, displayText: '我想付訂金保留：' + label } },
+      { type: 'button', style: 'link', height: 'sm',
+      action: { type: 'message', label: '💬 先問問題', text: '我有興趣：' + label + '（' + it.branch + '）$' + it.price } }];
     if (photos.length > 1) foot.unshift({ type: 'button', style: 'secondary', height: 'sm', action: { type: 'uri', label: '📷 看全部照片（' + photos.length + '）', uri: gallery } });
     var bubble = { type: 'bubble', size: 'kilo',
       body: { type: 'box', layout: 'vertical', spacing: 'xs', contents: body },
@@ -727,6 +736,187 @@ function usedPhoto_(req) {
   return { ok: true, id: file.getId() };
 }
 function photoUrl_(id, w) { return 'https://lh3.googleusercontent.com/d/' + id + '=w' + (w || 1000); }
+
+/* ───────── 中古機訂金：付訂金保留 → 選匯款／LINE Pay → 回報 → 禮包 → 店員確認 ─────────
+ * 試算表「付款設定」：分店｜銀行｜帳號｜戶名｜LINE Pay 收款碼圖片網址（老闆自己填，不寫在程式裡）
+ * 試算表「訂金禮包」：啟用｜名稱｜內容｜加價（0＝免費）
+ * 資料表 reservations：status pending（客人回報已付，待店員對帳）→ paid（店員確認，開始保留 3 天）→ done／cancelled
+ */
+var HOLD_DAYS = 3;
+function depositOf_(price) { return Math.max(1, Math.ceil(Number(price || 0) / 5000)) * 1000; }   // 5000 以下 1000，每 5000 加 1000
+function setupDeposit() {
+  var ss = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('BOOKING_SHEET_ID'));
+  if (!ss.getSheetByName('付款設定')) {
+    var a = ss.insertSheet('付款設定');
+    a.getRange(1, 1, 3, 5).setValues([['分店', '銀行（含代碼）', '帳號', '戶名', 'LINE Pay 收款碼圖片網址（選填）'],
+      ['楠梓店', '（例：012 台北富邦）', '', '', ''], ['德賢店', '', '', '', '']]);
+    a.getRange(1, 1, 1, 5).setFontWeight('bold').setBackground('#1e2027').setFontColor('#ffffff'); a.setFrozenRows(1); a.setColumnWidths(1, 5, 180);
+  }
+  if (!ss.getSheetByName('訂金禮包')) {
+    var b = ss.insertSheet('訂金禮包');
+    b.getRange(1, 1, 3, 4).setValues([['啟用（Ｖ＝開）', '名稱（按鈕上的字，20 字內）', '內容（給客人看的說明）', '加價（0＝免費）'],
+      ['Ｖ', '0元加購 基本禮包', '（暫定）基本款玻璃保護貼＋透明保護殼', 0], ['Ｖ', '升級套餐', '（暫定）進階保護貼＋防摔保護殼', 500]]);
+    b.getRange(1, 1, 1, 4).setFontWeight('bold').setBackground('#1e2027').setFontColor('#ffffff'); b.setFrozenRows(1); b.setColumnWidths(1, 4, 220);
+  }
+  CacheService.getScriptCache().removeAll(['pay_settings', 'dep_bundles']);
+  return ss.getUrl();
+}
+function sheetRows_(name, key) {
+  var c = CacheService.getScriptCache(), hit = c.get(key);
+  if (hit) return JSON.parse(hit);
+  var rows = [];
+  try {
+    var sh = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('BOOKING_SHEET_ID')).getSheetByName(name);
+    if (sh && sh.getLastRow() > 1) rows = sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getDisplayValues();
+  } catch (e) { console.error(e); }
+  c.put(key, JSON.stringify(rows), 300);
+  return rows;
+}
+function paySetting_(branch) {
+  var r = sheetRows_('付款設定', 'pay_settings').filter(function (x) { return String(x[0]).trim() === branch; })[0] || [];
+  var img = String(r[4] || '').trim(), m = img.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([\w-]{10,})/);
+  if (m) img = photoUrl_(m[1], 1000);   // 貼雲端硬碟分享連結也可以（要設成知道連結的人可看）
+  return { bank: String(r[1] || '').trim(), acct: String(r[2] || '').trim(), holder: String(r[3] || '').trim(), lpImg: /^https:\/\//.test(img) ? img : '' };
+}
+function bundles_() {
+  return sheetRows_('訂金禮包', 'dep_bundles').filter(function (x) { return String(x[0]).trim() && String(x[1]).trim(); })
+    .map(function (x) { return { name: String(x[1]).trim().slice(0, 20), desc: String(x[2] || '').trim(), add: Number(String(x[3] || '0').replace(/[^\d]/g, '')) || 0 }; });
+}
+function fsQuery_(col, where, max) {
+  var res = fsFetch_(fsBase_() + ':runQuery', { method: 'post', payload: JSON.stringify({ structuredQuery: { from: [{ collectionId: col }], where: where, limit: max || 100 } }) });
+  if (res.getResponseCode() !== 200) { console.error(res.getContentText()); return []; }
+  return JSON.parse(res.getContentText()).filter(function (x) { return x.document; })
+    .map(function (x) { var o = fromFields_(x.document.fields); o._id = x.document.name.split('/').pop(); return o; });
+}
+function activeResv_() {
+  return fsQuery_('reservations', { fieldFilter: { field: { fieldPath: 'status' }, op: 'IN',
+    value: { arrayValue: { values: [{ stringValue: 'pending' }, { stringValue: 'paid' }] } } } });
+}
+function showcaseItem_(id) {
+  var doc = getDoc_('settings/used_showcase'), items = [];
+  try { items = JSON.parse((doc && doc.json) || '[]'); } catch (e) {}
+  return items.filter(function (it) { return it.id === id; })[0] || null;
+}
+function lineName_(userId, token) {
+  var j = lineGet_('https://api.line.me/v2/bot/profile/' + userId, token);
+  return (j && j.displayName) || '';
+}
+function money_(n) { return '$' + Number(n || 0).toLocaleString('en-US'); }
+function itemTitle_(it) { return it.model + (it.color ? ' ' + it.color : ''); }
+
+function depositPostback_(ev, store, token, userId) {
+  var q = {}; String((ev.postback && ev.postback.data) || '').split('&').forEach(function (kv) { var p = kv.split('='); q[p[0]] = decodeURIComponent(p[1] || ''); });
+  var c = CacheService.getScriptCache();
+  if (q.act === 'dep' || q.act === 'pay') {
+    var it = showcaseItem_(q.id);
+    if (!it) return reply_(ev.replyToken, token, '不好意思，這台剛剛已經賣出或下架了 🙏\n可以再傳「有什麼二手機」看看目前的現貨。');
+    var mine = null, taken = activeResv_().filter(function (r) { if (r.usedId === q.id && r.userId === userId) mine = r; return r.usedId === q.id; });
+    if (mine) return reply_(ev.replyToken, token, '這台已經幫您登記保留了 👍\n' + (mine.status === 'paid' ? '保留到 ' + mine.holdUntil + '。' : '店員確認收到訂金後會通知您。'));
+    if (taken.length) return reply_(ev.replyToken, token, '不好意思，這台剛剛已經有其他客人付訂金保留了 🙏\n可以再傳「有什麼二手機」看看其他現貨。');
+    var dep = depositOf_(it.price), ps = paySetting_(it.branch);
+    if (q.act === 'dep') {
+      var btns = [];
+      if (ps.acct) btns.push({ type: 'button', style: 'primary', color: '#d71920', height: 'sm', action: { type: 'postback', label: '🏦 銀行匯款', data: 'act=pay&m=bank&id=' + it.id, displayText: '我用匯款付訂金' } });
+      if (ps.lpImg) btns.push({ type: 'button', style: 'primary', color: '#06c755', height: 'sm', action: { type: 'postback', label: '💚 LINE Pay', data: 'act=pay&m=lp&id=' + it.id, displayText: '我用 LINE Pay 付訂金' } });
+      if (!btns.length) return reply_(ev.replyToken, token, '收到！這台在「' + it.branch + '」，訂金 ' + money_(dep) + '。\n線上付訂金還在準備中，店員看到訊息會盡快跟您聯繫 🙏');
+      return reply_(ev.replyToken, token, [{ type: 'flex', altText: '付訂金保留：' + itemTitle_(it), contents: { type: 'bubble', size: 'kilo',
+        body: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [
+          { type: 'text', text: '💰 付訂金保留', weight: 'bold', size: 'lg' },
+          { type: 'text', text: itemTitle_(it), wrap: true, weight: 'bold' },
+          { type: 'text', text: it.branch + '・售價 ' + money_(it.price), size: 'sm', color: '#6b7280' },
+          { type: 'separator', margin: 'md' },
+          { type: 'text', text: '訂金 ' + money_(dep), size: 'xl', weight: 'bold', color: '#d71920', margin: 'md' },
+          { type: 'text', text: '店員確認收到訂金後，幫您保留 ' + HOLD_DAYS + ' 天；訂金會折抵售價。\n付完還有 🎁 禮包可以選！', size: 'sm', wrap: true, color: '#374151' }
+        ] }, footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: btns } } }]);
+    }
+    // q.act === 'pay'：先記在暫存，客人回報付款後才建立保留
+    c.put('dep_' + userId, JSON.stringify({ id: it.id, m: q.m, store: storeKey_(store) }), 21600);
+    if (q.m === 'bank') return reply_(ev.replyToken, token, '請匯訂金 ' + money_(dep) + ' 到：\n\n🏦 ' + ps.bank + '\n帳號：' + ps.acct + (ps.holder ? '\n戶名：' + ps.holder : '') +
+      '\n\n匯好後，請直接在這裡回覆您的「帳號末五碼」（5 個數字，例：12345），我們就幫您登記 👍');
+    return reply_(ev.replyToken, token, [
+      { type: 'text', text: '請用 LINE Pay 掃下面的收款碼，付訂金 ' + money_(dep) + '。\n付好後按下方「✅ 我已付款」。' },
+      { type: 'image', originalContentUrl: ps.lpImg, previewImageUrl: ps.lpImg,
+        quickReply: { items: [{ type: 'action', action: { type: 'postback', label: '✅ 我已付款', data: 'act=paid', displayText: '我已用 LINE Pay 付訂金' } }] } }]);
+  }
+  if (q.act === 'paid') return depositFinish_(ev, store, token, userId, '');
+  if (q.act === 'bdl') {
+    var r = getDoc_('reservations/' + String(q.r || '').replace(/[^\w-]/g, ''));
+    if (!r || r.userId !== userId) return;
+    if (r.bundle) return reply_(ev.replyToken, token, '您已經選好禮包囉：' + r.bundle + ' 👍');
+    var b = bundles_()[Number(q.b)]; if (!b) return;
+    patchDoc_('reservations/' + q.r, { bundle: b.name, bundleDesc: b.desc, bundleAdd: b.add, updatedAt: new Date().toISOString() });
+    return reply_(ev.replyToken, token, '🎁 已幫您登記：' + b.name + (b.add ? '（取機時加 ' + money_(b.add) + '）' : '（免費）') +
+      '\n\n店員對完帳會再通知您，保留 ' + HOLD_DAYS + ' 天，取機時禮包一起幫您準備好 😊');
+  }
+}
+function depositLast5_(ev, store, token, userId, five) {
+  var d = CacheService.getScriptCache().get('dep_' + userId);
+  if (!d || JSON.parse(d).m !== 'bank') return false;
+  depositFinish_(ev, store, token, userId, five);
+  return true;
+}
+function depositFinish_(ev, store, token, userId, last5) {
+  var c = CacheService.getScriptCache(), d = c.get('dep_' + userId);
+  if (!d) return reply_(ev.replyToken, token, '找不到剛剛的訂金資料，請從現貨卡片再按一次「付訂金保留」🙏');
+  d = JSON.parse(d);
+  var it = showcaseItem_(d.id);
+  if (!it) return reply_(ev.replyToken, token, '不好意思，這台剛剛已經賣出或下架了 🙏 已付的訂金店員會跟您聯繫處理。');
+  var taken = activeResv_().filter(function (r) { return r.usedId === d.id; });
+  if (taken.length && taken[0].userId !== userId) {
+    notifyOwner_('⚠️ 訂金撞單：' + itemTitle_(it) + '（' + it.branch + '）已被保留，但另一位客人也回報付款了（' + (d.m === 'bank' ? '末五碼 ' + last5 : 'LINE Pay') + '），請聯繫退款。');
+    return reply_(ev.replyToken, token, '不好意思，這台剛剛已經被其他客人保留了 🙏 您的訂金店員會盡快跟您聯繫退還。');
+  }
+  if (taken.length) { c.remove('dep_' + userId); return reply_(ev.replyToken, token, '這台已經幫您登記保留了 👍 店員確認收到訂金後會通知您。'); }
+  var now = new Date().toISOString(), name = lineName_(userId, token), dep = depositOf_(it.price);
+  var rid = createDoc_('reservations', { usedId: it.id, model: itemTitle_(it), branch: it.branch, price: Number(it.price), deposit: dep,
+    method: d.m === 'bank' ? 'bank' : 'linepay', last5: last5 || '', userId: userId, store: d.store || storeKey_(store), name: name,
+    bundle: '', bundleDesc: '', bundleAdd: 0, status: 'pending', holdUntil: '', createdAt: now, updatedAt: now });
+  c.remove('dep_' + userId);
+  notifyOwner_('💰 新的中古機訂金（待對帳）\n' + itemTitle_(it) + '（' + it.branch + '）售價 ' + money_(it.price) + '\n訂金 ' + money_(dep) + '・' +
+    (d.m === 'bank' ? '匯款 末五碼 ' + last5 : 'LINE Pay') + '\n客人：' + (name || '（LINE 名稱讀不到）') + '\n對完帳請到「中古機庫存」按「✅ 收到訂金」。');
+  var bs = bundles_();
+  var msgs = [{ type: 'text', text: '收到！已幫您登記「' + itemTitle_(it) + '」，店員對完帳會通知您 🙏' }];
+  if (bs.length) msgs.push({ type: 'flex', altText: '🎁 選擇您的禮包', contents: { type: 'bubble', size: 'mega',
+    body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [{ type: 'text', text: '🎁 感謝訂購！選一個禮包', weight: 'bold', size: 'lg' }]
+      .concat(bs.map(function (b) { return { type: 'box', layout: 'vertical', spacing: 'xs', contents: [
+        { type: 'text', text: b.name + '　' + (b.add ? '+' + money_(b.add) : '免費'), weight: 'bold', color: b.add ? '#d71920' : '#16181d', wrap: true },
+        { type: 'text', text: b.desc || ' ', size: 'sm', color: '#6b7280', wrap: true }] }; })) },
+    footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: bs.map(function (b, i) {
+      return { type: 'button', style: i ? 'primary' : 'secondary', color: i ? '#d71920' : undefined, height: 'sm',
+        action: { type: 'postback', label: (b.name + (b.add ? ' +' + b.add : '')).slice(0, 20), data: 'act=bdl&r=' + rid + '&b=' + i, displayText: '我選：' + b.name } }; }) } } });
+  return reply_(ev.replyToken, token, msgs);
+}
+// 員工在庫存頁按：paid（收到訂金，開始保留）／cancel（取消保留，可選擇通知客人）／done（已取機）
+function resvAction_(req) {
+  var who = UrlFetchApp.fetch('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' + FIREBASE_API_KEY, {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true, payload: JSON.stringify({ idToken: req.idToken || '' }) });
+  if (who.getResponseCode() !== 200) return { ok: false, error: '登入已失效，請重新整理頁面' };
+  var staff = String((JSON.parse(who.getContentText()).users || [{}])[0].email || '').toLowerCase();
+  if (ALLOWED_EMAILS.indexOf(staff) < 0 || staff === BOT_EMAIL) return { ok: false, error: '沒有權限' };
+  var id = String(req.id || '').replace(/[^\w-]/g, ''), r = getDoc_('reservations/' + id);
+  if (!r) return { ok: false, error: '找不到這筆訂金' };
+  var now = new Date(), upd = { updatedAt: now.toISOString(), updatedBy: staff }, text = '';
+  if (req.op === 'paid') {
+    var until = new Date(now.getTime() + HOLD_DAYS * 864e5), lbl = Utilities.formatDate(until, 'Asia/Taipei', 'M/d') + '（' + WD_ZH[Number(Utilities.formatDate(until, 'Asia/Taipei', 'u')) % 7] + '）';
+    upd.status = 'paid'; upd.paidAt = now.toISOString(); upd.paidBy = staff; upd.holdUntil = Utilities.formatDate(until, 'Asia/Taipei', 'yyyy-MM-dd');
+    text = '✅ 已收到您的訂金 ' + money_(r.deposit) + '\n\n「' + r.model + '」幫您保留到 ' + lbl + ' 營業結束，請到「' + r.branch + '」取機（' + (STORE_ADDR[r.branch] || '') + '）。\n' +
+      '尾款 ' + money_(Number(r.price) - Number(r.deposit) + Number(r.bundleAdd || 0)) + (r.bundle ? '（含禮包「' + r.bundle + '」' + (Number(r.bundleAdd) ? ' +' + money_(r.bundleAdd) : '') + '）' : '') +
+      '\n營業時間：週一～週六 11:00–21:00（週日公休）';
+  } else if (req.op === 'cancel') {
+    upd.status = 'cancelled'; upd.cancelledAt = now.toISOString(); upd.cancelledBy = staff;
+    if (req.notify) text = '您好，「' + r.model + '」的保留已取消。\n已付的訂金店員會再跟您聯繫退還方式，造成不便很抱歉 🙏';
+  } else if (req.op === 'done') { upd.status = 'done'; upd.doneAt = now.toISOString(); }
+  else return { ok: false, error: '不明的動作' };
+  patchDoc_('reservations/' + id, upd);
+  var sent = false;
+  if (text && r.userId) {
+    var st = STORES[r.store] || storeByBranch_(r.branch);
+    var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', { method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      headers: { Authorization: 'Bearer ' + prop_(st.tokenProp) }, payload: JSON.stringify({ to: r.userId, messages: [{ type: 'text', text: text }] }) });
+    sent = res.getResponseCode() === 200;
+  }
+  return { ok: true, sent: sent };
+}
 
 function usedInterest_(ev, store, token, raw) {
   var m = raw.match(/（(楠梓店|德賢店)）/), at = m ? m[1] : store.branch;
@@ -1460,7 +1650,7 @@ function backupFolder_() {
 }
 // 系統用到的全部資料表（若 Google 不允許自動列出，就用這份清單）
 var BACKUP_COLLECTIONS = ['records', 'bookings', 'care_bindings', 'line_users', 'slot_blocks', 'ledger', 'ledger_meta', 'ledger_cash', 'ledger_bak', 'ledger_bak_rows',
-  'quotes', 'web_prices', 'used_stock', 'settings', 'credit', 'todos', 'transfers'];
+  'quotes', 'web_prices', 'used_stock', 'settings', 'credit', 'todos', 'transfers', 'reservations'];
 function listCollections_() {
   try { var got = listCollectionsApi_(); BACKUP_COLLECTIONS.forEach(function (c) { if (got.indexOf(c) < 0) got.push(c); }); return got; }
   catch (e) { return BACKUP_COLLECTIONS.slice(); }

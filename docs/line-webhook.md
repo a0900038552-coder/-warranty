@@ -45,3 +45,10 @@ Google Apps Script，一支程式處理所有 LINE 事件。**改完要手動貼
 - 按「我有興趣」送出 `我有興趣：機型（分店）$價格` → 回覆門市地址、電話；店員在官方帳號聊天室接手。
 - 清單來源：`settings/used_showcase`（見 firestore.md），賣掉後要有人打開「中古機庫存」頁才會更新。
 - 照片：庫存頁「詳細」→「📷 加照片」→ 手機端先縮到長邊 1280 → POST `?action=usedPhoto`（員工 idToken）→ GAS 存到老闆雲端硬碟「復原者中古機照片」資料夾、設成知道連結可看，回傳檔案 ID。卡片封面用 `https://lh3.googleusercontent.com/d/<ID>=w1000`；兩張以上有「看全部照片」→ `care/photos.html?t=標題&p=ID,ID`（公開頁，只顯示網址帶的照片）。
+
+## 中古機訂金（`depositPostback_`、`depositFinish_`、`resvAction_`）
+- 現貨卡片「💰 付訂金保留」（postback `act=dep`）→ 顯示訂金（`depositOf_`）＋匯款／LINE Pay 按鈕（哪個有填才顯示）。
+- 匯款：顯示試算表「付款設定」的帳號 → 客人回 5 碼數字（暫存 `dep_<userId>` 6 小時）→ 建立 `reservations`（pending）。LINE Pay：傳收款碼圖 → 客人按「我已付款」→ 建立 pending。
+- 建立後通知老闆（報價機器人私訊），並跳出試算表「訂金禮包」的選項（postback `act=bdl`）。
+- 店員在庫存頁按「✅ 收到訂金」→ `?action=resv` op=paid → 保留 `HOLD_DAYS`(3) 天並 Push 通知客人（用客人原本那間官方帳號，會用到每月訊息額度）。
+- 試算表分頁第一次建立：開 `<exec>?action=depositSetup`。帳號、收款碼都放試算表，不寫進程式（repo 公開）。

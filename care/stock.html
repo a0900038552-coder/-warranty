@@ -148,7 +148,7 @@ const buyModel = r => String(r.item || '').replace(BUY_RE, '').trim();
 const isSale = r => /中古機/.test(r.item || '') && !/^\s*支出/.test(r.item) && !/損料|盒裝|回收/.test(r.item);
 const saleModel = r => String(r.item || '').split('中古機')[0].trim();
 
-let buys = [], sales = [], details = {}, scope = 'stock', open = null, unsubD = null, ledgerReady = false;
+let buys = [], sales = [], details = {}, scope = 'stock', open = null, unsubD = null, ledgerReady = false, resv = {}, unsubR = null;
 const manualBuys = () => Object.entries(details).filter(([, d]) => d.manual && !d.deleted)
   .map(([id, d]) => ({ id, date: d.date || '', branch: d.branch || '', item: '支出:中古機回收:' + (d.model || ''), amount: String(-(num(d.cost) ?? 0)), manual: true }));
 const allBuys = () => buys.concat(manualBuys());
@@ -157,6 +157,10 @@ $('loginForm').onsubmit = async e => { e.preventDefault(); try { await signInWit
 
 async function start() {
   if (!unsubD) unsubD = onSnapshot(collection(db, 'used_stock'), s => { s.docChanges().forEach(c => { if (c.type === 'removed') delete details[c.doc.id]; }); s.docs.forEach(d => details[d.id] = { ...d.data(), ...(pend[d.id] || {}) }); safeRender(); });
+  // LINE 客人付訂金保留的機子（待對帳／保留中），資料很少，即時同步
+  if (!unsubR) unsubR = onSnapshot(query(collection(db, 'reservations'), where('status', 'in', ['pending', 'paid'])), s => {
+    resv = {}; s.docs.forEach(d => { const r = { id: d.id, ...d.data() }; resv[r.usedId] = r; }); safeRender();
+  });
   await loadLedger();
 }
 // 保險：每台電腦一天一次，把這個月和上個月「有中古機但沒標記」的登打列補上記號
@@ -208,7 +212,7 @@ let lineTimer = null;
 function publishLine(m) {
   if (!ledgerReady) return;   // 每日登打的收購紀錄還沒讀完，先不要發布（不然會少機子）
   const items = allBuys().filter(b => m[b.id]?.status === 'stock').map(b => ({ b, d: details[b.id] || {} }))
-    .filter(x => num(x.d.price) != null && !x.d.lineHide)
+    .filter(x => num(x.d.price) != null && !x.d.lineHide && !resv[x.b.id])
     .sort((a, b) => (b.b.date || '').localeCompare(a.b.date || ''))
     .map(({ b, d }) => ({ id: b.id, model: niceModel(buyModel(b)), branch: b.branch || '', price: num(d.price), color: d.color || '', cond: d.cond || '',
       battery: d.battery || '', waterproof: !!d.waterproof, box: !!d.box, cable: !!d.cable, acc: d.acc || '', photos: (d.photos || []).slice(0, MAX_PH) }));
@@ -244,7 +248,7 @@ function render() {
   const priced = inStock.filter(x => num(x.d.price) != null);
   const avgDays = inStock.length ? Math.round(inStock.reduce((a, x) => a + days(x.b.date, today), 0) / inStock.length) : 0;
   $('tiles').innerHTML = `
-    <div><small>在庫台數</small><b>${inStock.length}</b></div>
+    <div><small>在庫台數</small><b>${inStock.length}</b>${Object.keys(resv).length ? `<span class="mute" style="font-size:12px">　其中 ${Object.keys(resv).length} 台已被 LINE 客人訂</span>` : ''}</div>
     <div><small>在庫成本合計</small><b>${money(inStock.reduce((a, x) => a + Math.abs(num(x.b.amount) ?? 0), 0))}</b></div>
     <div><small>在庫預估毛利<br><span style="font-weight:400">依建議售價・${priced.length}/${inStock.length} 台已定價</span></small><b style="color:var(--green)">${money(priced.reduce((a, x) => a + num(x.d.price) - Math.abs(num(x.b.amount) ?? 0), 0))}</b></div>
     <div><small>平均庫存天數</small><b>${avgDays} 天</b></div>
@@ -262,6 +266,9 @@ function render() {
     } else if (mm.status === 'sold') st = `<span class="pill sold">已售出</span>`;
     else if (mm.status === 'stock') st = `<span class="pill ${age > 30 ? 'old' : 'stock'}">在庫 ${age} 天</span><br><span class="mute" style="font-size:12px">${d.lineHide ? '🚫 LINE 不上架' : num(d.price) != null ? '📢 LINE 上架中' : '填建議售價才會上 LINE'}</span>`;
     else st = `<span class="pill other">${STATUS[mm.status] || mm.status}</span>`;
+    const rv = resv[b.id];
+    if (rv && mm.status === 'sold') autoDone(rv);
+    else if (rv) st += resvHtml(rv, today);
     const det = open === b.id ? `<tr class="detail"><td colspan="13"><div class="dgrid">
         <div><label>顏色</label><input data-k="color" data-id="${b.id}" value="${esc(d.color)}" placeholder="例：遠峰藍"></div>
         <div><label>電池健康度（%）</label><input data-k="battery" data-id="${b.id}" value="${esc(d.battery)}" inputmode="numeric" placeholder="例：86"></div>
@@ -339,6 +346,42 @@ document.addEventListener('click', async e => {
   try { await deleteDoc(doc(db, 'used_stock', b.dataset.mdel)); delete details[b.dataset.mdel]; open = null; render(); toast('已刪除'); }
   catch (er) { toast('⚠️ 刪除失敗：' + er.message); }
 });
+// ───── LINE 訂金：店員對帳後按「收到訂金」→ 機器人通知客人保留到哪天；取消可選擇要不要通知 ─────
+function resvHtml(r, today) {
+  const pay = r.method === 'bank' ? `匯款 末五碼 <b>${esc(r.last5)}</b>` : 'LINE Pay';
+  const bundle = r.bundle ? `🎁 ${esc(r.bundle)}${num(r.bundleAdd) ? `（+${money(num(r.bundleAdd))}）` : ''}` : '<span class="mute">還沒選禮包</span>';
+  const head = r.status === 'paid'
+    ? `<span class="pill" style="background:#fde2e2;color:var(--red)">🔒 已訂・保留到 ${esc((r.holdUntil || '').slice(5).replace('-', '/'))}</span>${(r.holdUntil || '') < today ? ' <b style="color:var(--red)">已過期</b>' : ''}`
+    : `<span class="pill" style="background:#fff4d6;color:#a16207">💰 待對帳</span>`;
+  const btns = (r.status === 'pending' ? `<button class="more" data-rv="${r.id}" data-op="paid" style="color:var(--green);font-weight:700">✅ 收到訂金</button>` : '')
+    + `<button class="more" data-rv="${r.id}" data-op="cancel" style="color:var(--red)">取消保留</button>`;
+  return `<div style="margin-top:6px;font-size:12px;line-height:1.6;border-left:3px solid #f5b400;padding-left:6px">${head}<br>
+    ${esc(r.name || 'LINE 客人')}・訂金 ${money(num(r.deposit))}・${pay}<br>${bundle}<br>${btns}</div>`;
+}
+const doneSent = new Set();
+function autoDone(r) {   // 已經在每日登打賣出 → 訂金單自動結案
+  if (doneSent.has(r.id)) return; doneSent.add(r.id);
+  setDoc(doc(db, 'reservations', r.id), { status: 'done', doneAt: new Date().toISOString(), doneBy: auth.currentUser.email }, { merge: true }).catch(() => {});
+}
+document.addEventListener('click', async e => {
+  const bt = e.target.closest('[data-rv]'); if (!bt) return;
+  const r = Object.values(resv).find(x => x.id === bt.dataset.rv); if (!r) return;
+  let notify = false;
+  if (bt.dataset.op === 'paid') {
+    if (!(await ask(`確認已收到「${r.model}」的訂金 ${money(num(r.deposit))}？\n（${r.method === 'bank' ? '匯款末五碼 ' + r.last5 : 'LINE Pay'}）\n\n按確定後，機器人會用 LINE 通知客人保留 3 天。`, { ok: '收到了，通知客人' }))) return;
+  } else {
+    if (!(await ask(`取消「${r.model}」的保留？\n取消後這台會重新出現在 LINE 現貨。`, { ok: '取消保留' }))) return;
+    notify = await ask('要用 LINE 通知客人「保留已取消，店員會聯繫退訂金」嗎？', { ok: '通知客人', cancel: '不用通知', danger: false });
+  }
+  bt.disabled = true; bt.textContent = '處理中…';
+  try {
+    const res = await fetch(GAS_URL + '?action=resv', { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ idToken: await auth.currentUser.getIdToken(), id: r.id, op: bt.dataset.op, notify }) });
+    const j = await res.json(); if (!j.ok) throw new Error(j.error);
+    toast(bt.dataset.op === 'paid' ? (j.sent ? '已通知客人 ✅' : '已確認，但 LINE 通知沒送出（可能是本月訊息額度用完）') : (notify ? (j.sent ? '已取消並通知客人' : '已取消，通知沒送出') : '已取消保留'));
+  } catch (er) { toast('⚠️ ' + er.message); bt.disabled = false; }
+});
+
 // ───── 照片：手機上按「加照片」可直接拍照；先在手機裡縮小（長邊 1280、約 200KB）再傳到老闆的 Google 雲端硬碟 ─────
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbxBK7c2Oledgo-jT-kRnueuU8grZxVinuocyp2iLI8u-c5Q94fZSeiemH0UkeAqdjfTlw/exec';
 const MAX_PH = 6, uploading = {};
