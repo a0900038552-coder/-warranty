@@ -127,7 +127,7 @@ import { cachedDocs, expireCache } from './cache.js?v=20261117';
 import { requirePin, homeBranch } from './pin.js?v=20261118';
 import { ask } from './ask.js?v=20261116';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, addDoc, deleteDoc, onSnapshot, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, addDoc, deleteDoc, onSnapshot, query, where, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 const app = initializeApp({ apiKey: "AIzaSyD04ZMXIt8Oo3hjm5qsMaKiLXYzp_9YKwA", authDomain: "care-warranty.firebaseapp.com", projectId: "care-warranty",
   storageBucket: "care-warranty.firebasestorage.app", messagingSenderId: "29512690431", appId: "1:29512690431:web:f0c2dd1cd6acb03d197aca" });
 const auth = getAuth(app), db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) });
@@ -159,21 +159,26 @@ async function start() {
   if (!unsubD) unsubD = onSnapshot(collection(db, 'used_stock'), s => { s.docChanges().forEach(c => { if (c.type === 'removed') delete details[c.doc.id]; }); s.docs.forEach(d => details[d.id] = { ...d.data(), ...(pend[d.id] || {}) }); safeRender(); });
   await loadLedger();
 }
+// 保險：每台電腦一天一次，把這個月和上個月「有中古機但沒標記」的登打列補上記號
+// （例如員工的每日登打頁還是舊版、或從 Excel 還原的資料）。約讀 2 個月份的報表，一天只做一次。
+async function tagRecent() {
+  const today = ymd(new Date());
+  try { if (localStorage.getItem('used-tag-day') === today) return; } catch {}
+  const d = new Date(), last = new Date(d.getFullYear(), d.getMonth() - 1, 1);
+  const bms = [ymd(d).slice(0, 7), ymd(last).slice(0, 7)].flatMap(m => ['楠梓店', '德賢店'].map(b => `${b}_${m}`));
+  try {
+    const miss = (await getDocs(query(collection(db, 'ledger'), where('bm', 'in', bms)))).docs.filter(x => /中古機/.test(x.data().item || '') && x.data().used !== true);
+    for (let i = 0; i < miss.length; i += 400) { const b = writeBatch(db); miss.slice(i, i + 400).forEach(x => b.update(x.ref, { used: true })); await b.commit(); }
+    try { localStorage.setItem('used-tag-day', today); } catch {}
+  } catch (e) { console.warn('補標記失敗', e); }
+}
 async function loadLedger() {
   $('list').innerHTML = '<tr><td colspan="13" class="mute" style="padding:16px">讀取中…</td></tr>';
-  // 1. 所有收購列（品項開頭「支出:中古機回收」或全形冒號）
-  const qs = ['支出:中古機回收', '支出：中古機回收'].map((p, i) => cachedDocs(query(collection(db, 'ledger'), where('item', '>=', p), where('item', '<', p + '\uf8ff')), 'stock-buys-' + i, 1));
-  buys = (await Promise.all(qs)).flatMap(s => s.docs.map(d => ({ id: d.id, ...d.data() }))).filter(isBuy);
-  // 2. 售出列：從最早一台收購的月份到這個月（兩店）
-  const first = allBuys().map(b => b.date).filter(Boolean).sort()[0] || ymd(new Date());
-  const months = []; for (let d = new Date(first.slice(0, 7) + '-01T00:00:00'); d <= new Date(); d.setMonth(d.getMonth() + 1)) months.push(ymd(d).slice(0, 7));
-  const cur = ymd(new Date()).slice(0, 7);
-  const bms = months.slice(-18).flatMap(m => ['楠梓店', '德賢店'].map(b => `${b}_${m}`));
-  const past = bms.filter(x => !x.endsWith(cur)), now = bms.filter(x => x.endsWith(cur));
-  // 這個月即時讀；過去月份很少再改，一天向資料庫拿一次，其餘用電腦裡的副本（省讀取額度）
-  const parts = [getDocs(query(collection(db, 'ledger'), where('bm', 'in', now)))];
-  for (let i = 0; i < past.length; i += 30) { const ch = past.slice(i, i + 30); parts.push(cachedDocs(query(collection(db, 'ledger'), where('bm', 'in', ch)), 'stock-' + ch[0] + '-' + ch.length)); }
-  sales = (await Promise.all(parts)).flatMap(s => s.docs.map(d => ({ id: d.id, ...d.data() }))).filter(isSale);
+  await tagRecent();
+  // 每日登打存檔時，品項有「中古機」的列會標 used=true（收購列、售出列都是），這裡只讀這些，不用整個月的報表都讀（省讀取額度）
+  const all = (await getDocs(query(collection(db, 'ledger'), where('used', '==', true)))).docs.map(d => ({ id: d.id, ...d.data() }));
+  buys = all.filter(isBuy);
+  sales = all.filter(isSale);
   ledgerReady = true;
   render();
 }

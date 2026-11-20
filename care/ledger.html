@@ -506,6 +506,7 @@ async function save(id) {
   const data = { bm: bm(), branch: r.branch, date: r.date, order: r.order || Date.now(), createdAt: r.createdAt, createdBy: r.createdBy, ...(r.imported ? { imported: true, importFile: r.importFile || '' } : {}),
     updatedAt: new Date().toISOString(), updatedBy: auth.currentUser.email };
   FIELDS.forEach(f => data[f] = String(r[f] ?? '').trim());
+  data.used = /中古機/.test(data.item);   // 中古機收購／售出列做記號，庫存頁只讀這些（省讀取額度）
   const tr = () => document.querySelector(`tr[data-id="${id}"]`);
   try {
     await setDoc(doc(db, 'ledger', id), data);
@@ -935,7 +936,7 @@ async function importXlsx(file) {
     // 2. 寫入登打資料
     const now = new Date().toISOString(), me = auth.currentUser.email, base = Date.parse(p.ym + '-01T00:00:00');
     const list = p.rows.map(r => ({ id: newId(), bm: key, branch, date: r.date, order: base + r.seq, item: r.item, amount: r.amount, recv: r.recv, handler: r.handler,
-      note: r.note, cost: r.cost, phone: r.phone, ticket: r.ticket, imported: true, importFile: file.name, createdAt: now, createdBy: me, updatedAt: now, updatedBy: me }));
+      note: r.note, cost: r.cost, phone: r.phone, ticket: r.ticket, used: /中古機/.test(r.item || ''), imported: true, importFile: file.name, createdAt: now, createdBy: me, updatedAt: now, updatedBy: me }));
     for (let i = 0; i < list.length; i += 400) {
       const b = writeBatch(db);
       list.slice(i, i + 400).forEach(({ id, ...d }) => b.set(doc(db, 'ledger', id), d));

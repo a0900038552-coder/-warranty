@@ -43,6 +43,7 @@
 |---|---|
 | `bm` | `分店_YYYY-MM`，例 `楠梓店_2026-11`（查詢都用它篩當月） |
 | `branch`, `date`, `order` | |
+| `used` | 品項有「中古機」＝true（收購、售出列）。中古機庫存頁只查 `used==true`，不讀整月報表。`ledger.html` 存檔／Excel 匯入時自動標；庫存頁每天一次補標這個月和上個月漏掉的 |
 | `item` | 品項（特殊寫法見 `docs/business-rules.md`：退修、調貨、支出、購物金入帳） |
 | `amount`, `cost` | 金額、成本（退修：金額負、成本正） |
 | `recv`, `handler` | 接待人、經手人（員工編號） |
