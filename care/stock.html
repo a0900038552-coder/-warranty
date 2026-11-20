@@ -67,6 +67,12 @@ tr.detail td{background:#fafbfc}
 .hint{color:var(--mute);font-size:12px;margin-top:10px}
 #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#fff;padding:10px 16px;border-radius:10px;transition:.25s;z-index:99}
 #toast.show{transform:translateX(-50%) translateY(0)}
+#holdBox{position:fixed;inset:0;background:rgba(15,17,21,.45);display:flex;align-items:center;justify-content:center;z-index:98;padding:16px}
+#holdBox form{background:#fff;border-radius:14px;max-width:440px;width:100%;padding:18px;display:grid;gap:10px}
+#holdBox label{font-size:12px;color:var(--mute);display:block}
+#holdBox input,#holdBox select{width:100%;border:1px solid #d1d5db;border-radius:8px;padding:8px;font:inherit}
+.days{display:flex;gap:6px;flex-wrap:wrap}.days button{flex:1;border:1px solid #d1d5db;background:#fff;border-radius:8px;padding:8px 0;cursor:pointer;font:inherit}
+.days button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
 </style>
 </head>
 <body>
@@ -124,7 +130,7 @@ tr.detail td{background:#fafbfc}
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { reportLogin } from './guard.js?v=20261116';
 import { cachedDocs, expireCache } from './cache.js?v=20261117';
-import { requirePin, homeBranch } from './pin.js?v=20261118';
+import { requirePin, homeBranch, isAway } from './pin.js?v=20261118';
 import { ask } from './ask.js?v=20261116';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, addDoc, deleteDoc, onSnapshot, query, where, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -269,6 +275,7 @@ function render() {
     const rv = resv[b.id];
     if (rv && mm.status === 'sold') autoDone(rv);
     else if (rv) st += resvHtml(rv, today);
+    else if (mm.status === 'stock') st += `<br><button class="more" data-hold="${b.id}" style="font-size:12px">🔒 現場保留</button>`;
     const det = open === b.id ? `<tr class="detail"><td colspan="13"><div class="dgrid">
         <div><label>顏色</label><input data-k="color" data-id="${b.id}" value="${esc(d.color)}" placeholder="例：遠峰藍"></div>
         <div><label>電池健康度（%）</label><input data-k="battery" data-id="${b.id}" value="${esc(d.battery)}" inputmode="numeric" placeholder="例：86"></div>
@@ -348,15 +355,16 @@ document.addEventListener('click', async e => {
 });
 // ───── LINE 訂金：店員對帳後按「收到訂金」→ 機器人通知客人保留到哪天；取消可選擇要不要通知 ─────
 function resvHtml(r, today) {
-  const pay = r.method === 'bank' ? `匯款 末五碼 <b>${esc(r.last5)}</b>` : 'LINE Pay';
-  const bundle = r.bundle ? `🎁 ${esc(r.bundle)}${num(r.bundleAdd) ? `（+${money(num(r.bundleAdd))}）` : ''}` : '<span class="mute">還沒選禮包</span>';
+  const pay = r.method === 'bank' ? `匯款${r.last5 ? ` 末五碼 <b>${esc(r.last5)}</b>` : ''}` : (PAY[r.method] || 'LINE Pay');
+  const bundle = r.bundle ? `🎁 ${esc(r.bundle)}${num(r.bundleAdd) ? `（+${money(num(r.bundleAdd))}）` : ''}` : (r.source === 'store' ? '' : '<span class="mute">還沒選禮包</span>');
   const head = r.status === 'paid'
     ? `<span class="pill" style="background:#fde2e2;color:var(--red)">🔒 已訂・保留到 ${esc((r.holdUntil || '').slice(5).replace('-', '/'))}</span>${(r.holdUntil || '') < today ? ' <b style="color:var(--red)">已過期</b>' : ''}`
     : `<span class="pill" style="background:#fff4d6;color:#a16207">💰 待對帳</span>`;
   const btns = (r.status === 'pending' ? `<button class="more" data-rv="${r.id}" data-op="paid" style="color:var(--green);font-weight:700">✅ 收到訂金</button>` : '')
+    + (r.status === 'paid' ? `<button class="more" data-ext="${r.id}">⏩ 延長</button>` : '')
     + `<button class="more" data-rv="${r.id}" data-op="cancel" style="color:var(--red)">取消保留</button>`;
   return `<div style="margin-top:6px;font-size:12px;line-height:1.6;border-left:3px solid #f5b400;padding-left:6px">${head}<br>
-    ${esc(r.name || 'LINE 客人')}・訂金 ${money(num(r.deposit))}・${pay}<br>${bundle}<br>${btns}</div>`;
+    ${r.source === 'store' ? '🏪 現場・' : '💬 LINE・'}${esc(r.name || '客人')}${r.phone ? ' ' + esc(r.phone) : ''}・訂金 ${num(r.deposit) ? money(num(r.deposit)) : '無'}・${pay}${r.note ? '<br>' + esc(r.note) : ''}${bundle ? '<br>' + bundle : ''}<br>${btns}</div>`;
 }
 const doneSent = new Set();
 function autoDone(r) {   // 已經在每日登打賣出 → 訂金單自動結案
@@ -371,6 +379,11 @@ document.addEventListener('click', async e => {
     if (!(await ask(`確認已收到「${r.model}」的訂金 ${money(num(r.deposit))}？\n（${r.method === 'bank' ? '匯款末五碼 ' + r.last5 : 'LINE Pay'}）\n\n按確定後，機器人會用 LINE 通知客人保留 3 天。`, { ok: '收到了，通知客人' }))) return;
   } else {
     if (!(await ask(`取消「${r.model}」的保留？\n取消後這台會重新出現在 LINE 現貨。`, { ok: '取消保留' }))) return;
+    if (r.source === 'store') {   // 現場保留：沒有 LINE，直接改資料
+      try { await setDoc(doc(db, 'reservations', r.id), { status: 'cancelled', cancelledAt: new Date().toISOString(), cancelledBy: auth.currentUser.email, updatedAt: new Date().toISOString() }, { merge: true }); toast('已取消保留'); }
+      catch (er) { toast('⚠️ ' + er.message); }
+      return;
+    }
     notify = await ask('要用 LINE 通知客人「保留已取消，店員會聯繫退訂金」嗎？', { ok: '通知客人', cancel: '不用通知', danger: false });
   }
   bt.disabled = true; bt.textContent = '處理中…';
@@ -380,6 +393,63 @@ document.addEventListener('click', async e => {
     const j = await res.json(); if (!j.ok) throw new Error(j.error);
     toast(bt.dataset.op === 'paid' ? (j.sent ? '已通知客人 ✅' : '已確認，但 LINE 通知沒送出（可能是本月訊息額度用完）') : (notify ? (j.sent ? '已取消並通知客人' : '已取消，通知沒送出') : '已取消保留'));
   } catch (er) { toast('⚠️ ' + er.message); bt.disabled = false; }
+});
+
+// ───── 現場保留／延長：保留天數 3、7、14、21、30 天 ─────
+const PAY = { cash: '現金', linepay: 'LINE Pay', pxpay: '全支付', bank: '匯款', none: '沒收訂金' };
+const DAYS = [3, 7, 14, 21, 30];
+const addDays = n => { const d = new Date(); d.setDate(d.getDate() + n); return ymd(d); };
+const depositOf = p => Math.max(1, Math.ceil((num(p) || 0) / 5000)) * 1000;   // 跟 LINE 一樣：5000 以下 1000，每 5000 加 1000
+function holdForm({ title, sub, ext, dep = '', from = '' }) {
+  return new Promise(resolve => {
+    const w = document.createElement('div'); w.id = 'holdBox';
+    w.innerHTML = `<form><b style="font-size:17px">${esc(title)}</b><span class="mute">${esc(sub)}</span>
+      <div><label>保留天數</label><div class="days">${DAYS.map((d, i) => `<button type="button" data-d="${d}" class="${i ? '' : 'on'}">${d} 天</button>`).join('')}</div>
+        <div class="mute" id="hu" style="font-size:12px;margin-top:4px"></div></div>
+      ${ext ? '' : `<div><label>客人姓名 *</label><input name="name" required placeholder="例：王先生"></div>
+      <div><label>電話</label><input name="phone" inputmode="tel" placeholder="09xxxxxxxx"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div><label>訂金</label><input name="deposit" inputmode="numeric" value="${dep}"></div>
+        <div><label>付款方式</label><select name="method">${Object.entries(PAY).filter(([k]) => k !== 'bank').map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}<option value="bank">匯款</option></select></div></div>
+      <div><label>備註（給店員看）</label><input name="note" placeholder="例：週六下午來取、要送滿版貼"></div>`}
+      <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="hbtn" data-x style="color:var(--ink);border-color:#d1d5db;background:#fff">取消</button>
+        <button class="hbtn" style="background:var(--ink);color:#fff;border-color:var(--ink);font-weight:700">${ext ? '延長' : '保留'}</button></div></form>`;
+    document.body.appendChild(w);
+    const f = w.querySelector('form'); let days = DAYS[0];
+    const show = () => { w.querySelector('#hu').textContent = '保留到 ' + (from ? (() => { const d = new Date(from + 'T00:00:00'); d.setDate(d.getDate() + days); return ymd(d); })() : addDays(days)) + ' 營業結束'; };
+    show();
+    w.querySelector('.days').onclick = e => { const b = e.target.closest('[data-d]'); if (!b) return; days = +b.dataset.d; [...w.querySelectorAll('.days button')].forEach(x => x.classList.toggle('on', x === b)); show(); };
+    w.querySelector('[data-x]').onclick = () => { w.remove(); resolve(null); };
+    f.onsubmit = e => { e.preventDefault(); const o = { days }; if (!ext) ['name', 'phone', 'deposit', 'method', 'note'].forEach(k => o[k] = f[k].value.trim()); w.remove(); resolve(o); };
+    (f.name || w.querySelector('.days button')).focus();
+  });
+}
+document.addEventListener('click', async e => {
+  const h = e.target.closest('[data-hold]');
+  if (h) {
+    const b = allBuys().find(x => x.id === h.dataset.hold); if (!b) return;
+    const d = details[b.id] || {};
+    if (isAway(auth.currentUser.email, b.branch) && !(await requirePin(b.branch, '保留', { minutes: 10 }))) return;
+    const o = await holdForm({ title: '🔒 現場保留：' + buyModel(b), sub: `${b.branch}・建議售價 ${num(d.price) != null ? money(num(d.price)) : '未定'}・保留期間 LINE 現貨會自動下架`, dep: num(d.price) != null ? depositOf(d.price) : '' });
+    if (!o) return;
+    const now = new Date().toISOString();
+    try {
+      await addDoc(collection(db, 'reservations'), { source: 'store', usedId: b.id, model: buyModel(b) + (d.color ? ' ' + d.color : ''), branch: b.branch, price: num(d.price) ?? 0,
+        deposit: num(o.deposit) ?? 0, method: o.method, last5: '', name: o.name, phone: o.phone, note: o.note, userId: '', store: '', bundle: '', bundleAdd: 0,
+        status: 'paid', holdDays: o.days, holdUntil: addDays(o.days), paidAt: now, paidBy: auth.currentUser.email, createdAt: now, createdBy: auth.currentUser.email, updatedAt: now });
+      toast(`已保留到 ${addDays(o.days)}`);
+    } catch (er) { toast('⚠️ 保留失敗：' + er.message); }
+    return;
+  }
+  const x = e.target.closest('[data-ext]');
+  if (x) {
+    const r = Object.values(resv).find(v => v.id === x.dataset.ext); if (!r) return;
+    const from = (r.holdUntil || '') > ymd(new Date()) ? r.holdUntil : ymd(new Date());
+    const o = await holdForm({ title: '⏩ 延長保留：' + r.model, sub: `目前保留到 ${r.holdUntil || '—'}，從 ${from} 再往後加`, ext: true, from });
+    if (!o) return;
+    const d = new Date(from + 'T00:00:00'); d.setDate(d.getDate() + o.days);
+    try { await setDoc(doc(db, 'reservations', r.id), { holdUntil: ymd(d), holdDays: (num(r.holdDays) || 0) + o.days, updatedAt: new Date().toISOString(), updatedBy: auth.currentUser.email }, { merge: true }); toast('已延長到 ' + ymd(d)); }
+    catch (er) { toast('⚠️ ' + er.message); }
+  }
 });
 
 // ───── 照片：手機上按「加照片」可直接拍照；先在手機裡縮小（長邊 1280、約 200KB）再傳到老闆的 Google 雲端硬碟 ─────
