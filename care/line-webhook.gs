@@ -1371,13 +1371,36 @@ function handleQuoteWebhook_(p, body) {
   if (!token) return;
   (body.events || []).forEach(function (ev) { try { quoteEvent_(ev, token, props); } catch (err) { console.error(err); } });
 }
+// 報價群組開關：QUOTE_GROUPS = { groupId: { name, on } }。老闆還沒設定過時，新群組預設記錄；設定過一次後，新群組預設不記錄
+function quoteGroups_(props) { try { return JSON.parse(props.getProperty('QUOTE_GROUPS') || '{}'); } catch (e) { return {}; } }
+function quoteGroupSeen_(props, gid, name) {
+  var gs = quoteGroups_(props);
+  if (!gs[gid]) { gs[gid] = { name: name || '群組', on: props.getProperty('QUOTE_GROUP_DEFAULT') !== 'off' }; props.setProperty('QUOTE_GROUPS', JSON.stringify(gs)); }
+  else if (name && gs[gid].name !== name) { gs[gid].name = name; props.setProperty('QUOTE_GROUPS', JSON.stringify(gs)); }
+  return gs;
+}
+function quoteGroupCmd_(props, cmd) {
+  var gs = quoteGroups_(props), ids = Object.keys(gs);
+  var m = cmd.match(/^記價(開|關)(\d+)$/);
+  if (m) {
+    var g = ids[Number(m[2]) - 1];
+    if (!g) return '找不到第 ' + m[2] + ' 個群組，請先傳「記價群組」看編號。';
+    gs[g].on = m[1] === '開'; props.setProperty('QUOTE_GROUPS', JSON.stringify(gs)); props.setProperty('QUOTE_GROUP_DEFAULT', 'off');
+  }
+  if (!ids.length) return '還沒有看到任何群組 🤔\n群組裡有人說話之後，我就會認得那個群組，再傳一次「記價群組」。';
+  return (m ? '✅ 已' + (m[1] === '開' ? '開啟' : '關閉') + '「' + gs[ids[Number(m[2]) - 1]].name + '」\n\n' : '') + '📋 報價記錄群組：\n' +
+    ids.map(function (g, i) { return (i + 1) + '. ' + (gs[g].on ? '✅ 記錄' : '⛔ 不記錄') + '　' + gs[g].name; }).join('\n') +
+    '\n\n開啟：傳「記價開 1」\n關閉：傳「記價關 2」\n（設定過之後，新加入的群組預設不記錄）\n※ 群組裡要有人說過話，這裡才會列出來';
+}
 function quoteEvent_(ev, token, props) {
   // 被邀請進群組／被移出群組：私訊通知老闆（不在群組裡說話，同行不會發現）
   if (ev.type === 'join' || ev.type === 'leave') {
     var s0 = ev.source || {};
-    var gname = s0.groupId ? groupName_(s0.groupId, token) : '多人聊天室';
+    var gname = s0.groupId ? groupName_(s0.groupId, token) : '多人聊天室', gidJ = s0.groupId || s0.roomId || '';
+    if (ev.type === 'join' && gidJ) quoteGroupSeen_(props, gidJ, gname);
+    var onNow = ev.type === 'join' && gidJ ? quoteGroups_(props)[gidJ].on : false;
     notifyOwner_(ev.type === 'join'
-      ? '✅ 復原者Ai機器人已加入「' + gname + '」\n之後這個群組裡的報價會自動記錄（機器人不會在群組裡發言）。'
+      ? '✅ 復原者Ai機器人已加入「' + gname + '」\n' + (onNow ? '這個群組的報價會自動記錄。' : '這個群組目前「不記錄」報價。') + '（機器人不會在群組裡發言）\n要開關請私訊我「記價群組」。'
       : '👋 復原者Ai機器人已被移出「' + gname + '」');
     return;
   }
@@ -1390,6 +1413,7 @@ function quoteEvent_(ev, token, props) {
       else if (owner === uid) reply_(ev.replyToken, token, '您已經是老闆囉 👍');
       return;
     }
+    if (uid === owner && /^記價群組$|^記價(開|關)\s*\d+$/.test(text.replace(/\s+/g, ''))) { reply_(ev.replyToken, token, quoteGroupCmd_(props, text.replace(/\s+/g, ''))); return; }
     var code = (props.getProperty('QUOTE_KEY') || '').slice(-4);
     if (code && text.replace(/\s+/g, '') === '我是店員' + code) {
       var team = teamIds_(props); if (team.indexOf(uid) < 0) { team.push(uid); props.setProperty('QUOTE_TEAM', team.join(',')); }
@@ -1399,6 +1423,11 @@ function quoteEvent_(ev, token, props) {
   }
   var mine = !!uid && (uid === owner || teamIds_(props).indexOf(uid) >= 0);
   var gid0 = src.groupId || src.roomId || '';
+  if (gid0) {   // 只記錄老闆開啟的群組（私訊「記價群組」設定）
+    var gs = quoteGroups_(props);
+    if (!gs[gid0]) gs = quoteGroupSeen_(props, gid0, src.groupId ? groupName_(src.groupId, token) : '多人聊天室');
+    if (!gs[gid0].on) return;
+  }
   // 群組裡客人／同行的問題：記下最近問的機型、維修項目，等我們只回「800」時拿來配對
   if (gid0 && !mine) rememberAsk_(gid0, text, memberName_(src, token), ev.message.id);
   // 私訊「記價 傻傻修 poco x5 pro 電池 1000」→ 開頭是店名 → 記成同行報價

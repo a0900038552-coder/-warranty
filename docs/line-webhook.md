@@ -67,3 +67,8 @@ A 啟用｜B 名稱｜C 內容說明｜D 加購價（留空＝品項原價合計
 - `?action=depositSetup`：重寫禮包表頭、付款設定空白的 LINE Pay 欄填 `care/pay/linepay-qr.jpg`。
 - `?action=autoReplyTransfer`：自動回覆加「資料轉移（換新機）」列（插在資料救援前，並從資料救援拿掉轉移類關鍵字）。
 - `?action=basicIds`：兩店官方帳號基本 ID（IG／FB 用的 `line.me/R/oaMessage/<id>/?看中古機現貨` 連結）。
+
+## 報價機器人群組開關（`quoteGroups_`、`quoteGroupCmd_`）
+- 指令碼屬性 `QUOTE_GROUPS`＝{ groupId: { name, on } }。群組有人說話或機器人加入時自動登記。
+- 老闆私訊機器人「記價群組」看清單；「記價開 N」「記價關 N」切換。設定過一次後（`QUOTE_GROUP_DEFAULT=off`），新加入的群組預設不記錄。
+- 關閉的群組完全不處理（不記價、不記問題）。
