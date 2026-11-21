@@ -289,7 +289,7 @@ function render() {
         <div><label>其他配件</label><input data-k="acc" data-id="${b.id}" value="${esc(d.acc)}" placeholder="例：原廠殼、發票"></div>
         <div style="grid-column:1/-1"><label>照片（給 LINE 客人看・紅框＝封面，最多 ${MAX_PH} 張）</label><div class="ph">${(d.photos || []).map((pid, i) => `<figure class="${i ? '' : 'cover'}"><img src="${thumb(pid)}" alt="照片${i + 1}" loading="lazy"><figcaption>${i ? `<button data-phcover="${b.id}" data-i="${i}" title="設為封面">★ 封面</button>` : '<span style="color:#d71920;font-weight:700">封面</span>'}<button data-phdel="${b.id}" data-i="${i}" title="刪除">✕</button></figcaption></figure>`).join('')}${(d.photos || []).length < MAX_PH ? `<label class="add">${uploading[b.id] ? '上傳中…' : '📷<span>加照片</span>'}<input type="file" accept="image/*" multiple hidden data-phadd="${b.id}"${uploading[b.id] ? ' disabled' : ''}></label>` : ''}</div></div>
         <div style="grid-column:1/-1;display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:8px 10px">
-          <b>📋 商品確認書</b>${d.check ? `<span class="mute">已驗機 ${esc(d.check.date || '')}・${esc(String(d.check.by || '').split('@')[0])}${d.check.seal ? '・標籤 ' + esc(d.check.seal) : ''}</span>` : '<span class="mute" style="color:var(--red)">還沒驗機</span>'}
+          <b>📋 商品確認書</b>${d.check ? `<span class="mute">已驗機 ${esc(d.check.date || '')}・${esc(String(d.check.by || '').split('@')[0])}</span>` : '<span class="mute" style="color:var(--red)">還沒驗機</span>'}
           <button class="more" data-chk="${b.id}">${d.check ? '✏️ 修改驗機表' : '📋 填驗機表'}</button>${d.check ? `<button class="more" data-cprint="${b.id}">🖨 列印商品確認書</button>` : ''}</div>
         <div><label>LINE 官方帳號</label><label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" data-k="lineHide" data-id="${b.id}"${d.lineHide ? ' checked' : ''}> 不要給客人看到這台</label></div>
         <div><label>狀態</label><select data-k="status" data-id="${b.id}">${Object.entries(STATUS).map(([k, l]) => `<option value="${k}"${(d.status || 'auto') === k ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
@@ -501,7 +501,6 @@ function checkForm(b, d) {
         <div><label>IMEI（列印時完整顯示，給客人核對）</label><input name="imei" value="${esc(d.imei || '')}" inputmode="numeric"></div>
         <div><label>電池健康度（%）</label><input name="battery" value="${esc(c.battery ?? d.battery ?? '')}" inputmode="numeric"></div>
         ${CHECK_ITEMS.map(fld).join('')}
-        <div><label>防拆標籤編號</label><input name="seal" value="${esc(c.seal || '')}" placeholder="貼標籤後填"></div>
         <div><label>本店保固天數</label><input name="days" value="${esc(c.days ?? '30')}" inputmode="numeric"></div>
         <div style="grid-column:1/-1"><label>其他說明（會印在確認書上）</label><input name="memo" value="${esc(c.memo || '')}" placeholder="例：背蓋右下角小刮傷"></div>
       </div>
@@ -513,7 +512,7 @@ function checkForm(b, d) {
     f.onsubmit = e => {
       e.preventDefault();
       const o = { date: ymd(new Date()), by: auth.currentUser.email };
-      ['battery', 'seal', 'days', 'memo', ...CHECK_ITEMS.map(x => x[0])].forEach(k => o[k] = f[k].value.trim());
+      ['battery', 'days', 'memo', ...CHECK_ITEMS.map(x => x[0])].forEach(k => o[k] = f[k].value.trim());
       w.remove(); resolve({ check: o, imei: f.imei.value.trim() });
     };
   });
@@ -530,7 +529,7 @@ function printConfirm(b, d) {
     @page{size:A4;margin:12mm}@media print{.np{display:none}}</style></head><body>
     <div class="hd"><div><h1>商品確認書<small>中古機・現場驗機</small></h1>復原者手機維修 ${esc(b.branch)}｜${esc(sh.addr || '')}｜${esc(sh.tel || '')}</div><div>確認日期：＿＿＿年＿＿月＿＿日</div></div>
     <table><tr><th>機型</th><td>${esc(buyModel(b))}${d.color ? '　' + esc(d.color) : ''}</td></tr><tr><th>售價</th><td>${price != null ? '$' + price.toLocaleString('en-US') : ''}</td></tr>
-      <tr><th>驗機日期／人員</th><td>${esc(c.date || '')}　${esc(String(c.by || '').split('@')[0])}</td></tr><tr><th>防拆標籤編號</th><td>${esc(c.seal || '')}</td></tr></table>
+      <tr><th>驗機日期／人員</th><td>${esc(c.date || '')}　${esc(String(c.by || '').split('@')[0])}</td></tr></table>
     <h3 style="margin:12px 0 6px;font-size:14px">檢測報告</h3>
     <div class="two"><table>${rows.slice(0, Math.ceil(rows.length / 2)).map(([l, v]) => `<tr><th>${esc(l)}</th><td>${esc(v)}</td></tr>`).join('')}</table>
       <table>${rows.slice(Math.ceil(rows.length / 2)).map(([l, v]) => `<tr><th>${esc(l)}</th><td>${esc(v)}</td></tr>`).join('')}</table></div>
@@ -538,7 +537,7 @@ function printConfirm(b, d) {
     <div class="box"><b>注意事項</b><br>
       1. 本機為中古商品，外觀、功能已依上表現場檢測，並經買方親自確認。<br>
       2. 本店保固：自交機日起 ${esc(c.days || '30')} 天，限非人為因素之功能故障；摔機、進水、螢幕破裂、自行或非本店拆修者不在保固範圍。可另外加購 Repair CARE+ 延長保固（詳洽門市）。<br>
-      3. 本機已貼本店防拆保固標籤（編號 ${esc(c.seal || '＿＿＿＿')}）。標籤破損、撕除或經非本店人員拆修者，不適用本店保固。<br>
+      3. 本機已貼本店防拆保固標籤。標籤破損、撕除或經非本店人員拆修者，不適用本店保固。<br>
       4. 請於交機時以「*#06#」核對 IMEI 與本確認書相符。<br>
       5. 交機前請確認帳號、密碼已由您本人設定；本店不保留任何您的個人資料。<br>
       6. 本店為免用統一發票商家，交易以本確認書及收據為憑。</div>

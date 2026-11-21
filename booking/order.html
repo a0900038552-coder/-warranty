@@ -102,6 +102,15 @@ function noteCard() {
     <li>本店為免用統一發票商家，交易以商品確認書及收據為憑。</li>
     <li>訂單資料只用於本次交易、對帳與保固服務。</li></ol></div>`;
 }
+function bundleOpt(b, i) {
+  const nine = Math.floor(b.value * 0.9 / 10) * 10;
+  const calc = (b.items || []).length ? `${b.items.map(x => `${esc(x.name)} ${money(x.price)}`).join(' ＋ ')} ＝ 原價 <b>${money(b.value)}</b>` : (b.value ? `原價 <b>${money(b.value)}</b>` : '');
+  const price = b.add === 0 ? '<b style="color:var(--green)">訂金禮包 免費</b>' : b.value && b.add === nine ? `加購 9 折優惠 ＝ <b style="color:var(--red)">${money(b.add)}</b>` : `加購價 <b style="color:var(--red)">${money(b.add)}</b>`;
+  return `<label class="opt"><input type="radio" name="bundle" value="${i}"><div style="flex:1;min-width:0">
+    ${b.img ? `<img src="${esc(b.img)}" alt="${esc(b.name)}" style="width:100%;max-height:220px;object-fit:contain;border-radius:10px;background:#f8fafc;margin-bottom:6px">` : ''}
+    <b>${esc(b.name)}</b>${b.desc ? `<span class="mute" style="display:block">${esc(b.desc)}</span>` : ''}
+    ${calc ? `<div style="font-size:13px;margin-top:4px">${calc}</div>` : ''}<div style="font-size:14px">${price}</div></div></label>`;
+}
 function prodCard(it, dep, shop) {
   return `<div class="card"><div class="prod">${(it.photos || [])[0] ? `<img src="${photo(it.photos[0])}" alt="">` : ''}<div>
     <span class="nm">${esc(it.model)}</span><span class="mute">${esc(it.color || '')}</span><div class="price">${money(it.price)}</div>
@@ -116,8 +125,8 @@ async function fill() {
   const it = d.item, bs = d.bundles || [];
   $('title').textContent = '填寫訂單';
   m.innerHTML = prodCard(it, d.deposit, d.shop) + checkCard(d.check, d.imei) + flowCard(d.holdDays) + noteCard() +
-    (bs.length ? `<div class="card"><h2>🎁 選擇禮包</h2>${bs.map((b, i) => `<label class="opt"><input type="radio" name="bundle" value="${i}"><div><b>${esc(b.name)}　${b.add ? '+' + money(b.add) + '（取機時付）' : '免費'}</b>
-      <span class="mute">${esc(b.desc)}</span>${b.value ? `<div class="mute" style="font-size:12px">禮包原價 ${money(b.value)}（對帳後取消時從訂金扣除）</div>` : ''}</div></label>`).join('')}</div>` : '') +
+    (bs.length ? `<div class="card"><h2>🎁 選擇禮包</h2>${bs.map((b, i) => bundleOpt(b, i)).join('')}
+      <p class="mute" style="margin-top:8px">加購價取機時再付。店員確認入帳後會為您備貨；若因個人因素取消或逾期未取，會從訂金扣除禮包原價。</p></div>` : '') +
     `<div class="card"><h2>付款方式</h2>
       ${d.pay.lp ? `<label class="opt"><input type="radio" name="method" value="linepay"><div><b>💚 LINE Pay</b><span class="mute">送出後顯示收款碼</span></div></label>` : ''}
       ${d.pay.bank ? `<label class="opt"><input type="radio" name="method" value="bank"><div><b>🏦 銀行匯款</b><span class="mute">送出後顯示帳號，匯款後回覆末五碼</span></div></label>` : ''}
@@ -167,7 +176,7 @@ async function view() {
   m.innerHTML = `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:17px">訂單 ${esc(o.orderNo)}</b><span class="status">${esc(o.status)}</span></div>
       <table style="margin-top:8px">
       <tr><td>商品</td><td><b>${esc(o.model)}</b></td></tr><tr><td>售價</td><td>${money(o.price)}</td></tr><tr><td>訂金</td><td>${money(o.deposit)}（${o.method === 'bank' ? '匯款' + (o.last5 ? ' 末碼 ' + esc(o.last5) : '') : 'LINE Pay'}）</td></tr>
-      ${o.bundle ? `<tr><td>禮包</td><td>${esc(o.bundle)}${o.bundleAdd ? '（+' + money(o.bundleAdd) + '）' : ''}<div class="mute">${esc(o.bundleDesc || '')}</div></td></tr>` : ''}
+      ${o.bundle ? `<tr><td>禮包</td><td>${esc(o.bundle)}${o.bundleAdd ? '（加購 ' + money(o.bundleAdd) + '）' : '（免費）'}<div class="mute">${esc(o.bundleDesc || '')}${o.bundleValue ? '・原價 ' + money(o.bundleValue) : ''}</div></td></tr>` : ''}
       <tr><td>尾款（取機時付）</td><td><b>${money(Number(o.price) - Number(o.deposit) + Number(o.bundleAdd || 0))}</b></td></tr>
       <tr><td>取機門市</td><td>${esc(o.branch)}<div class="mute">${esc(d.shop.addr || '')} ${esc(d.shop.tel || '')}</div></td></tr>
       <tr><td>訂購人</td><td>${esc(o.name)} ${esc(o.phone)}</td></tr>

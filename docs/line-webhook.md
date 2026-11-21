@@ -61,3 +61,9 @@ Google Apps Script，一支程式處理所有 LINE 事件。**改完要手動貼
 - 完成頁顯示付款資訊＋「回到 LINE 回報付款」（`line.me/R/oaMessage/<basicId>/?訂單 Uxxxxxxx`；basicId 由 `/v2/bot/info` 取得並存指令碼屬性）。
 - 客人在 LINE 傳「訂單 Uxxxxxxx」→ 回付款資訊（免費回覆）→ 匯款回 5 碼／LINE Pay 按「我已付款」（`act=opaid`）→ reported=true、通知老闆。
 - 查看／下載 PDF：`booking/order.html?k=<viewKey>`（`?action=orderView`，電話、末五碼部分遮蔽），用瀏覽器列印存 PDF。
+
+## 訂金禮包分頁格式（`bundles_`）
+A 啟用｜B 名稱｜C 內容說明｜D 加購價（留空＝品項原價合計 ×0.9 無條件捨去到十位；0＝免費）｜E 品項明細（「硬博士保護貼 990、防摔殼 790」，合計＝原價＝取消時扣除金額）｜F 圖片網址（雲端硬碟分享連結自動轉 lh3）。訂單頁顯示「A ＋ B ＝ 原價，加購 9 折優惠 ＝ 價格」。
+- `?action=depositSetup`：重寫禮包表頭、付款設定空白的 LINE Pay 欄填 `care/pay/linepay-qr.jpg`。
+- `?action=autoReplyTransfer`：自動回覆加「資料轉移（換新機）」列（插在資料救援前，並從資料救援拿掉轉移類關鍵字）。
+- `?action=basicIds`：兩店官方帳號基本 ID（IG／FB 用的 `line.me/R/oaMessage/<id>/?看中古機現貨` 連結）。

@@ -84,7 +84,7 @@
 id = `{來源key}_{hash}`；`src`, `site`, `model`, `modelKey`, `item`, `part`, `price`, `run`, `updated`。來源見 GAS `WEB_SOURCES`。
 
 ### `used_stock` — 中古機庫存
-`date`, `branch`, `model`, `cost`(收購成本), `imei`, `cond`, `price`, `minPrice`, `note`, `manual`, `color`, `battery`, `acc`, `waterproof`, `box`, `cable`, `status`, `check`(驗機表：ver, carrier, account, orig, look, screen, touch, grade, bio, cell, wifi, bt, fcam, rcam, btn, spk, mic, port, qi, nfc, prox, light, battery, seal 防拆標籤編號, days 本店保固天數, memo, date, by), `lineHide`(不在 LINE 上架), `photos`(照片的 Google 雲端硬碟檔案 ID 陣列，第一張是封面), `createdAt/By`, `updatedAt/By`。
+`date`, `branch`, `model`, `cost`(收購成本), `imei`, `cond`, `price`, `minPrice`, `note`, `manual`, `color`, `battery`, `acc`, `waterproof`, `box`, `cable`, `status`, `check`(驗機表：ver, carrier, account, orig, look, screen, touch, grade, bio, cell, wifi, bt, fcam, rcam, btn, spk, mic, port, qi, nfc, prox, light, battery, days 本店保固天數（預設 30）, memo, date, by), `lineHide`(不在 LINE 上架), `photos`(照片的 Google 雲端硬碟檔案 ID 陣列，第一張是封面), `createdAt/By`, `updatedAt/By`。
 
 ### `watchlist` — 注意客人（經常預約不來、保留逾期未取、付款／糾紛等）
 文件 ID＝09 開頭 10 碼電話；只有 LINE、沒有電話的用 `L_<LINE userId>`（查詢只要 getDoc 1 筆）。

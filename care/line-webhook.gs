@@ -82,6 +82,8 @@ function doGet(e) {
   if (p.action === 'depositSetup') return json_({ url: setupDeposit() });
   if (p.action === 'resvReminderSetup') return json_(setupResvReminder());
   if (p.action === 'orderGet') return json_(orderGet_(String(p.t || '')));
+  if (p.action === 'basicIds') return json_({ nanzi: basicId_('nanzi'), dexian: basicId_('dexian') });
+  if (p.action === 'autoReplyTransfer') return json_(addTransferReply_());
   if (p.action === 'orderView') return json_(orderView_(String(p.k || '')));
   if (p.action === 'autoReplyTest') {   // 測試：這句話在某間店會不會觸發自動回覆（不會真的傳訊息）
     var st = STORES[p.store] || STORES.nanzi, rows = autoReplyRows_(), q = String(p.q || '').replace(/\s+/g, '').toLowerCase(), hit = -1;
@@ -229,6 +231,31 @@ function setupAutoReply() {
   }
   CacheService.getScriptCache().remove('auto_reply_rows');
   return ss.getUrl() + '#gid=' + sh.getSheetId();
+}
+// 新增「資料轉移（換新機）」自動回覆：插在「資料救援」那列前面，並把轉移類關鍵字從資料救援拿掉（重複執行不會多加）
+var TRANSFER_KEYS_ = '資料轉移、轉移資料、轉資料、資料對傳、對傳、資料移轉、移轉資料、資料搬、搬資料、轉到新手機、傳到新手機、換新機、新機資料、舊機資料、新手機資料、舊手機資料、line轉移、line移轉、聊天紀錄轉';
+var TRANSFER_TEXT_ = '您好～換新手機想把舊手機的資料搬過去，我們可以幫您處理 👍\n\n' +
+  '🔸 可以轉移：照片、影片、聯絡人、LINE 聊天紀錄、App 和設定等。\n' +
+  '🔸 iPhone → iPhone、Android → Android 都可以；Android ↔ iPhone 跨系統，部分資料（例如 LINE 聊天紀錄）會有限制，到店我們先幫您確認。\n' +
+  '🔸 請兩支手機都帶來，並記得兩支手機的解鎖密碼，以及 Apple ID／Google 帳號密碼。\n' +
+  '🔸 轉移時間依資料量而定，資料多的話會需要比較久。\n\n' +
+  '如果舊手機已經壞了、不開機，處理方式不一樣，請改問「資料救援」喔。\n\n' +
+  '歡迎告訴我們兩支手機的型號，我們幫您安排時間 😊';
+function addTransferReply_() {
+  var sh = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('BOOKING_SHEET_ID')).getSheetByName(AUTO_SHEET);
+  var vals = sh.getRange(2, 1, Math.max(1, sh.getLastRow() - 1), 5).getValues();
+  if (vals.some(function (r) { return /資料對傳/.test(String(r[1])); })) return { ok: true, note: '已經有了' };
+  var rescue = -1;
+  vals.forEach(function (r, i) { if (rescue < 0 && /救資料/.test(String(r[1]))) rescue = i; });
+  if (rescue >= 0) {   // 資料救援那列：拿掉轉移類關鍵字
+    var keep = String(vals[rescue][1]).split('、').filter(function (k) { return ['轉移資料', '資料轉移', '轉資料'].indexOf(k.trim()) < 0; }).join('、');
+    sh.getRange(rescue + 2, 2).setValue(keep);
+  }
+  var at = rescue >= 0 ? rescue + 2 : sh.getLastRow() + 1;
+  sh.insertRowBefore(at);
+  sh.getRange(at, 1, 1, 5).setValues([['Ｖ', TRANSFER_KEYS_, '全部', TRANSFER_TEXT_, '']]).setWrap(true).setVerticalAlignment('top');
+  CacheService.getScriptCache().remove('auto_reply_rows');
+  return { ok: true, row: at };
 }
 var AUTO_SAMPLES_ = [
   ['Ｖ', '單換玻璃、只換玻璃、換玻璃、單換螢幕玻璃、外玻璃、玻璃破', '全部',
@@ -768,9 +795,14 @@ function setupDeposit() {
     b.getRange(1, 1, 1, 5).setFontWeight('bold').setBackground('#1e2027').setFontColor('#ffffff'); b.setFrozenRows(1); b.setColumnWidths(1, 4, 220);
   }
   var bs = ss.getSheetByName('訂金禮包');
-  if (bs.getRange(1, 5).getValue() === '') {   // 第 5 欄：禮包原價（客人取消時從訂金扣除）
-    bs.getRange(1, 5).setValue('禮包原價（取消時從訂金扣除）').setFontWeight('bold').setBackground('#1e2027').setFontColor('#ffffff'); bs.setColumnWidth(5, 220);
-  }
+  bs.getRange(1, 1, 1, 6).setValues([['啟用（Ｖ＝開）', '名稱（按鈕上的字，20 字內）', '內容（給客人看的說明）', '加購價（留空＝原價打 9 折；0＝免費）',
+    '品項明細（例：硬博士保護貼 990、防摔殼 790；加起來就是原價，取消時扣這個）', '圖片網址（雲端硬碟分享連結也可以）']])
+    .setFontWeight('bold').setBackground('#1e2027').setFontColor('#ffffff').setWrap(true);
+  bs.setColumnWidth(4, 200); bs.setColumnWidth(5, 320); bs.setColumnWidth(6, 240);
+  var ps = ss.getSheetByName('付款設定');   // LINE Pay 收款碼：兩間店同一張（care/pay/linepay-qr.jpg）
+  if (ps && ps.getLastRow() > 1) ps.getRange(2, 5, ps.getLastRow() - 1, 1).getValues().forEach(function (v, i) {
+    if (!String(v[0]).trim()) ps.getRange(i + 2, 5).setValue('https://a0900038552-coder.github.io/-warranty/care/pay/linepay-qr.jpg');
+  });
   CacheService.getScriptCache().removeAll(['pay_settings', 'dep_bundles']);
   return ss.getUrl();
 }
@@ -791,10 +823,25 @@ function paySetting_(branch) {
   if (m) img = photoUrl_(m[1], 1000);   // 貼雲端硬碟分享連結也可以（要設成知道連結的人可看）
   return { bank: String(r[1] || '').trim(), acct: String(r[2] || '').trim(), holder: String(r[3] || '').trim(), lpImg: /^https:\/\//.test(img) ? img : '' };
 }
+// 訂金禮包分頁：A 啟用｜B 名稱｜C 內容說明｜D 加購價（留空＝品項原價合計打 9 折，0＝免費）｜E 品項明細（「保護貼 990、防摔殼 790」）｜F 圖片網址
+function bundleItems_(txt) {
+  return String(txt || '').split(/[、,，;；\n]+/).map(function (x) {
+    var m = x.trim().match(/^(.*?)[\s:：$＄]*([\d,]+)\s*元?$/); return m && m[1].trim() ? { name: m[1].trim(), price: Number(m[2].replace(/,/g, '')) } : null;
+  }).filter(Boolean);
+}
+function imgUrl_(u) {
+  u = String(u || '').trim(); var m = u.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([\w-]{10,})/);
+  if (m) return photoUrl_(m[1], 800);
+  return /^https:\/\//.test(u) ? u : '';
+}
 function bundles_() {
   return sheetRows_('訂金禮包', 'dep_bundles').filter(function (x) { return String(x[0]).trim() && String(x[1]).trim(); })
-    .map(function (x) { return { name: String(x[1]).trim().slice(0, 20), desc: String(x[2] || '').trim(), add: Number(String(x[3] || '0').replace(/[^\d]/g, '')) || 0,
-      value: Number(String(x[4] || '0').replace(/[^\d]/g, '')) || 0 }; });
+    .map(function (x) {
+      var items = bundleItems_(x[4]), total = items.reduce(function (a, b) { return a + b.price; }, 0);
+      if (!items.length) total = Number(String(x[4] || '0').replace(/[^\d]/g, '')) || 0;   // 舊格式：直接填原價
+      var d = String(x[3] == null ? '' : x[3]).trim(), add = d === '' ? Math.floor(total * 0.9 / 10) * 10 : (Number(d.replace(/[^\d]/g, '')) || 0);
+      return { name: String(x[1]).trim().slice(0, 20), desc: String(x[2] || '').trim(), add: add, value: total, items: items, img: imgUrl_(x[5]) };
+    });
 }
 function fsQuery_(col, where, max) {
   var res = fsFetch_(fsBase_() + ':runQuery', { method: 'post', payload: JSON.stringify({ structuredQuery: { from: [{ collectionId: col }], where: where, limit: max || 100 } }) });
