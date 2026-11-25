@@ -86,6 +86,7 @@ function doGet(e) {
   if (p.action === 'autoReplyTransfer') return json_(addTransferReply_());
   if (p.action === 'orderView') return json_(orderView_(String(p.k || '')));
   if (p.action === 'ics') return visitIcs_(String(p.k || ''));
+  if (p.action === 'showcase') return ContentService.createTextOutput(showcasePublic_()).setMimeType(ContentService.MimeType.JSON);
   if (p.action === 'visitReminderSetup') return json_(setupVisitReminder());
   if (p.action === 'autoReplyTest') {   // 測試：這句話在某間店會不會觸發自動回覆（不會真的傳訊息）
     var st = STORES[p.store] || STORES.nanzi, rows = autoReplyRows_(), q = String(p.q || '').replace(/\s+/g, '').toLowerCase(), hit = -1;
@@ -93,6 +94,38 @@ function doGet(e) {
     return json_({ store: st.branch, rows: rows.length, keys: rows.map(function (r) { return r.keys.join('、') + '｜' + r.branch; }), hit: hit, reply: hit >= 0 ? rows[hit].text.slice(0, 60) : '' });
   }   // 建立／找到「自動回覆」分頁，回傳試算表網址（試算表本身仍只有老闆能開）
   return ContentService.createTextOutput('Repair CARE+ webhook OK');
+}
+/* 官網（used-phones）公開清單的快取：中古機＋配件兩份清單，每 5 分鐘最多讀一次資料庫。
+ * 不管多少客人或爬蟲來看，Firestore 一天最多約 600 次讀取；資料庫額度用完時，繼續提供最後一份（6 小時內）。 */
+var SHOWCASE_TTL = 300;
+function cachePutBig_(c, key, str, ttl) {   // CacheService 單筆上限 100KB，中文一字 3 bytes → 每段 30,000 字
+  var parts = {}, n = Math.ceil(str.length / 30000) || 1;
+  for (var i = 0; i < n; i++) parts[key + '_' + i] = str.slice(i * 30000, (i + 1) * 30000);
+  parts[key + '_n'] = String(n);
+  c.putAll(parts, ttl);
+}
+function cacheGetBig_(c, key) {
+  var n = Number(c.get(key + '_n') || 0); if (!n) return null;
+  var keys = []; for (var i = 0; i < n; i++) keys.push(key + '_' + i);
+  var got = c.getAll(keys), out = '';
+  for (var j = 0; j < n; j++) { if (got[keys[j]] == null) return null; out += got[keys[j]]; }
+  return out;
+}
+function showcasePublic_() {
+  var c = CacheService.getScriptCache(), hit = cacheGetBig_(c, 'sc_v1');
+  if (hit) return hit;
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(8000); hit = cacheGetBig_(c, 'sc_v1'); if (hit) return hit; } catch (e) {}   // 同時很多人進來時只讀一次資料庫
+  try {
+    var u = getDoc_('settings/used_showcase'), a = getDoc_('settings/acc_showcase');
+    if (!u || !a) throw new Error('資料庫讀取失敗');
+    var out = JSON.stringify({ ok: true, at: new Date().toISOString(), used: u.json || '[]', acc: a.json || '[]' });
+    cachePutBig_(c, 'sc_v1', out, SHOWCASE_TTL);
+    cachePutBig_(c, 'sc_last', out, 21600);
+    return out;
+  } catch (e) {
+    return cacheGetBig_(c, 'sc_last') || JSON.stringify({ ok: false, error: String(e.message || e) });
+  } finally { try { lock.releaseLock(); } catch (e) {} }
 }
 function json_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
 function ok_() { return ContentService.createTextOutput(JSON.stringify({ ok: true })).setMimeType(ContentService.MimeType.JSON); }
