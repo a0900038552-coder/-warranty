@@ -23,5 +23,9 @@ service cloud.firestore {
     match /settings/used_showcase {
       allow read: if true;
     }
+    // 官網配件選購讀的公開清單（配件管理 care/acc.html 自動整理），一樣只開讀
+    match /settings/acc_showcase {
+      allow read: if true;
+    }
   }
 }

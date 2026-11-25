@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" type="image/png" sizes="32x32" href="icon-32.png?v=2">
+<link rel="apple-touch-icon" href="apple-touch-icon.png?v=2">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1e2027">
+<title>復原者 配件管理</title>
+<style>
+:root{--ink:#16181d;--mute:#6b7280;--line:#e5e7eb;--bg:#f4f5f7;--red:#d71920;--green:#15803d;--blue:#2a78d6;--amber:#b45309}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.5}
+button,input,select,textarea{font:inherit}
+.hidden{display:none!important}
+#login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.login-box{background:#fff;border-radius:14px;padding:28px 24px;width:100%;max-width:360px}
+.login-box input{width:100%;border:1px solid #d1d5db;border-radius:8px;padding:9px 10px;margin-bottom:10px}
+header{background:var(--ink);color:#fff;padding:10px 16px;border-bottom:4px solid var(--red);position:sticky;top:0;z-index:20}
+.hd{display:flex;align-items:center;gap:10px;flex-wrap:wrap;max-width:1100px;margin:0 auto}
+.logo{font-weight:900;font-size:16px;margin-right:auto}.logo small{display:block;font-weight:400;font-size:11px;color:#a1a6b0;letter-spacing:2px}
+.hbtn{background:none;border:1px solid #555;color:#ddd;border-radius:8px;padding:5px 11px;cursor:pointer;text-decoration:none;font-size:13px}
+.btn{border:1px solid #d1d5db;background:#fff;color:var(--ink);border-radius:8px;padding:7px 12px;cursor:pointer}
+.btn.dark{background:var(--ink);color:#fff;border-color:var(--ink);font-weight:700}
+.btn.red{color:var(--red);border-color:#fecaca}
+main{max-width:1100px;margin:0 auto;padding:12px 12px 60px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.bar input[type=search]{flex:1;min-width:200px;border:1px solid #d1d5db;border-radius:10px;padding:9px 12px;font-size:15px}
+.bar select{border:1px solid #d1d5db;border-radius:8px;padding:8px;background:#fff}
+h3.cat{margin:18px 2px 8px;font-size:15px}
+h3.cat small{color:var(--mute);font-weight:400}
+.list{display:grid;gap:8px}
+.it{background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px;display:flex;gap:12px;align-items:center;cursor:pointer}
+.it.off{opacity:.5}
+.it img,.it .noimg{width:64px;height:64px;border-radius:10px;object-fit:cover;background:#f3f4f6;flex:none;display:flex;align-items:center;justify-content:center;color:#9ca3af}
+.it .nm{font-weight:700}
+.it .fit{color:var(--mute);font-size:12px;margin-top:2px}
+.it .px{margin-left:auto;font-weight:800;white-space:nowrap;font-variant-numeric:tabular-nums}
+.pill{font-size:11.5px;padding:1px 7px;border-radius:99px;font-weight:700;margin-left:4px}
+.pill.g{background:#dcfce7;color:var(--green)}.pill.a{background:#fef3c7;color:var(--amber)}.pill.m{background:#f3f4f6;color:var(--mute)}
+/* 編輯視窗 */
+#ed{position:fixed;inset:0;background:rgba(15,17,21,.45);z-index:50;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto}
+#ed form{background:#fff;border-radius:14px;max-width:640px;width:100%;padding:18px;display:grid;gap:12px;margin:auto 0}
+#ed label{display:block;font-size:12px;color:var(--mute);margin-bottom:3px}
+#ed input[type=text],#ed input:not([type]),#ed select,#ed textarea{width:100%;border:1px solid #d1d5db;border-radius:8px;padding:8px;background:#fff}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.chk{display:flex;align-items:center;gap:6px;font-size:14px;cursor:pointer}
+.chk input{width:18px;height:18px;accent-color:var(--green)}
+.models{border:1px solid var(--line);border-radius:10px;padding:8px;max-height:260px;overflow:auto}
+.models .br{font-size:12px;color:var(--mute);margin:6px 0 4px;font-weight:700}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.chips button{border:1px solid #d1d5db;background:#fff;border-radius:99px;padding:4px 10px;font-size:12.5px;cursor:pointer}
+.chips button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.ph{display:flex;gap:8px;flex-wrap:wrap}
+.ph figure{position:relative;width:84px}
+.ph img{width:84px;height:84px;object-fit:cover;border-radius:10px;border:1px solid #e5e7eb;display:block}
+.ph figure.cover img{outline:3px solid var(--red)}
+.ph figcaption{display:flex;justify-content:space-between;font-size:12px}
+.ph figcaption button{border:0;background:none;cursor:pointer;color:var(--mute);font-size:12px}
+.ph .add{width:84px;height:84px;border:2px dashed #d1d5db;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;color:var(--mute);font-size:12px}
+.hint{color:var(--mute);font-size:12px;line-height:1.7}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#fff;padding:10px 16px;border-radius:10px;transition:.25s;z-index:99}
+#toast.show{transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+<section id="login" class="hidden">
+  <form class="login-box" id="loginForm"><h3 style="margin-bottom:12px">復原者 配件管理</h3>
+    <input name="email" type="email" placeholder="帳號（Email）" required><input name="pw" type="password" placeholder="密碼" required>
+    <button class="hbtn" style="width:100%;background:var(--ink);color:#fff;padding:9px">登入</button></form>
+</section>
+<section id="app" class="hidden">
+  <header><div class="hd">
+    <div class="logo">🎧 配件管理<small>ACCESSORIES</small></div>
+    <a class="hbtn" href="stock.html">📱 中古機庫存</a><a class="hbtn" href="ledger.html">📝 每日登打</a><a class="hbtn" href="./">← 保固系統</a>
+  </div></header>
+  <main>
+    <div class="bar">
+      <input type="search" id="q" placeholder="搜尋品名、機型…">
+      <select id="fc"><option value="">全部類別</option></select>
+      <select id="fm"><option value="">全部機型</option></select>
+      <button class="btn dark" id="addBtn">＋ 新增配件</button>
+    </div>
+    <div id="out"><p class="hint">讀取中…</p></div>
+    <p class="hint" style="margin-top:16px">
+      🌐 <b>官網配件選購</b>：這裡的配件（沒勾「先不上架」的）會自動同步到官網。客人選自己的手機型號，就只會看到相容的配件；中古機詳細頁也會推薦。<br>
+      🔗 <b>相容怎麼判斷</b>：① 勾了「通用」→ 每支手機都看得到（充電器、行動電源、掛繩）② 勾了適用機型 → 只有那些機型看得到（手機殼、保護貼、鏡頭貼）③ 充電線選了接頭 → 同接頭的手機都看得到（USB-C／Lightning）。<br>
+      📷 照片跟中古機一樣存在老闆的 Google 雲端硬碟；第一張是封面。不會給客人看到「備註」。
+    </p>
+  </main>
+</section>
+
+<div id="ed" class="hidden"></div>
+<div id="toast"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { reportLogin } from './guard.js?v=20261116';
+import { ask } from './ask.js?v=20261116';
+import { MODELS, BRANDS, CATS } from './models.js?v=20261125';
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, addDoc, deleteDoc, onSnapshot, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+const app = initializeApp({ apiKey: "AIzaSyD04ZMXIt8Oo3hjm5qsMaKiLXYzp_9YKwA", authDomain: "care-warranty.firebaseapp.com", projectId: "care-warranty",
+  storageBucket: "care-warranty.firebasestorage.app", messagingSenderId: "29512690431", appId: "1:29512690431:web:f0c2dd1cd6acb03d197aca" });
+const auth = getAuth(app), db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) });
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const money = n => n == null || isNaN(n) ? '' : '$' + Math.round(n).toLocaleString('en-US');
+const num = v => { const n = Number(String(v ?? '').replace(/[,$\s]/g, '')); return String(v ?? '').trim() === '' || isNaN(n) ? null : n; };
+function toast(m) { const t = $('toast'); t.textContent = m; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2400); }
+const thumb = (id, w = 240) => 'https://lh3.googleusercontent.com/d/' + id + '=w' + w;
+
+let items = {}, unsub = null;
+onAuthStateChanged(auth, u => { $('login').classList.toggle('hidden', !!u); $('app').classList.toggle('hidden', !u); if (u) { start(); reportLogin(auth, '配件管理'); } });
+$('loginForm').onsubmit = async e => { e.preventDefault(); try { await signInWithEmailAndPassword(auth, e.target.email.value.trim(), e.target.pw.value); } catch { toast('⚠️ 登入失敗'); } };
+
+$('fc').innerHTML += CATS.map(c => `<option>${c}</option>`).join('');
+$('fm').innerHTML += BRANDS.map(b => `<optgroup label="${b}">${MODELS.filter(m => m.brand === b).map(m => `<option>${esc(m.name)}</option>`).join('')}</optgroup>`).join('');
+
+function start() {
+  if (unsub) return;
+  unsub = onSnapshot(collection(db, 'accessories'), s => {
+    items = {}; s.docs.forEach(d => items[d.id] = { id: d.id, ...d.data() });
+    render(); publish();
+  });
+}
+
+// 官網讀的公開清單（settings/acc_showcase）：只放客人看得到的欄位，清單有變才寫
+let pubTimer = null;
+function publish() {
+  const list = Object.values(items).filter(x => !x.hide && num(x.price) != null && x.name)
+    .sort((a, b) => CATS.indexOf(a.cat) - CATS.indexOf(b.cat) || (a.order ?? 999) - (b.order ?? 999) || String(a.name).localeCompare(String(b.name)))
+    .map(x => ({ id: x.id, name: x.name, cat: x.cat || '掛繩・其他', price: num(x.price), avail: x.avail || '可調貨', all: !!x.all, conn: x.conn || '',
+      models: x.all ? [] : (x.models || []), photos: (x.photos || []).slice(0, 4), desc: x.desc || '' }));
+  const json = JSON.stringify(list);
+  let last = null; try { last = localStorage.getItem('acc-showcase'); } catch {}
+  if (json === last) return;
+  clearTimeout(pubTimer);
+  pubTimer = setTimeout(async () => {
+    try {
+      await setDoc(doc(db, 'settings', 'acc_showcase'), { json, count: list.length, updatedAt: new Date().toISOString(), updatedBy: auth.currentUser.email });
+      try { localStorage.setItem('acc-showcase', json); } catch {}
+    } catch (e) { console.warn('官網配件清單更新失敗', e); toast('⚠️ 官網配件清單更新失敗'); }
+  }, 1500);
+}
+
+function fitText(x) {
+  if (x.all) return '通用（所有手機）';
+  const parts = [];
+  if (x.conn) parts.push(x.conn + ' 接頭的手機');
+  const ms = x.models || [];
+  if (ms.length) parts.push(ms.length <= 3 ? ms.join('、') : ms.slice(0, 3).join('、') + ` 等 ${ms.length} 款`);
+  return parts.join('＋') || '⚠️ 還沒設定適用機型（客人看不到）';
+}
+
+function render() {
+  const q = $('q').value.trim().toLowerCase(), fc = $('fc').value, fm = $('fm').value;
+  const list = Object.values(items).filter(x => {
+    if (fc && x.cat !== fc) return false;
+    if (fm && !(x.all || (x.models || []).includes(fm) || (x.conn && MODELS.find(m => m.name === fm)?.conn === x.conn))) return false;
+    if (q && ![x.name, x.desc, x.note, ...(x.models || [])].join(' ').toLowerCase().includes(q)) return false;
+    return true;
+  });
+  if (!Object.keys(items).length) { $('out').innerHTML = '<p class="hint" style="padding:20px 0">還沒有配件。按右上「＋ 新增配件」開始。</p>'; return; }
+  if (!list.length) { $('out').innerHTML = '<p class="hint" style="padding:20px 0">沒有符合的配件。</p>'; return; }
+  $('out').innerHTML = CATS.concat([undefined]).map(c => {
+    const g = list.filter(x => (x.cat || undefined) === c || (c === undefined && !CATS.includes(x.cat)))
+      .sort((a, b) => (a.order ?? 999) - (b.order ?? 999) || String(a.name).localeCompare(String(b.name)));
+    if (!g.length) return '';
+    return `<h3 class="cat">${esc(c || '未分類')} <small>${g.length} 項</small></h3><div class="list">${g.map(x => `
+      <div class="it ${x.hide ? 'off' : ''}" data-id="${x.id}">
+        ${x.photos?.[0] ? `<img src="${thumb(x.photos[0])}" alt="" loading="lazy">` : '<div class="noimg">🎧</div>'}
+        <div><div class="nm">${esc(x.name)}${x.hide ? '<span class="pill m">先不上架</span>' : ''}<span class="pill ${x.avail === '現貨' ? 'g' : 'a'}">${esc(x.avail || '可調貨')}</span></div>
+          <div class="fit">${esc(fitText(x))}</div></div>
+        <div class="px">${money(num(x.price))}</div>
+      </div>`).join('')}</div>`;
+  }).join('');
+}
+$('q').oninput = render; $('fc').onchange = render; $('fm').onchange = render;
+$('out').onclick = e => { const el = e.target.closest('[data-id]'); if (el) edit(items[el.dataset.id]); };
+$('addBtn').onclick = () => edit(null);
+
+// ───── 新增／編輯 ─────
+let cur = null, uploading = false;
+function edit(x) {
+  cur = x ? JSON.parse(JSON.stringify(x)) : { cat: '手機殼', avail: '可調貨', models: [], photos: [] };
+  cur.models = cur.models || []; cur.photos = cur.photos || [];
+  drawEd(); $('ed').classList.remove('hidden');
+}
+function drawEd() {
+  const x = cur, sel = new Set(x.models);
+  $('ed').innerHTML = `<form id="f">
+    <b style="font-size:16px">${x.id ? '編輯配件' : '＋ 新增配件'}</b>
+    <div><label>品名 *（客人看得到）</label><input name="name" value="${esc(x.name)}" required placeholder="例：犀牛盾 Clear 磁吸透明手機殼｜iPhone 17 Pro Max｜透明"></div>
+    <div class="g2">
+      <div><label>類別</label><select name="cat">${CATS.map(c => `<option ${c === x.cat ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
+      <div><label>售價 *</label><input name="price" inputmode="numeric" value="${esc(x.price ?? '')}" required placeholder="例：1280"></div>
+      <div><label>供貨</label><select name="avail">${['現貨', '可調貨'].map(c => `<option ${c === x.avail ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
+      <div><label>排序（小的排前面，可空白）</label><input name="order" inputmode="numeric" value="${esc(x.order ?? '')}"></div>
+    </div>
+    <div><label>簡短說明（選填，客人看得到）</label><input name="desc" value="${esc(x.desc)}" placeholder="例：MagSafe 磁吸、軍規防摔"></div>
+    <div>
+      <label>適用機型</label>
+      <label class="chk"><input type="checkbox" name="all" ${x.all ? 'checked' : ''}> 通用：所有手機都能用（充電器、行動電源、掛繩…）</label>
+      <div class="g2" style="margin-top:6px" id="connRow">
+        <div><label>充電線接頭（選了就自動配對同接頭的手機）</label><select name="conn"><option value="">（不是充電線）</option>${['USB-C', 'Lightning'].map(c => `<option ${c === x.conn ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
+        <div><label>快速勾選</label><select id="quick"><option value="">—</option>${BRANDS.map(b => `<option value="${b}">全部 ${b}</option>`).join('')}<option value="__clear">全部取消</option></select></div>
+      </div>
+      <div class="models" id="mbox" style="margin-top:6px">${BRANDS.map(b => `<div class="br">${b}</div><div class="chips">${MODELS.filter(m => m.brand === b).map(m =>
+        `<button type="button" data-m="${esc(m.name)}" class="${sel.has(m.name) ? 'on' : ''}">${esc(m.name)}</button>`).join('')}</div>`).join('')}</div>
+      <div class="hint">已選 <b id="mcnt">${sel.size}</b> 款</div>
+    </div>
+    <div><label>照片（第一張是封面，最多 4 張）</label><div class="ph">${x.photos.map((pid, i) => `<figure class="${i ? '' : 'cover'}"><img src="${thumb(pid)}" alt=""><figcaption>${i ? `<button type="button" data-cv="${i}">★ 封面</button>` : '<span style="color:var(--red);font-weight:700">封面</span>'}<button type="button" data-dl="${i}">✕</button></figcaption></figure>`).join('')}
+      ${x.photos.length < 4 ? `<label class="add">${uploading ? '上傳中…' : '📷<span>加照片</span>'}<input type="file" accept="image/*" multiple hidden id="phin" ${uploading ? 'disabled' : ''}></label>` : ''}</div></div>
+    <div><label>內部備註（客人看不到）</label><input name="note" value="${esc(x.note)}" placeholder="進貨廠商、成本…"></div>
+    <label class="chk"><input type="checkbox" name="hide" ${x.hide ? 'checked' : ''}> 先不上架（官網看不到）</label>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn dark">儲存</button>
+      <button type="button" class="btn" id="cancel">取消</button>
+      ${x.id ? '<button type="button" class="btn" id="dup">複製一筆</button><button type="button" class="btn red" id="del" style="margin-left:auto">刪除</button>' : ''}
+    </div>
+  </form>`;
+  const f = $('f');
+  const allBox = f.elements.namedItem('all');
+  const syncAll = () => { $('mbox').style.opacity = allBox.checked ? .35 : 1; };
+  allBox.onchange = syncAll; syncAll();
+  // 欄位先記回 cur，重畫（加照片、勾機型）時不會不見
+  f.oninput = () => readForm(f);
+  $('mbox').onclick = e => { const b = e.target.closest('[data-m]'); if (!b) return; readForm(f); const m = b.dataset.m;
+    cur.models = cur.models.includes(m) ? cur.models.filter(v => v !== m) : [...cur.models, m]; b.classList.toggle('on'); $('mcnt').textContent = cur.models.length; };
+  $('quick').onchange = e => { readForm(f); const v = e.target.value;
+    cur.models = v === '__clear' ? [] : [...new Set([...cur.models, ...MODELS.filter(m => m.brand === v).map(m => m.name)])]; drawEd(); };
+  f.onclick = async e => {
+    const cv = e.target.closest('[data-cv]'), dl = e.target.closest('[data-dl]');
+    if (cv) { readForm(f); const [p] = cur.photos.splice(+cv.dataset.cv, 1); cur.photos.unshift(p); drawEd(); }
+    if (dl) { readForm(f); if (!(await ask('刪除這張照片？'))) return; const [gone] = cur.photos.splice(+dl.dataset.dl, 1); drawEd(); gas({ del: gone }).catch(() => {}); }
+  };
+  $('phin') && ($('phin').onchange = async e => {
+    readForm(f); const files = [...e.target.files].slice(0, 4 - cur.photos.length); if (!files.length) return;
+    uploading = true; drawEd();
+    for (const file of files) {
+      try { const j = await gas({ data: await shrink(file), name: '配件-' + (cur.name || 'acc').slice(0, 40) + '-' + Date.now() }); cur.photos.push(j.id); }
+      catch (er) { toast('⚠️ ' + er.message); }
+    }
+    uploading = false; drawEd();
+  });
+  $('cancel').onclick = close;
+  $('dup') && ($('dup').onclick = () => { readForm(f); const c = JSON.parse(JSON.stringify(cur)); delete c.id; c.name = c.name + '（複製）'; cur = c; drawEd(); toast('已複製，改好後按儲存'); });
+  $('del') && ($('del').onclick = async () => { if (!(await ask(`刪除「${cur.name}」？\n官網也會一起下架。`))) return; await deleteDoc(doc(db, 'accessories', cur.id)); close(); toast('已刪除'); });
+  f.onsubmit = async e => {
+    e.preventDefault(); readForm(f);
+    if (uploading) return toast('照片還在上傳，等一下');
+    if (num(cur.price) == null) return toast('⚠️ 售價要填數字');
+    const data = { name: cur.name.trim(), cat: cur.cat, price: num(cur.price), avail: cur.avail, order: num(cur.order), desc: (cur.desc || '').trim(), all: !!cur.all, conn: cur.conn || '',
+      models: cur.all ? [] : cur.models, photos: cur.photos, note: (cur.note || '').trim(), hide: !!cur.hide, updatedAt: new Date().toISOString(), updatedBy: auth.currentUser.email };
+    try {
+      if (cur.id) await setDoc(doc(db, 'accessories', cur.id), data, { merge: true });
+      else await addDoc(collection(db, 'accessories'), { ...data, createdAt: data.updatedAt, createdBy: data.updatedBy });
+      close(); toast('已儲存，官網會自動更新');
+    } catch (er) { toast('⚠️ 儲存失敗：' + er.message); }
+  };
+}
+function readForm(f) {
+  const E = f.elements;   // 用 elements 取欄位（f.name 會拿到表單本身的 name 屬性）
+  ['name', 'cat', 'price', 'avail', 'order', 'desc', 'conn', 'note'].forEach(k => cur[k] = E.namedItem(k).value);
+  cur.all = E.namedItem('all').checked; cur.hide = E.namedItem('hide').checked;
+}
+function close() { $('ed').classList.add('hidden'); $('ed').innerHTML = ''; cur = null; }
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && cur && !uploading) close(); });
+
+// ───── 照片：跟中古機庫存同一套（手機先縮小再傳到老闆雲端硬碟）─────
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbxBK7c2Oledgo-jT-kRnueuU8grZxVinuocyp2iLI8u-c5Q94fZSeiemH0UkeAqdjfTlw/exec';
+function shrink(file) {
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, 1280 / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+      const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+      res(c.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('這個檔案不是照片，或格式手機看不懂（HEIC 請改用拍照）')); };
+    img.src = url;
+  });
+}
+async function gas(body) {
+  const r = await fetch(GAS_URL + '?action=usedPhoto', { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ idToken: await auth.currentUser.getIdToken(), ...body }) });
+  const j = await r.json(); if (!j.ok) throw new Error(j.error || '上傳失敗'); return j;
+}
+</script>
+</body>
+</html>
