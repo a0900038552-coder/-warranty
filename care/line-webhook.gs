@@ -837,7 +837,9 @@ function imgUrl_(u) {
   if (m) return photoUrl_(m[1], 800);
   return /^https:\/\//.test(u) ? u : '';
 }
+var BUNDLES_ON = false;  // 訂金禮包：關閉（2026/11 起改用官網加購配件＋LINE@ 優惠券）。要恢復改 true，試算表「訂金禮包」內容都還在
 function bundles_() {
+  if (!BUNDLES_ON) return [];
   return sheetRows_('訂金禮包', 'dep_bundles').filter(function (x) { return String(x[0]).trim() && String(x[1]).trim(); })
     .map(function (x) {
       var items = bundleItems_(x[4]), total = items.reduce(function (a, b) { return a + b.price; }, 0);
@@ -908,7 +910,7 @@ function depositPostback_(ev, store, token, userId) {
           { type: 'text', text: it.branch + '・售價 ' + money_(it.price), size: 'sm', color: '#6b7280' },
           { type: 'separator', margin: 'md' },
           { type: 'text', text: '訂金 ' + money_(dep), size: 'xl', weight: 'bold', color: '#d71920', margin: 'md' },
-          { type: 'text', text: '店員確認收到訂金後，幫您保留 ' + HOLD_DAYS + ' 天；訂金會折抵售價。\n付完還有 🎁 禮包可以選！', size: 'sm', wrap: true, color: '#374151' },
+          { type: 'text', text: '店員確認收到訂金後，幫您保留 ' + HOLD_DAYS + ' 天；訂金會折抵售價。' + (BUNDLES_ON ? '\n付完還有 🎁 禮包可以選！' : ''), size: 'sm', wrap: true, color: '#374151' },
           { type: 'separator', margin: 'md' },
           { type: 'text', text: '📋 訂金規則', size: 'sm', weight: 'bold', margin: 'md' },
           { type: 'text', text: DEP_RULES, size: 'xs', wrap: true, color: '#6b7280' }
