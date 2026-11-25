@@ -391,6 +391,10 @@ document.addEventListener('click', async e => {
   let notify = false, refund = null, reason = '';
   if (bt.dataset.op === 'paid') {
     if (!(await ask(`確認已收到「${r.model}」的訂金 ${money(num(r.deposit))}？\n（${r.method === 'bank' ? '匯款末五碼 ' + r.last5 : 'LINE Pay'}）\n\n按確定後，機器人會用 LINE 通知客人保留 3 天。`, { ok: '收到了，通知客人' }))) return;
+  } else if (r.method === 'visit') {   // 預約看機：沒有訂金，只問要不要通知客人
+    if (!(await ask(`取消「${r.model}」的看機預約？\n（${r.name || '客人'}，${r.holdUntil || ''} ${r.visitTime || ''}）\n取消後這台會重新出現在 LINE 現貨。`, { ok: '取消預約' }))) return;
+    refund = 0; reason = '取消看機預約';
+    notify = await ask(`要用 LINE 通知客人「看機預約已取消」嗎？`, { ok: '通知客人', cancel: '不用通知', danger: false });
   } else {
     if (!(await ask(`取消「${r.model}」的保留？\n取消後這台會重新出現在 LINE 現貨。`, { ok: '取消保留' }))) return;
     // 退多少：對帳前全退；對帳後看原因 — 店的問題／驗機不符全退，客人個人因素或逾期扣禮包原價
@@ -418,8 +422,11 @@ document.addEventListener('click', async e => {
     const res = await fetch(GAS_URL + '?action=resv', { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ idToken: await auth.currentUser.getIdToken(), id: r.id, op: bt.dataset.op, notify, refund, reason }) });
     const j = await res.json(); if (!j.ok) throw new Error(j.error);
-    toast(bt.dataset.op === 'paid' ? (j.sent ? '已通知客人 ✅' : '已確認，但 LINE 通知沒送出（可能是本月訊息額度用完）') : (notify ? (j.sent ? `已取消並通知客人（應退 ${money(refund)}）` : `已取消，通知沒送出（應退 ${money(refund)}）`) : `已取消保留（應退 ${money(refund)}）`));
-  } catch (er) { toast('⚠️ ' + er.message); bt.disabled = false; }
+    toast(r.method === 'visit' ? (notify ? (j.sent ? '已取消預約並通知客人' : '已取消預約，通知沒送出') : '已取消預約') : bt.dataset.op === 'paid' ? (j.sent ? '已通知客人 ✅' : '已確認，但 LINE 通知沒送出（可能是本月訊息額度用完）') : (notify ? (j.sent ? `已取消並通知客人（應退 ${money(refund)}）` : `已取消，通知沒送出（應退 ${money(refund)}）`) : `已取消保留（應退 ${money(refund)}）`));
+  } catch (er) {
+    bt.disabled = false; bt.textContent = bt.dataset.op === 'paid' ? '✅ 收到訂金' : '取消保留';
+    toast(/quota|額度|找不到這筆/i.test(er.message) ? '⚠️ 資料庫今天的免費額度用完了，台灣時間下午 4 點後恢復（或升級 Firebase 方案）' : '⚠️ ' + er.message);
+  }
 });
 
 // ───── 現場保留／延長：保留天數 3、7、14、21、30 天 ─────

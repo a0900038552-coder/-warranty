@@ -1045,10 +1045,11 @@ function orderStart_(ev, store, token, userId, it, dep) {
 /* 預約看機（2026/11 起取代線上訂金）：不收訂金、不放匯款資訊；客人選到店日期＋時間，機子保留到那天營業結束，過了沒來自動釋出。
  * 買賣在門市驗機、簽商品確認書後才成立（實體交易）。加購配件交機時確認：有現貨當場給，要調貨的到貨後寄送或到店取件（地址交機後再填）。 */
 var VISIT_DAYS = 7, VISIT_HOURS = [11, 12, 13, 14, 15, 16, 17, 18, 19, 20], MAX_VISITS = 2;
+function twWd_(d) { return new Date(d.getTime() + 8 * 3600000).getUTCDay(); }   // 台灣時間星期幾（0＝日），不靠 formatDate 的 'u'
 function visitSlots_() {
   var out = [], now = new Date(), hourNow = Number(Utilities.formatDate(now, 'Asia/Taipei', 'H'));
   for (var i = 0; i < VISIT_DAYS; i++) {
-    var d = new Date(now.getTime() + i * 864e5), wd = Number(Utilities.formatDate(d, 'Asia/Taipei', 'u')) % 7;
+    var d = new Date(now.getTime() + i * 864e5), wd = twWd_(d);
     if (wd === 0) continue;   // 週日公休
     var hours = VISIT_HOURS.filter(function (h) { return i > 0 || h > hourNow; });
     if (!hours.length) continue;
@@ -1059,7 +1060,7 @@ function visitSlots_() {
 function visitLabel_(date, time) {
   if (!date) return '';
   var d = new Date(date + 'T12:00:00+08:00');
-  return Utilities.formatDate(d, 'Asia/Taipei', 'M/d') + '（' + WD_ZH[Number(Utilities.formatDate(d, 'Asia/Taipei', 'u')) % 7] + '）' + (time ? ' ' + time : '');
+  return Utilities.formatDate(d, 'Asia/Taipei', 'M/d') + '（' + WD_ZH[twWd_(d)] + '）' + (time ? ' ' + time : '');
 }
 // 行事曆：iPhone 用 .ics（內建行事曆，到店前 2 小時提醒）、Android 用 Google 日曆連結
 function visitWhen_(r) {   // 回傳 UTC 開始／結束（yyyyMMddTHHmmssZ），看機 30 分鐘
