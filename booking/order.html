@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
 <link rel="icon" type="image/png" sizes="32x32" href="../care/icon-32.png?v=2">
-<title>中古機訂單｜復原者手機維修</title>
+<title>預約看機｜復原者手機維修</title>
 <style>
 :root{--ink:#16181d;--red:#d71920;--mute:#6b7280;--line:#e5e7eb;--bg:#f4f5f7;--green:#15803d}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -45,6 +45,8 @@ input.t{width:100%;border:1px solid #d1d5db;border-radius:10px;padding:12px;font
 .big .ok{width:68px;height:68px;border-radius:50%;background:var(--green);color:#fff;font-size:36px;line-height:68px;margin:0 auto 12px}
 .pay{background:#f8fafc;border:1px dashed #cbd5e1;border-radius:12px;padding:12px;margin-top:10px;text-align:left}
 .pay img{display:block;width:220px;max-width:100%;margin:8px auto}
+.slot{display:inline-block;border:1.5px solid #d1d5db;border-radius:10px;padding:8px 12px;margin:4px 6px 0 0;background:#fff;font:inherit;font-size:14px;cursor:pointer}
+.slot.on{border-color:var(--red);background:#fff5f5;color:var(--red);font-weight:800}
 .status{display:inline-block;border-radius:99px;padding:2px 12px;font-weight:800;font-size:13px;background:#fff4d6;color:#a16207}
 .sig{display:none}
 @media print{
@@ -56,9 +58,9 @@ input.t{width:100%;border:1px solid #d1d5db;border-radius:10px;padding:12px;font
 </style>
 </head>
 <body>
-<header><small>復原者手機維修・中古機</small><h1 id="title">中古機訂單</h1></header>
+<header><small>復原者手機維修・中古機</small><h1 id="title">預約看機</h1></header>
 <main id="m"><div class="card big"><p class="mute">讀取中…</p></div></main>
-<div class="bar hidden" id="bar" style="display:none"><button id="go">確認送出訂單</button></div>
+<div class="bar hidden" id="bar" style="display:none"><button id="go">確認預約</button></div>
 
 <script>
 const GAS = 'https://script.google.com/macros/s/AKfycbxBK7c2Oledgo-jT-kRnueuU8grZxVinuocyp2iLI8u-c5Q94fZSeiemH0UkeAqdjfTlw/exec';
@@ -78,6 +80,25 @@ function checkCard(c, imei) {
     ...CHECK.filter(([k]) => c[k]).map(([k, l]) => [l, esc(k === 'battery' ? String(c[k]).replace(/%$/, '') + '%' : c[k])])];
   return `<div class="card"><h2>檢測報告</h2><table>${rows.map(([l, v]) => `<tr><td>${l}</td><td class="${v === '異常' ? 'bad' : ''}">${v}</td></tr>`).join('')}</table>
     ${c.memo ? `<p style="margin-top:8px"><b>其他說明：</b>${esc(c.memo)}</p>` : ''}<p class="mute" style="margin-top:6px">驗機日期：${esc(c.date || '')}</p></div>`;
+}
+function visitFlowCard() {
+  return `<div class="card"><h2>看機流程</h2><ol>
+    <li><b>預約</b>：選到店日期和時間，<b>不用付訂金</b>。機子會幫您保留到預約當天營業結束。</li>
+    <li><b>到店驗機</b>：用「*#06#」核對 IMEI，親自檢查外觀與功能，有任何問題現場都可以問。</li>
+    <li><b>滿意再購買</b>：在門市簽署商品確認書、付款後交機。不滿意不用買，也不收任何費用。</li>
+    <li><b>加購配件</b>：交機時確認，有現貨當場給；需調貨的到貨後郵寄或到店取件。</li>
+    <li><b>售後保固</b>：本店保固 30 天，可加購 Repair CARE+ 延長保固。</li></ol></div>`;
+}
+function visitNoteCard() {
+  return `<div class="card"><h2>注意事項</h2><ol>
+    <li>線上預約只是<b>保留看機時段</b>，買賣於門市驗機並簽署商品確認書後才成立。</li>
+    <li>中古商品：照片與檢測報告為驗機當時狀況，外觀以實機為準。</li>
+    <li>只限門市交機，手機不提供寄送。</li>
+    <li>預約當天營業結束前沒有到店，保留會自動取消；時間要改或不來了，回覆 LINE 告訴我們就好。</li>
+    <li>每台僅一台，以先預約者優先；價格以預約時為準。</li>
+    <li>本店保固 30 天，限非人為因素之功能故障；摔機、進水、螢幕破裂、自行或非本店拆修者不在保固範圍。</li>
+    <li>本店為免用統一發票商家，交易以商品確認書及收據為憑。</li>
+    <li>預約資料只用於本次看機、交易與保固服務。</li></ol></div>`;
 }
 function flowCard(holdDays, hasBundle) {
   return `<div class="card"><h2>購買流程</h2><ol>
@@ -116,7 +137,13 @@ const accTot = items => { const sum = items.reduce((s, x) => s + Number(x.price 
 function accCard(acc) {
   if (!acc || !(acc.items || []).length) return '';
   return `<div class="card"><h2>🎧 加購配件（取機時付）</h2>${acc.items.map((x, i) => `<label class="opt on"><input type="checkbox" name="acc" value="${i}" checked><div style="flex:1"><b>${esc(x.name)}</b><span class="mute">${money(x.price)}</span></div></label>`).join('')}
-    <div id="accSum" style="margin-top:10px;text-align:right"></div><p class="mute" style="margin-top:4px">配件每滿 ${money(PROMO.min)} 折 ${money(PROMO.off)}。不要的可以取消勾選；確認入帳後會連同手機一起幫您備貨。</p></div>`;
+    <div id="accSum" style="margin-top:10px;text-align:right"></div><p class="mute" style="margin-top:4px">配件每滿 ${money(PROMO.min)} 折 ${money(PROMO.off)}。不要的可以取消勾選。<br>配件在<b>交機時跟您確認</b>：門市有現貨當場給您；需要調貨的，到貨後可<b>郵寄</b>或<b>到店取件</b>，郵寄地址交機後再填寫就好。</p></div>`;
+}
+function visitProd(it, shop) {
+  return `<div class="card"><div class="prod">${(it.photos || [])[0] ? `<img src="${photo(it.photos[0])}" alt="">` : ''}<div>
+    <span class="nm">${esc(it.model)}</span><span class="mute">${esc(it.color || '')}</span><div class="price">${money(it.price)}</div>
+    <div>看機門市：<b>${esc(it.branch)}</b>・<b style="color:var(--green)">免訂金</b></div>
+    <div class="mute">${esc(shop.addr || '')}　${esc(shop.tel || '')}</div></div></div></div>`;
 }
 function prodCard(it, dep, shop) {
   return `<div class="card"><div class="prod">${(it.photos || [])[0] ? `<img src="${photo(it.photos[0])}" alt="">` : ''}<div>
@@ -129,78 +156,83 @@ async function fill() {
   let d;
   try { d = await fetch(GAS + '?action=orderGet&t=' + T).then(r => r.json()); } catch { d = { ok: false, error: '網路不穩，請重新整理' }; }
   if (!d.ok) { m.innerHTML = `<div class="card big"><p style="font-weight:700">${esc(d.error)}</p></div>`; return; }
-  const it = d.item, bs = d.bundles || [];
-  $('title').textContent = '填寫訂單';
-  m.innerHTML = prodCard(it, d.deposit, d.shop) + accCard(d.acc) + checkCard(d.check, d.imei) + flowCard(d.holdDays, bs.length > 0) + noteCard(bs.length > 0) +
-    (bs.length ? `<div class="card"><h2>🎁 選擇禮包</h2>${bs.map((b, i) => bundleOpt(b, i)).join('')}
-      <p class="mute" style="margin-top:8px">加購價取機時再付。店員確認入帳後會為您備貨；若因個人因素取消或逾期未取，會從訂金扣除禮包原價。</p></div>` : '') +
-    `<div class="card"><h2>付款方式</h2>
-      ${d.pay.lp ? `<label class="opt"><input type="radio" name="method" value="linepay"><div><b>💚 LINE Pay</b><span class="mute">送出後顯示收款碼</span></div></label>` : ''}
-      ${d.pay.bank ? `<label class="opt"><input type="radio" name="method" value="bank"><div><b>🏦 銀行匯款</b><span class="mute">送出後顯示帳號，匯款後回覆末五碼</span></div></label>` : ''}
-      <p class="mute" style="margin-top:8px">請在 <b>${esc(d.deadline)}</b>前付款並回報，逾時保留會自動取消。</p></div>
-    <div class="card"><h2>訂購人資料</h2>
-      <label class="f">姓名（須與身分證件、匯款帳戶相同）</label><input class="t" id="name" autocomplete="name" placeholder="例：王小明">
+  const it = d.item, slots = d.slots || [];
+  $('title').textContent = '預約看機';
+  m.innerHTML = visitProd(it, d.shop) + accCard(d.acc) + checkCard(d.check, d.imei) + visitFlowCard() + visitNoteCard() +
+    `<div class="card"><h2>📅 到店日期</h2>${slots.length ? slots.map((x, i) => `<button type="button" class="slot" data-d="${i}">${esc(x.label)}</button>`).join('') : '<p class="mute">這幾天沒有可預約的時段，請直接回覆 LINE 跟我們約時間</p>'}
+      <h2 style="margin-top:14px">🕐 大約幾點到</h2><div id="hours"><p class="mute">先選日期</p></div>
+      <p class="mute" style="margin-top:8px">營業時間 週一～週六 11:00–21:00（週日公休）</p></div>
+    <div class="card"><h2>聯絡資料</h2>
+      <label class="f">姓名</label><input class="t" id="name" autocomplete="name" placeholder="例：王小明">
       <label class="f">手機號碼</label><input class="t" id="phone" inputmode="tel" autocomplete="tel" placeholder="09xxxxxxxx"></div>
-    <div class="card"><label class="agree"><input type="checkbox" id="agree"><span>我已閱讀並同意以上檢測報告、購買流程、注意事項與訂金規則</span></label><div class="err" id="err"></div></div>`;
-  m.querySelectorAll('.opt input').forEach(x => x.addEventListener('change', () => m.querySelectorAll(`.opt input[name="${x.name}"]`).forEach(y => y.closest('.opt').classList.toggle('on', y.checked))));
+    <div class="card"><label class="agree"><input type="checkbox" id="agree"><span>我已閱讀以上檢測報告、看機流程與注意事項</span></label><div class="err" id="err"></div></div>`;
+  let pickD = null, pickH = null;
+  const drawHours = () => {
+    const x = slots[pickD];
+    $('hours').innerHTML = x ? x.hours.map(h => `<button type="button" class="slot${pickH === h ? ' on' : ''}" data-h="${h}">${h}:00</button>`).join('') : '<p class="mute">先選日期</p>';
+    $('hours').querySelectorAll('[data-h]').forEach(b => b.onclick = () => { pickH = Number(b.dataset.h); drawHours(); });
+  };
+  m.querySelectorAll('[data-d]').forEach(b => b.onclick = () => {
+    pickD = Number(b.dataset.d); pickH = null;
+    m.querySelectorAll('[data-d]').forEach(y => y.classList.toggle('on', y === b)); drawHours();
+  });
   const accItems = (d.acc && d.acc.items) || [];
   const keptAcc = () => [...m.querySelectorAll('input[name="acc"]:checked')].map(x => Number(x.value));
   const drawAcc = () => { const el = $('accSum'); if (!el) return; const t = accTot(keptAcc().map(i => accItems[i]));
     el.innerHTML = t.sum ? `配件 ${money(t.sum)}${t.off ? ` − 滿額折 ${money(t.off)}` : ''} ＝ <b style="color:var(--red);font-size:18px">${money(t.pay)}</b>` : '<span class="mute">沒有加購配件</span>'; };
   m.querySelectorAll('input[name="acc"]').forEach(x => x.addEventListener('change', () => { x.closest('.opt').classList.toggle('on', x.checked); drawAcc(); }));
   drawAcc();
-  if (!d.pay.lp !== !d.pay.bank) { const only = m.querySelector('input[name="method"]'); if (only) { only.checked = true; only.closest('.opt').classList.add('on'); } }
-  $('bar').style.display = 'block'; $('go').disabled = false; $('go').textContent = '確認送出訂單';
+  $('bar').style.display = 'block'; $('go').disabled = false; $('go').textContent = '確認預約';
   $('go').onclick = async () => {
     const err = $('err'); err.textContent = '';
-    const body = { t: T, name: $('name').value.trim(), phone: $('phone').value.trim(), agree: $('agree').checked,
-      acc: keptAcc(), bundle: (m.querySelector('input[name="bundle"]:checked') || {}).value ?? '', method: (m.querySelector('input[name="method"]:checked') || {}).value || '' };
-    if (bs.length && body.bundle === '') return err.textContent = '請選擇禮包';
-    if (!body.method) return err.textContent = '請選擇付款方式';
+    const body = { t: T, name: $('name').value.trim(), phone: $('phone').value.trim(), agree: $('agree').checked, acc: keptAcc(),
+      visitDate: pickD != null ? slots[pickD].date : '', visitTime: pickH != null ? pickH + ':00' : '' };
+    if (!body.visitDate) return err.textContent = '請選擇到店日期';
+    if (!body.visitTime) return err.textContent = '請選擇大約幾點到';
     if (!body.name) return err.textContent = '請填寫姓名';
     if (!/^09\d{8}$/.test(body.phone.replace(/\D/g, ''))) return err.textContent = '請填寫正確的手機號碼';
-    if (!body.agree) return err.textContent = '請勾選「我已閱讀並同意」';
+    if (!body.agree) return err.textContent = '請勾選「我已閱讀」';
     $('go').disabled = true; $('go').textContent = '送出中…';
     let r;
     try { r = await fetch(GAS + '?action=orderSubmit', { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) }).then(x => x.json()); }
     catch { r = { ok: false, error: '網路不穩，請再按一次' }; }
-    if (!r.ok) { err.textContent = r.error; $('go').disabled = false; $('go').textContent = '確認送出訂單'; return; }
+    if (!r.ok) { err.textContent = r.error; $('go').disabled = false; $('go').textContent = '確認預約'; return; }
     done(r, it);
   };
 }
 function done(r, it) {
   $('bar').style.display = 'none'; scrollTo(0, 0);
-  $('title').textContent = '訂單已送出';
-  const lineUrl = r.basicId ? `https://line.me/R/oaMessage/${encodeURIComponent(r.basicId)}/?${encodeURIComponent('訂單 ' + r.orderNo)}` : '';
-  m.innerHTML = `<div class="card big"><div class="ok">✓</div><h2 style="font-size:20px">訂單 ${esc(r.orderNo)}</h2><p>${esc(it.model)}｜訂金 <b style="color:var(--red)">${money(r.deposit)}</b></p>
-    <div class="pay">${r.method === 'bank' && r.bank ? `<b>🏦 匯款資訊</b><br>${esc(r.bank.bank)}<br>帳號：<b style="font-size:18px">${esc(r.bank.acct)}</b>${r.bank.holder ? '<br>戶名：' + esc(r.bank.holder) : ''}
-      <p class="mute" style="margin-top:6px">⚠️ 請用訂購人本人的帳戶匯款。匯好後回到 LINE 回覆「帳號末五碼」。</p>`
-      : `<b>💚 LINE Pay 收款碼</b>${r.lpImg ? `<img src="${esc(r.lpImg)}" alt="LINE Pay 收款碼">` : ''}<p class="mute">付好後回到 LINE 按「✅ 我已付款」。</p>`}
-      <p class="mute">請在 <b>${esc(r.deadline)}</b>前付款並回報，逾時保留會自動取消。</p></div>
-    ${lineUrl ? `<a class="btn" style="margin-top:14px" href="${lineUrl}">📲 回到 LINE 回報付款</a>` : '<p style="margin-top:12px">請回到 LINE，傳「訂單 ' + esc(r.orderNo) + '」給我們，會有專人確認。</p>'}
-    <a class="btn ghost" style="margin-top:10px" href="?k=${esc(r.viewKey)}">📄 查看訂單／下載 PDF</a></div>`;
+  $('title').textContent = '預約完成';
+  const lineUrl = r.basicId ? `https://line.me/R/oaMessage/${encodeURIComponent(r.basicId)}/?${encodeURIComponent('預約 ' + r.orderNo)}` : '';
+  const map = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent('復原者手機維修 ' + (r.shop.addr || ''));
+  m.innerHTML = `<div class="card big"><div class="ok">✓</div><h2 style="font-size:20px">預約 ${esc(r.orderNo)}</h2><p><b>${esc(it.model)}</b></p>
+    <div class="pay"><b>📅 ${esc(r.visit)}</b><br>📍 ${esc(r.branch)}：${esc(r.shop.addr || '')}<br>📞 ${esc(r.shop.tel || '')}
+      <p class="mute" style="margin-top:6px">機子會保留到預約當天營業結束。到店跟店員說預約編號或姓名就可以 😊<br>前一天會用 LINE 提醒您；要改時間直接回覆 LINE。</p></div>
+    <a class="btn" style="margin-top:14px" href="${map}" target="_blank">🗺️ 開啟地圖導航</a>
+    ${lineUrl ? `<a class="btn dark" style="margin-top:10px" href="${lineUrl}">💬 回到 LINE</a>` : ''}
+    <a class="btn ghost" style="margin-top:10px" href="?k=${esc(r.viewKey)}">📄 查看預約內容</a></div>`;
 }
 async function view() {
   let d;
   try { d = await fetch(GAS + '?action=orderView&k=' + K).then(r => r.json()); } catch { d = { ok: false, error: '網路不穩，請重新整理' }; }
   if (!d.ok) { m.innerHTML = `<div class="card big"><p style="font-weight:700">${esc(d.error)}</p></div>`; return; }
   const o = d.order;
-  $('title').textContent = '訂單 ' + o.orderNo;
+  $('title').textContent = (o.method === 'visit' ? '預約 ' : '訂單 ') + o.orderNo;
   m.innerHTML = `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:17px">訂單 ${esc(o.orderNo)}</b><span class="status">${esc(o.status)}</span></div>
       <table style="margin-top:8px">
-      <tr><td>商品</td><td><b>${esc(o.model)}</b></td></tr><tr><td>售價</td><td>${money(o.price)}</td></tr><tr><td>訂金</td><td>${money(o.deposit)}（${o.method === 'bank' ? '匯款' + (o.last5 ? ' 末碼 ' + esc(o.last5) : '') : 'LINE Pay'}）</td></tr>
+      <tr><td>商品</td><td><b>${esc(o.model)}</b></td></tr><tr><td>售價</td><td>${money(o.price)}</td></tr>${o.method === 'visit' ? `<tr><td>預約到店</td><td><b>${esc(o.visit)}</b>（免訂金）</td></tr>` : `<tr><td>訂金</td><td>${money(o.deposit)}（${o.method === 'bank' ? '匯款' + (o.last5 ? ' 末碼 ' + esc(o.last5) : '') : 'LINE Pay'}）</td></tr>`}
       ${o.bundle ? `<tr><td>禮包</td><td>${esc(o.bundle)}${o.bundleAdd ? '（加購 ' + money(o.bundleAdd) + '）' : '（免費）'}<div class="mute">${esc(o.bundleDesc || '')}${o.bundleValue ? '・原價 ' + money(o.bundleValue) : ''}</div></td></tr>` : ''}
       ${o.accItems ? `<tr><td>加購配件</td><td>${o.accItems.split('\n').map(esc).join('<br>')}<div class="mute">配件 ${money(o.accSum)}${Number(o.accOff) ? ' − 滿額折 ' + money(o.accOff) : ''} ＝ ${money(o.accPay)}</div></td></tr>` : ''}
-      <tr><td>尾款（取機時付）</td><td><b>${money(Number(o.price) - Number(o.deposit) + Number(o.bundleAdd || 0) + Number(o.accPay || 0))}</b></td></tr>
+      ${o.method === 'visit' ? `<tr><td>合計（到店驗機滿意再付）</td><td><b>${money(Number(o.price) + Number(o.accPay || 0))}</b></td></tr>` : `<tr><td>尾款（取機時付）</td><td><b>${money(Number(o.price) - Number(o.deposit) + Number(o.bundleAdd || 0) + Number(o.accPay || 0))}</b></td></tr>`}
       <tr><td>取機門市</td><td>${esc(o.branch)}<div class="mute">${esc(d.shop.addr || '')} ${esc(d.shop.tel || '')}</div></td></tr>
       <tr><td>訂購人</td><td>${esc(o.name)} ${esc(o.phone)}</td></tr>
       ${o.holdUntil ? `<tr><td>保留到</td><td><b>${esc(o.holdUntil)}</b> 營業結束</td></tr>` : o.confirmBy ? `<tr><td>對帳期限</td><td>${esc(o.confirmBy)}</td></tr>` : ''}
       <tr><td>同意條款時間</td><td>${esc(new Date(o.agreedAt).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false }))}</td></tr></table></div>` +
-    checkCard(d.check, o.imei) + flowCard(d.holdDays, !!o.bundle) + noteCard(!!o.bundle) +
-    `<div class="card sig"><div>訂購人簽名：</div><div>經手人員：</div></div>
+    checkCard(d.check, o.imei) + (o.method === 'visit' ? visitFlowCard() + visitNoteCard() : flowCard(d.holdDays, !!o.bundle) + noteCard(!!o.bundle)) +
+    `<div class="card sig"><div>客人簽名：</div><div>經手人員：</div></div>
      <div class="np"><button class="btn dark" onclick="print()">📄 下載 PDF／列印</button><p class="mute" style="text-align:center;margin-top:6px">iPhone：按下後選「分享」→「儲存到檔案」；Android：選「另存為 PDF」</p></div>`;
 }
-if (K) view(); else if (T) fill(); else m.innerHTML = '<div class="card big"><p>請從 LINE 的「💰 我要保留」打開這個頁面</p></div>';
+if (K) view(); else if (T) fill(); else m.innerHTML = '<div class="card big"><p>請從 LINE 的「📅 預約看機」打開這個頁面</p></div>';
 </script>
 </body>
 </html>
