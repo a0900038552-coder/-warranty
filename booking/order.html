@@ -136,7 +136,7 @@ const PROMO = { min: 1000, off: 100 };
 const accTot = items => { const sum = items.reduce((s, x) => s + Number(x.price || 0), 0), off = Math.floor(sum / PROMO.min) * PROMO.off; return { sum, off, pay: sum - off }; };
 function accCard(acc) {
   if (!acc || !(acc.items || []).length) return '';
-  return `<div class="card"><h2>🎧 加購配件（取機時付）</h2>${acc.items.map((x, i) => `<label class="opt on"><input type="checkbox" name="acc" value="${i}" checked><div style="flex:1"><b>${esc(x.name)}</b><span class="mute">${money(x.price)}</span></div></label>`).join('')}
+  return `<div class="card"><h2>🎧 加購配件（交機時確認）</h2>${acc.items.map((x, i) => `<label class="opt on"><input type="checkbox" name="acc" value="${i}" checked><div style="flex:1"><b>${esc(x.name)}</b><span class="mute">${money(x.price)}</span></div></label>`).join('')}
     <div id="accSum" style="margin-top:10px;text-align:right"></div><p class="mute" style="margin-top:4px">配件每滿 ${money(PROMO.min)} 折 ${money(PROMO.off)}。不要的可以取消勾選。<br>配件在<b>交機時跟您確認</b>：門市有現貨當場給您；需要調貨的，到貨後可<b>郵寄</b>或<b>到店取件</b>，郵寄地址交機後再填寫就好。</p></div>`;
 }
 function visitProd(it, shop) {
@@ -203,7 +203,7 @@ async function fill() {
 function done(r, it) {
   $('bar').style.display = 'none'; scrollTo(0, 0);
   $('title').textContent = '預約完成';
-  const lineUrl = r.basicId ? `https://line.me/R/oaMessage/${encodeURIComponent(r.basicId)}/?${encodeURIComponent('預約 ' + r.orderNo)}` : '';
+  const lineUrl = r.basicId ? `https://line.me/R/ti/p/${encodeURIComponent(r.basicId)}` : '';
   const map = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent('復原者手機維修 ' + (r.shop.addr || ''));
   m.innerHTML = `<div class="card big"><div class="ok">✓</div><h2 style="font-size:20px">預約 ${esc(r.orderNo)}</h2><p><b>${esc(it.model)}</b></p>
     <div class="pay"><b>📅 ${esc(r.visit)}</b><br>📍 ${esc(r.branch)}：${esc(r.shop.addr || '')}<br>📞 ${esc(r.shop.tel || '')}
