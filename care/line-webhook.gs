@@ -539,6 +539,7 @@ function testSetup() {
 
 /* ───────── 圖文選單：在編輯器選 setupRichMenu 按「執行」即可為兩間店建立並設為預設 ───────── */
 var BOOKING_LIFF_ID = '2012612889-aZuwwjgj';
+var SHOP_URL = 'https://a0900038552-coder.github.io/used-phones/';  // 官網線上逛逛（中古機詳細頁＋配件選購）
 /* ───────── 圖文選單（兩頁分頁：維修服務／配件好康） ─────────
  * 在編輯器選 setupRichMenu 按「執行」即可兩店一起更新。
  * 換配件 DM 時：更新 GitHub 上的 care/richmenu_tab2.jpg 與 dm/ 圖片後重跑本函式。
@@ -734,12 +735,14 @@ function usedShowcase_(store) {
       action: { type: 'postback', label: '💰 我要保留', data: 'act=dep&id=' + it.id, displayText: '我要保留：' + label } },
       { type: 'button', style: 'link', height: 'sm',
       action: { type: 'message', label: '💬 先問問題', text: '我有興趣：' + label + '（' + it.branch + '）$' + it.price } }];
-    if (photos.length > 1) foot.unshift({ type: 'button', style: 'secondary', height: 'sm', action: { type: 'uri', label: '📷 看全部照片（' + photos.length + '）', uri: gallery } });
+    // 官網詳細頁：照片＋檢測報告＋推薦配件（含滿額折），按「LINE 詢問」會帶著配件清單回到聊天室
+    var shop = SHOP_URL + '?src=line#item=' + encodeURIComponent(it.id);
+    foot.unshift({ type: 'button', style: 'secondary', height: 'sm', action: { type: 'uri', label: '📷 照片・檢測・加購配件', uri: shop } });
     var bubble = { type: 'bubble', size: 'kilo',
       body: { type: 'box', layout: 'vertical', spacing: 'xs', contents: body },
       footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: foot } };
     if (photos.length) bubble.hero = { type: 'image', url: photoUrl_(photos[0]), size: 'full', aspectRatio: '1:1', aspectMode: 'cover',
-      action: { type: 'uri', label: '看照片', uri: gallery } };
+      action: { type: 'uri', label: '看照片', uri: shop } };
     return bubble;
   });
   return [
