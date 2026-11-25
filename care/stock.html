@@ -367,15 +367,18 @@ document.addEventListener('click', async e => {
 // ───── LINE 訂金：店員對帳後按「收到訂金」→ 機器人通知客人保留到哪天；取消可選擇要不要通知 ─────
 function resvHtml(r, today) {
   const pay = r.method === 'bank' ? `匯款${r.last5 ? ` 末五碼 <b>${esc(r.last5)}</b>` : ''}` : (PAY[r.method] || 'LINE Pay');
-  const bundle = r.bundle ? `🎁 ${esc(r.bundle)}${num(r.bundleAdd) ? `（+${money(num(r.bundleAdd))}）` : ''}${num(r.bundleValue) ? `<span class="mute">・原價 ${money(num(r.bundleValue))}，對帳後要備貨</span>` : ''}` : (r.source === 'store' ? '' : '<span class="mute">還沒選禮包</span>');
-  const head = r.status === 'paid'
+  const bundle = r.bundle ? `🎁 ${esc(r.bundle)}${num(r.bundleAdd) ? `（+${money(num(r.bundleAdd))}）` : ''}${num(r.bundleValue) ? `<span class="mute">・原價 ${money(num(r.bundleValue))}，對帳後要備貨</span>` : ''}` : (r.source === 'store' || r.method === 'visit' ? '' : '<span class="mute">還沒選禮包</span>');
+  const vd = r.holdUntil ? new Date(r.holdUntil + 'T12:00:00+08:00') : null;
+  const head = r.method === 'visit'
+    ? `<span class="pill" style="background:#e0f2fe;color:#0369a1">📅 預約看機 ${vd ? `${vd.getMonth() + 1}/${vd.getDate()}（${'日一二三四五六'[vd.getDay()]}）` : ''} ${esc(r.visitTime || '')}</span>${(r.holdUntil || '') < today ? ' <b style="color:var(--red)">已過期</b>' : (r.holdUntil === today ? ' <b style="color:#0369a1">今天來</b>' : '')}<br><span class="mute">免訂金・沒來會在隔天自動釋出</span>`
+    : r.status === 'paid'
     ? `<span class="pill" style="background:#fde2e2;color:var(--red)">🔒 已訂・保留到 ${esc((r.holdUntil || '').slice(5).replace('-', '/'))}</span>${(r.holdUntil || '') < today ? ' <b style="color:var(--red)">已過期</b>' : ''}`
     : `<span class="pill" style="background:#fff4d6;color:#a16207">${r.reported === false ? '📝 等客人付款' : '💰 客人已回報付款，待對帳'}</span>${r.confirmBy ? ` <b style="color:#a16207">${new Date(r.confirmBy).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: 'numeric', hour12: false, timeZone: 'Asia/Taipei' })} 前</b>` : ''}<br><span style="color:var(--red)">⚠️ 看網銀實際入帳，匯款人姓名要跟客人一致</span>`;
   const btns = (r.status === 'pending' ? `<button class="more" data-rv="${r.id}" data-op="paid" style="color:var(--green);font-weight:700">✅ 收到訂金</button>` : '')
     + (r.status === 'paid' ? `<button class="more" data-ext="${r.id}">⏩ 延長</button>` : '')
     + `<button class="more" data-rv="${r.id}" data-op="cancel" style="color:var(--red)">取消保留</button>`;
   return `<div style="margin-top:6px;font-size:12px;line-height:1.6;border-left:3px solid #f5b400;padding-left:6px">${head}<br>
-    ${r.orderNo ? `<a href="../booking/order.html?k=${esc(r.viewKey || '')}" target="_blank" style="font-weight:700">訂單 ${esc(r.orderNo)}</a>・` : ''}${r.source === 'store' ? '🏪 現場・' : '💬 LINE・'}${esc(r.name || '客人')}${r.phone ? ' ' + esc(r.phone) : ''}${r.lineName && r.lineName !== r.name ? `<span class="mute">（LINE：${esc(r.lineName)}）</span>` : ''}・訂金 ${num(r.deposit) ? money(num(r.deposit)) : '無'}・${pay}${r.note ? '<br>' + esc(r.note) : ''}${bundle ? '<br>' + bundle : ''}${r.accItems ? `<br>🎧 加購配件（取機時付 <b>${money(num(r.accPay))}</b>${num(r.accOff) ? `，已折 ${money(num(r.accOff))}` : ''}，對帳後要備貨）<br><span class="mute">${esc(r.accItems).replace(/\n/g, '<br>')}</span>` : ''}<br>${btns}</div>`;
+    ${r.orderNo ? `<a href="../booking/order.html?k=${esc(r.viewKey || '')}" target="_blank" style="font-weight:700">訂單 ${esc(r.orderNo)}</a>・` : ''}${r.source === 'store' ? '🏪 現場・' : '💬 LINE・'}${esc(r.name || '客人')}${r.phone ? ' ' + esc(r.phone) : ''}${r.lineName && r.lineName !== r.name ? `<span class="mute">（LINE：${esc(r.lineName)}）</span>` : ''}${r.method === 'visit' ? '' : `・訂金 ${num(r.deposit) ? money(num(r.deposit)) : '無'}・${pay}`}${r.note ? '<br>' + esc(r.note) : ''}${bundle ? '<br>' + bundle : ''}${r.accItems ? `<br>🎧 ${r.method === 'visit' ? '想加購配件（交機時確認' : '加購配件（取機時付'} <b>${money(num(r.accPay))}</b>${num(r.accOff) ? `，已折 ${money(num(r.accOff))}` : ''}${r.method === 'visit' ? '；沒現貨的到貨後寄送或到店取，地址交機後再填）' : '，對帳後要備貨）'}<br><span class="mute">${esc(r.accItems).replace(/\n/g, '<br>')}</span>` : ''}<br>${btns}</div>`;
 }
 const doneSent = new Set();
 function autoDone(r) {   // 已經在每日登打賣出 → 訂金單自動結案

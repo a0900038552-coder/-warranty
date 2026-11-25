@@ -708,7 +708,7 @@ function usedShowcase_(store) {
   var doc = getDoc_('settings/used_showcase'), items = [];
   try { items = JSON.parse((doc && doc.json) || '[]'); } catch (e) {}
   var held = {}; activeResv_().forEach(function (r) { held[r.usedId] = 1; });
-  items = items.filter(function (it) { return !held[it.id]; });   // 已經有人付訂金保留的不顯示
+  items = items.filter(function (it) { return !held[it.id]; });   // 已經有人預約看機／保留的不顯示
   var k = storeKey_(store), phone = String(STORE_PHONE[k] || '').replace(/[^\d+]/g, '');
   var quick = { items: [{ type: 'action', action: { type: 'uri', label: '📞 打電話給' + store.branch, uri: 'tel:' + phone } }] };
   if (!items.length) return [{ type: 'text', quickReply: quick,
@@ -732,7 +732,7 @@ function usedShowcase_(store) {
     var photos = (it.photos || []).filter(String), gallery = 'https://a0900038552-coder.github.io/-warranty/care/photos.html?t=' +
       encodeURIComponent(label + '（' + it.branch + '）$' + it.price) + '&p=' + photos.join(',');
     var foot = [{ type: 'button', style: 'primary', color: '#d71920', height: 'sm',
-      action: { type: 'postback', label: '💰 我要保留', data: 'act=dep&id=' + it.id, displayText: '我要保留：' + label } },
+      action: { type: 'postback', label: '📅 預約看機', data: 'act=dep&id=' + it.id, displayText: '我要預約看機：' + label } },
       { type: 'button', style: 'link', height: 'sm',
       action: { type: 'message', label: '💬 先問問題', text: '我有興趣：' + label + '（' + it.branch + '）$' + it.price } }];
     // 官網詳細頁：照片＋檢測報告＋推薦配件（含滿額折），按「LINE 詢問」會帶著配件清單回到聊天室
@@ -746,7 +746,7 @@ function usedShowcase_(store) {
     return bubble;
   });
   return [
-    { type: 'text', text: '📱 目前中古機現貨 ' + items.length + ' 台（' + store.branch + '的排前面）\n左右滑動看更多 👉\n\n想買就按「💰 我要保留」填訂單；想先問問題按「💬 先問問題」，店員會盡快回覆您。也歡迎直接到店看機 😊' +
+    { type: 'text', text: '📱 目前中古機現貨 ' + items.length + ' 台（' + store.branch + '的排前面）\n左右滑動看更多 👉\n\n有興趣就按「📅 預約看機」選到店時間（不用付訂金）；想先問問題按「💬 先問問題」，店員會盡快回覆您。也歡迎直接到店看機 😊' +
       (more ? '\n\n（還有 ' + more + ' 台沒列出，告訴我們想找的機型幫您查）' : '') },
     { type: 'flex', altText: '中古機現貨 ' + items.length + ' 台', quickReply: quick, contents: { type: 'carousel', contents: bubbles } }
   ];
@@ -865,6 +865,10 @@ function activeResv_() {
   return fsQuery_('reservations', { fieldFilter: { field: { fieldPath: 'status' }, op: 'IN',
     value: { arrayValue: { values: [{ stringValue: 'pending' }, { stringValue: 'paid' }] } } } })
     .filter(function (r) {
+      if (r.method === 'visit' && r.status === 'paid' && r.holdUntil && r.holdUntil < Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd')) {   // 預約看機過了日期沒來 → 自動釋出
+        patchDoc_('reservations/' + r._id, { status: 'expired', updatedAt: new Date().toISOString() });
+        return false;
+      }
       if (r.status === 'pending' && r.confirmBy && Date.parse(r.confirmBy) < now) {   // 逾期沒對帳 → 自動取消
         patchDoc_('reservations/' + r._id, { status: 'expired', updatedAt: new Date().toISOString() });
         return false;
@@ -892,8 +896,9 @@ function depositPostback_(ev, store, token, userId) {
     var it = showcaseItem_(q.id);
     if (!it) return reply_(ev.replyToken, token, '不好意思，這台剛剛已經賣出或下架了 🙏\n可以再傳「有什麼二手機」看看目前的現貨。');
     var mine = null, taken = activeResv_().filter(function (r) { if (r.usedId === q.id && r.userId === userId) mine = r; return r.usedId === q.id; });
-    if (mine) return reply_(ev.replyToken, token, '這台已經幫您登記保留了 👍\n' + (mine.status === 'paid' ? '保留到 ' + mine.holdUntil + '。' : '店員確認收到訂金後會通知您。'));
-    if (taken.length) return reply_(ev.replyToken, token, '不好意思，這台剛剛已經有其他客人付訂金保留了 🙏\n可以再傳「有什麼二手機」看看其他現貨。');
+    if (mine) return reply_(ev.replyToken, token, '這台已經幫您預約看機了 👍\n' + (mine.method === 'visit' ? '預約 ' + visitLabel_(mine.holdUntil, mine.visitTime) + '，到「' + mine.branch + '」找店員就可以。' : mine.status === 'paid' ? '保留到 ' + mine.holdUntil + '。' : '店員確認收到訂金後會通知您。'));
+    if (taken.length) return reply_(ev.replyToken, token, '不好意思，這台剛剛已經有其他客人預約看機了 🙏\n可以再傳「有什麼二手機」看看其他現貨。');
+    if (q.act === 'dep') return orderStart_(ev, store, token, userId, it, 0);
     var myPending = activeResv_().filter(function (r) { return r.userId === userId && r.status === 'pending'; });
     if (myPending.length) return reply_(ev.replyToken, token, '您目前有一筆訂金（' + myPending[0].model + '）還在等店員對帳，確認後才能再保留其他機子 🙏\n有問題可以直接回覆訊息。');
     var dep = depositOf_(it.price), ps = paySetting_(it.branch);
@@ -999,7 +1004,7 @@ function basicId_(k) {
   return v;
 }
 /* 官網加購配件：客人在官網勾配件 → 「我有興趣：…加購配件：・名稱 $價」→ 機器人記下（addon_<userId>，6 小時）
- * → 按「💰 我要保留」時帶進訂單。價格一律用 settings/acc_showcase 重新對價（客人改訊息也改不了價格），滿額折跟官網一樣每滿 $1,000 折 $100 */
+ * → 按「📅 預約看機」時帶進預約。價格一律用 settings/acc_showcase 重新對價（客人改訊息也改不了價格），滿額折跟官網一樣每滿 $1,000 折 $100 */
 var ACC_PROMO = { min: 1000, off: 100 };
 function accTotals_(items) {
   var sum = items.reduce(function (s, a) { return s + Number(a.price || 0); }, 0), off = Math.floor(sum / ACC_PROMO.min) * ACC_PROMO.off;
@@ -1025,15 +1030,34 @@ function orderStart_(ev, store, token, userId, it, dep) {
   var t = Utilities.getUuid().replace(/-/g, ''), cc = CacheService.getScriptCache(), ad = null;
   try { var a0 = JSON.parse(cc.get('addon_' + userId) || 'null'); if (a0 && a0.id === it.id) ad = a0.acc; } catch (e) {}
   cc.put('ord_' + t, JSON.stringify({ id: it.id, userId: userId, store: storeKey_(store), acc: ad }), 21600);
-  return reply_(ev.replyToken, token, [{ type: 'flex', altText: '填寫訂單：' + itemTitle_(it), contents: { type: 'bubble', size: 'kilo',
+  return reply_(ev.replyToken, token, [{ type: 'flex', altText: '預約看機：' + itemTitle_(it), contents: { type: 'bubble', size: 'kilo',
     body: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [
-      { type: 'text', text: '📝 填寫訂單', weight: 'bold', size: 'lg' },
+      { type: 'text', text: '📅 預約到店看機', weight: 'bold', size: 'lg' },
       { type: 'text', text: itemTitle_(it), wrap: true, weight: 'bold' },
-      { type: 'text', text: it.branch + '・售價 ' + money_(it.price) + '・訂金 ' + money_(dep), size: 'sm', color: '#6b7280', wrap: true }].concat(ad ? [
+      { type: 'text', text: it.branch + '・售價 ' + money_(it.price) + '・不用付訂金', size: 'sm', color: '#6b7280', wrap: true }].concat(ad ? [
       { type: 'text', text: '＋ 加購配件 ' + ad.items.length + ' 件 ' + money_(ad.pay) + (ad.off ? '（已折 ' + money_(ad.off) + '）' : ''), size: 'sm', color: '#d71920', weight: 'bold', wrap: true }] : []).concat([
-      { type: 'text', text: '訂單裡有完整的檢測報告、購買流程和注意事項，確認後再送出 👍\n（連結 6 小時內有效）', size: 'xs', color: '#6b7280', wrap: true, margin: 'md' }]) },
+      { type: 'text', text: '選好到店日期和時間，店員會把機子留到那天，到店驗機滿意再購買 👍\n（連結 6 小時內有效）', size: 'xs', color: '#6b7280', wrap: true, margin: 'md' }]) },
     footer: { type: 'box', layout: 'vertical', contents: [{ type: 'button', style: 'primary', color: '#d71920', height: 'sm',
-      action: { type: 'uri', label: '📝 填寫訂單', uri: ORDER_URL + '?t=' + t } }] } } }]);
+      action: { type: 'uri', label: '📅 選看機時間', uri: ORDER_URL + '?t=' + t } }] } } }]);
+}
+/* 預約看機（2026/11 起取代線上訂金）：不收訂金、不放匯款資訊；客人選到店日期＋時間，機子保留到那天營業結束，過了沒來自動釋出。
+ * 買賣在門市驗機、簽商品確認書後才成立（實體交易）。加購配件交機時確認：有現貨當場給，要調貨的到貨後寄送或到店取件（地址交機後再填）。 */
+var VISIT_DAYS = 7, VISIT_HOURS = [11, 12, 13, 14, 15, 16, 17, 18, 19, 20], MAX_VISITS = 2;
+function visitSlots_() {
+  var out = [], now = new Date(), hourNow = Number(Utilities.formatDate(now, 'Asia/Taipei', 'H'));
+  for (var i = 0; i < VISIT_DAYS; i++) {
+    var d = new Date(now.getTime() + i * 864e5), wd = Number(Utilities.formatDate(d, 'Asia/Taipei', 'u')) % 7;
+    if (wd === 0) continue;   // 週日公休
+    var hours = VISIT_HOURS.filter(function (h) { return i > 0 || h > hourNow; });
+    if (!hours.length) continue;
+    out.push({ date: Utilities.formatDate(d, 'Asia/Taipei', 'yyyy-MM-dd'), label: (i === 0 ? '今天 ' : i === 1 ? '明天 ' : '') + Utilities.formatDate(d, 'Asia/Taipei', 'M/d') + '（' + WD_ZH[wd] + '）', hours: hours });
+  }
+  return out;
+}
+function visitLabel_(date, time) {
+  if (!date) return '';
+  var d = new Date(date + 'T12:00:00+08:00');
+  return Utilities.formatDate(d, 'Asia/Taipei', 'M/d') + '（' + WD_ZH[Number(Utilities.formatDate(d, 'Asia/Taipei', 'u')) % 7] + '）' + (time ? ' ' + time : '');
 }
 function orderItem_(id) {
   var it = showcaseItem_(id); if (!it) return null;
@@ -1043,52 +1067,52 @@ function orderItem_(id) {
 }
 function orderGet_(t) {
   var d = CacheService.getScriptCache().get('ord_' + t.replace(/\W/g, ''));
-  if (!d) return { ok: false, error: '這個訂單連結已過期，請回 LINE 再按一次「💰 我要保留」' };
+  if (!d) return { ok: false, error: '這個訂單連結已過期，請回 LINE 再按一次「📅 預約看機」' };
   d = JSON.parse(d);
   var o = orderItem_(d.id);
   if (!o) return { ok: false, error: '不好意思，這台剛剛已經賣出或下架了' };
   if (activeResv_().some(function (r) { return r.usedId === d.id; })) return { ok: false, error: '不好意思，這台剛剛已經被其他客人保留了' };
-  var ps = paySetting_(o.it.branch);
-  return { ok: true, item: o.it, check: o.check, imei: o.imei, deposit: depositOf_(o.it.price), holdDays: HOLD_DAYS,
-    bundles: bundles_(), acc: d.acc || null, pay: { bank: !!ps.acct, lp: !!ps.lpImg }, deadline: deadlineLabel_(confirmBy_()), shop: SHOP_INFO[o.it.branch] || {} };
+  return { ok: true, item: o.it, check: o.check, imei: o.imei, deposit: 0, holdDays: HOLD_DAYS,
+    visit: true, slots: visitSlots_(), acc: d.acc || null, shop: SHOP_INFO[o.it.branch] || {} };
 }
 function orderSubmit_(req) {
   var c = CacheService.getScriptCache(), t = String(req.t || '').replace(/\W/g, ''), d = c.get('ord_' + t);
-  if (!d) return { ok: false, error: '這個訂單連結已過期，請回 LINE 再按一次「💰 我要保留」' };
+  if (!d) return { ok: false, error: '這個訂單連結已過期，請回 LINE 再按一次「📅 預約看機」' };
   d = JSON.parse(d);
   var name = String(req.name || '').trim().slice(0, 30), phone = String(req.phone || '').replace(/\D/g, '');
   if (!req.agree) return { ok: false, error: '請勾選「我已閱讀並同意」' };
-  if (!name) return { ok: false, error: '請填寫訂購人姓名' };
+  if (!name) return { ok: false, error: '請填寫姓名' };
   if (!/^09\d{8}$/.test(phone)) return { ok: false, error: '請填寫正確的手機號碼（09 開頭 10 碼）' };
   var o = orderItem_(d.id); if (!o) return { ok: false, error: '不好意思，這台剛剛已經賣出或下架了' };
   var act = activeResv_();
   if (act.some(function (r) { return r.usedId === d.id; })) return { ok: false, error: '不好意思，這台剛剛已經被其他客人保留了' };
-  if (act.some(function (r) { return r.userId === d.userId && r.status === 'pending'; })) return { ok: false, error: '您已經有一筆訂單還在等對帳，確認後才能再訂其他機子' };
-  var ps = paySetting_(o.it.branch), method = req.method === 'linepay' ? 'linepay' : 'bank';
-  if ((method === 'bank' && !ps.acct) || (method === 'linepay' && !ps.lpImg)) return { ok: false, error: '這個付款方式目前無法使用，請選另一種' };
-  var bs = bundles_(), b = req.bundle != null && req.bundle !== '' ? bs[Number(req.bundle)] : null;
-  if (bs.length && !b) return { ok: false, error: '請選擇禮包' };
+  if (act.filter(function (r) { return r.userId === d.userId; }).length >= MAX_VISITS) return { ok: false, error: '您已經預約了 ' + MAX_VISITS + ' 台，看完機再預約其他的喔 🙏' };
+  var slot = visitSlots_().filter(function (x) { return x.date === String(req.visitDate || ''); })[0];
+  var hour = Number(String(req.visitTime || '').split(':')[0]);
+  if (!slot) return { ok: false, error: '請選擇到店日期' };
+  if (slot.hours.indexOf(hour) < 0) return { ok: false, error: '請選擇到店時間' };
+  var visitTime = ('0' + hour).slice(-2) + ':00', method = 'visit', b = null;
   var ac = null;
   if (d.acc && d.acc.items) {
     var keep = Array.isArray(req.acc) ? req.acc.map(Number) : d.acc.items.map(function (x, i) { return i; });
     var picked = d.acc.items.filter(function (x, i) { return keep.indexOf(i) >= 0; });
     if (picked.length) ac = accTotals_(picked);
   }
-  var now = new Date(), dep = depositOf_(o.it.price), orderNo = 'U' + Utilities.formatDate(now, 'Asia/Taipei', 'MMdd') + ('00' + Math.floor(Math.random() * 1000)).slice(-3);
+  var now = new Date(), dep = 0, orderNo = 'U' + Utilities.formatDate(now, 'Asia/Taipei', 'MMdd') + ('00' + Math.floor(Math.random() * 1000)).slice(-3);
   var viewKey = Utilities.getUuid().replace(/-/g, '').slice(0, 24), st = STORES[d.store] || storeByBranch_(o.it.branch);
   var rid = createDoc_('reservations', { usedId: o.it.id, model: itemTitle_(o.it), branch: o.it.branch, price: Number(o.it.price), deposit: dep,
     method: method, last5: '', reported: false, userId: d.userId, store: d.store, name: name, phone: phone, lineName: lineName_(d.userId, prop_(st.tokenProp)),
     bundle: b ? b.name : '', bundleDesc: b ? b.desc : '', bundleAdd: b ? b.add : 0, bundleValue: b ? b.value : 0,
     accItems: ac ? ac.items.map(function (x) { return x.name + ' $' + x.price; }).join('\n') : '', accSum: ac ? ac.sum : 0, accOff: ac ? ac.off : 0, accPay: ac ? ac.pay : 0,
-    orderNo: orderNo, viewKey: viewKey, imeiMasked: o.imei, agreedAt: now.toISOString(), status: 'pending', holdUntil: '', confirmBy: confirmBy_(now),
+    orderNo: orderNo, viewKey: viewKey, imeiMasked: o.imei, agreedAt: now.toISOString(), status: 'paid', holdUntil: slot.date, visitTime: visitTime, confirmBy: '',
     createdAt: now.toISOString(), updatedAt: now.toISOString() });
   c.remove('ord_' + t); if (d.userId) c.remove('addon_' + d.userId);
   var w = getDoc_('watchlist/' + phone) || (d.userId ? getDoc_('watchlist/L_' + d.userId) : null);
-  notifyOwner_('📝 新訂單 ' + orderNo + '（等客人付款）\n' + itemTitle_(o.it) + '（' + o.it.branch + '）售價 ' + money_(o.it.price) + '\n訂金 ' + money_(dep) + '・' + (method === 'bank' ? '匯款' : 'LINE Pay') +
-    '\n訂購人：' + name + ' ' + phone + (b ? '\n禮包：' + b.name : '') +
-    (ac ? '\n🎧 加購配件 ' + ac.items.length + ' 件（取機時付 ' + money_(ac.pay) + (ac.off ? '，已折 ' + money_(ac.off) : '') + '）：\n' + ac.items.map(function (x) { return '・' + x.name + ' ' + money_(x.price); }).join('\n') : '') + (w ? '\n⚠️ 這位客人在「注意客人」有紀錄' : '') + '\n對帳期限：' + deadlineLabel_(confirmBy_(now)));
-  return { ok: true, orderNo: orderNo, viewKey: viewKey, id: rid, deposit: dep, method: method, deadline: deadlineLabel_(confirmBy_(now)),
-    bank: method === 'bank' ? { bank: ps.bank, acct: ps.acct, holder: ps.holder } : null, lpImg: method === 'linepay' ? ps.lpImg : '', basicId: basicId_(d.store) };
+  notifyOwner_('📅 新預約看機 ' + orderNo + '\n' + itemTitle_(o.it) + '（' + o.it.branch + '）售價 ' + money_(o.it.price) +
+    '\n到店：' + visitLabel_(slot.date, visitTime) + '\n客人：' + name + ' ' + phone +
+    (ac ? '\n🎧 想加購配件 ' + ac.items.length + ' 件（' + money_(ac.pay) + (ac.off ? '，已折 ' + money_(ac.off) : '') + '，交機時確認）：\n' + ac.items.map(function (x) { return '・' + x.name + ' ' + money_(x.price); }).join('\n') : '') +
+    (w ? '\n⚠️ 這位客人在「注意客人」有紀錄' : '') + '\n機子已自動保留到 ' + visitLabel_(slot.date) + ' 營業結束，沒來會自動釋出。');
+  return { ok: true, orderNo: orderNo, viewKey: viewKey, id: rid, visit: visitLabel_(slot.date, visitTime), shop: SHOP_INFO[o.it.branch] || {}, branch: o.it.branch, basicId: basicId_(d.store) };
 }
 function orderView_(k) {
   k = k.replace(/\W/g, ''); if (k.length < 16) return { ok: false, error: '找不到訂單' };
@@ -1096,9 +1120,11 @@ function orderView_(k) {
   if (!r) return { ok: false, error: '找不到訂單' };
   var u = getDoc_('used_stock/' + r.usedId) || {}, c = u.check || {}, chk = {};
   Object.keys(c).forEach(function (x) { if (x !== 'by' && x !== 'seal') chk[x] = c[x]; });
-  var ST = { pending: r.reported ? '已回報付款，等待對帳' : '等待付款', paid: '已確認訂金，保留中', done: '已取機', cancelled: '已取消', expired: '逾期未對帳，已取消' };
+  var ST = r.method === 'visit' ? { paid: '已預約，保留到看機日', done: '已成交', cancelled: '已取消', expired: '預約已過期' }
+    : { pending: r.reported ? '已回報付款，等待對帳' : '等待付款', paid: '已確認訂金，保留中', done: '已取機', cancelled: '已取消', expired: '逾期未對帳，已取消' };
   return { ok: true, order: { orderNo: r.orderNo, model: r.model, branch: r.branch, price: r.price, deposit: r.deposit, method: r.method, last5: r.last5 ? '*' + String(r.last5).slice(-3) : '',
     name: r.name, phone: String(r.phone || '').replace(/^(\d{4})\d{3}/, '$1***'), bundle: r.bundle, bundleDesc: r.bundleDesc, bundleAdd: r.bundleAdd, bundleValue: r.bundleValue,
+    visit: r.method === 'visit' ? visitLabel_(r.holdUntil, r.visitTime) : '',
     accItems: r.accItems || '', accSum: r.accSum || 0, accOff: r.accOff || 0, accPay: r.accPay || 0,
     imei: r.imeiMasked || '', status: ST[r.status] || r.status, holdUntil: r.holdUntil || '', confirmBy: r.confirmBy ? deadlineLabel_(r.confirmBy) : '', agreedAt: r.agreedAt || r.createdAt },
     check: chk, holdDays: HOLD_DAYS, shop: SHOP_INFO[r.branch] || {} };
@@ -1151,7 +1177,8 @@ function resvAction_(req) {
     upd.status = 'cancelled'; upd.cancelledAt = now.toISOString(); upd.cancelledBy = staff;
     var refund = req.refund != null && req.refund !== '' ? Number(req.refund) : Number(r.deposit || 0);
     upd.refund = refund; upd.cancelReason = String(req.reason || '').slice(0, 40);
-    if (req.notify) text = '您好，「' + r.model + '」的保留已取消。\n' + (refund > 0 ? '應退還訂金 ' + money_(refund) +
+    if (req.notify && r.method === 'visit') text = '您好，「' + r.model + '」的看機預約已取消。\n有任何問題歡迎直接回覆訊息 🙏';
+    else if (req.notify) text = '您好，「' + r.model + '」的保留已取消。\n' + (refund > 0 ? '應退還訂金 ' + money_(refund) +
       (refund < Number(r.deposit || 0) ? '（訂金 ' + money_(r.deposit) + '，扣除禮包「' + (r.bundle || '') + '」原價 ' + money_(Number(r.deposit) - refund) + '）' : '') +
       '，店員會再跟您聯繫退款方式。' : '依訂金規則，這次訂金無法退還。') + '\n有任何問題歡迎直接回覆訊息 🙏';
   } else if (req.op === 'done') { upd.status = 'done'; upd.doneAt = now.toISOString(); }
@@ -1178,7 +1205,8 @@ function resvReminder() {
   activeResv_().forEach(function (r) {
     if (r.status !== 'paid' || r.holdUntil !== tmr || r.reminded || !r.userId) return;
     var st = STORES[r.store] || storeByBranch_(r.branch);
-    var text = '⏰ 提醒您：「' + r.model + '」幫您保留到明天（' + tmr.slice(5).replace('-', '/') + '）營業結束。\n請到「' + r.branch + '」取機（' + (STORE_ADDR[r.branch] || '') + '），營業時間 11:00–21:00。\n\n' +
+    var text = r.method === 'visit' ? '⏰ 提醒您：明天（' + visitLabel_(r.holdUntil, r.visitTime) + '）預約到「' + r.branch + '」看「' + r.model + '」。\n地址：' + (STORE_ADDR[r.branch] || '') + '，營業時間 11:00–21:00。\n\n時間要改或不來了，直接回覆訊息跟我們說就好 🙏' :
+      '⏰ 提醒您：「' + r.model + '」幫您保留到明天（' + tmr.slice(5).replace('-', '/') + '）營業結束。\n請到「' + r.branch + '」取機（' + (STORE_ADDR[r.branch] || '') + '），營業時間 11:00–21:00。\n\n' +
       '需要延後的話直接回覆訊息跟我們說 🙏' + (Number(r.bundleValue) ? '\n※ 逾期未取會扣除禮包原價 ' + money_(r.bundleValue) + ' 後退還其餘訂金。' : '');
     var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', { method: 'post', contentType: 'application/json', muteHttpExceptions: true,
       headers: { Authorization: 'Bearer ' + prop_(st.tokenProp) }, payload: JSON.stringify({ to: r.userId, messages: [{ type: 'text', text: text }] }) });
@@ -1194,13 +1222,13 @@ function usedInterest_(ev, store, token, raw) {
   var ad = it ? parseAddons_(raw) : null;
   if (ad && userId) CacheService.getScriptCache().put('addon_' + userId, JSON.stringify({ id: it.id, acc: ad }), 21600);
   var k = at === '德賢店' ? 'dexian' : 'nanzi', phone = String(STORE_PHONE[k] || '').replace(/[^\d+]/g, '');
-  var msg = '收到！這台在「' + at + '」（' + STORE_ADDR[at] + '）。\n店員看到訊息會盡快回覆您 🙏\n\n想先保留或到店看機，也可以直接打電話：' + phone +
+  var msg = '收到！這台在「' + at + '」（' + STORE_ADDR[at] + '）。\n店員看到訊息會盡快回覆您 🙏\n\n想預約看機或有問題，也可以直接打電話：' + phone +
     '\n營業時間：週一～週六 11:00–21:00（週日公休）\n\n※ 中古機數量有限，實際庫存以門市為準';
-  if (ad) msg = '✅ 已幫您記下加購配件 ' + ad.items.length + ' 件，配件應付 ' + money_(ad.pay) + (ad.off ? '（已折 ' + money_(ad.off) + '）' : '') +
-    '\n按下方「💰 保留這台」填訂單，配件會一起帶進訂單 👍\n\n' + msg;
+  if (ad) msg = '✅ 已幫您記下加購配件 ' + ad.items.length + ' 件，配件 ' + money_(ad.pay) + (ad.off ? '（已折 ' + money_(ad.off) + '）' : '') +
+    '\n按下方「📅 預約看機」選到店時間（不用付訂金），配件會一起帶進預約、交機時確認 👍\n\n' + msg;
   var qr = [{ type: 'action', action: { type: 'uri', label: '📞 打電話給' + at, uri: 'tel:' + phone } }];
-  if (it) qr.unshift({ type: 'action', action: { type: 'postback', label: ad ? '💰 保留這台＋' + ad.items.length + '件配件' : '💰 保留這台',
-    data: 'act=dep&id=' + it.id, displayText: '我要保留：' + itemTitle_(it).slice(0, 40) } });
+  if (it) qr.unshift({ type: 'action', action: { type: 'postback', label: ad ? '📅 預約看機＋' + ad.items.length + '件配件' : '📅 預約看機',
+    data: 'act=dep&id=' + it.id, displayText: '我要預約看機：' + itemTitle_(it).slice(0, 40) } });
   reply_(ev.replyToken, token, [{ type: 'text', text: msg, quickReply: { items: qr } }]);
 }
 
