@@ -79,22 +79,22 @@ function checkCard(c, imei) {
   return `<div class="card"><h2>檢測報告</h2><table>${rows.map(([l, v]) => `<tr><td>${l}</td><td class="${v === '異常' ? 'bad' : ''}">${v}</td></tr>`).join('')}</table>
     ${c.memo ? `<p style="margin-top:8px"><b>其他說明：</b>${esc(c.memo)}</p>` : ''}<p class="mute" style="margin-top:6px">驗機日期：${esc(c.date || '')}</p></div>`;
 }
-function flowCard(holdDays) {
+function flowCard(holdDays, hasBundle) {
   return `<div class="card"><h2>購買流程</h2><ol>
-    <li><b>填訂單</b>：確認商品資訊、檢測報告、注意事項，選禮包和付款方式，勾選同意後送出。</li>
+    <li><b>填訂單</b>：確認商品資訊、檢測報告、注意事項${hasBundle ? '，選禮包' : ''}和付款方式，勾選同意後送出。</li>
     <li><b>付訂金</b>：售價 $5,000 以下訂金 $1,000，每多 $5,000 加 $1,000。LINE Pay 掃碼，或銀行匯款後回覆末五碼。</li>
     <li><b>對帳確認</b>：下一個營業日下午 3 點前確認入帳（星期日順延至星期一）。確認後保留 ${holdDays} 天，到期前一天提醒；查無款項自動取消。</li>
     <li><b>到店取機</b>：訂購人本人攜帶身分證件到門市核對身分；用「*#06#」核對 IMEI，親自檢查外觀與功能，滿意後簽署商品確認書、支付尾款，貼防拆標籤後交機。</li>
     <li><b>售後保固</b>：本店保固 30 天，可加購 Repair CARE+ 延長保固。</li></ol></div>`;
 }
-function noteCard() {
+function noteCard(hasBundle) {
   return `<div class="card"><h2>注意事項</h2><ol>
     <li>中古商品：照片與檢測報告為驗機當時狀況，外觀以實機為準。</li>
     <li>只限門市取機，不提供寄送。</li>
     <li>訂金規則：<ul>
       <li>到店驗機，機況與說明不符或不滿意：訂金全額退還。</li>
       <li>付款後、店員確認入帳之前取消：訂金全額退還（尚未為您備貨）。</li>
-      <li>店員確認入帳後（已開始為您備貨），因個人因素取消或超過保留期限未取機：扣除所選禮包原價後，退還其餘訂金。</li></ul></li>
+      ${hasBundle ? '<li>店員確認入帳後（已開始為您備貨），因個人因素取消或超過保留期限未取機：扣除所選禮包原價後，退還其餘訂金。</li>' : '<li>店員確認入帳後，因個人因素取消或超過保留期限未取機：請與門市聯繫辦理退款。</li>'}</ul></li>
     <li>防範詐騙：匯款人須為訂購人本人。取機時核對訂購人身分證件，資料不符本店有權暫停交機並退回款項。</li>
     <li>每台僅一台，以完成對帳的先後為準；價格以訂單送出時為準。</li>
     <li>本店保固 30 天，限非人為因素之功能故障；摔機、進水、螢幕破裂、自行或非本店拆修者不在保固範圍。</li>
@@ -131,7 +131,7 @@ async function fill() {
   if (!d.ok) { m.innerHTML = `<div class="card big"><p style="font-weight:700">${esc(d.error)}</p></div>`; return; }
   const it = d.item, bs = d.bundles || [];
   $('title').textContent = '填寫訂單';
-  m.innerHTML = prodCard(it, d.deposit, d.shop) + accCard(d.acc) + checkCard(d.check, d.imei) + flowCard(d.holdDays) + noteCard() +
+  m.innerHTML = prodCard(it, d.deposit, d.shop) + accCard(d.acc) + checkCard(d.check, d.imei) + flowCard(d.holdDays, bs.length > 0) + noteCard(bs.length > 0) +
     (bs.length ? `<div class="card"><h2>🎁 選擇禮包</h2>${bs.map((b, i) => bundleOpt(b, i)).join('')}
       <p class="mute" style="margin-top:8px">加購價取機時再付。店員確認入帳後會為您備貨；若因個人因素取消或逾期未取，會從訂金扣除禮包原價。</p></div>` : '') +
     `<div class="card"><h2>付款方式</h2>
@@ -196,7 +196,7 @@ async function view() {
       <tr><td>訂購人</td><td>${esc(o.name)} ${esc(o.phone)}</td></tr>
       ${o.holdUntil ? `<tr><td>保留到</td><td><b>${esc(o.holdUntil)}</b> 營業結束</td></tr>` : o.confirmBy ? `<tr><td>對帳期限</td><td>${esc(o.confirmBy)}</td></tr>` : ''}
       <tr><td>同意條款時間</td><td>${esc(new Date(o.agreedAt).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false }))}</td></tr></table></div>` +
-    checkCard(d.check, o.imei) + flowCard(d.holdDays) + noteCard() +
+    checkCard(d.check, o.imei) + flowCard(d.holdDays, !!o.bundle) + noteCard(!!o.bundle) +
     `<div class="card sig"><div>訂購人簽名：</div><div>經手人員：</div></div>
      <div class="np"><button class="btn dark" onclick="print()">📄 下載 PDF／列印</button><p class="mute" style="text-align:center;margin-top:6px">iPhone：按下後選「分享」→「儲存到檔案」；Android：選「另存為 PDF」</p></div>`;
 }
