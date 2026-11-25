@@ -64,6 +64,10 @@ input.t{width:100%;border:1px solid #d1d5db;border-radius:10px;padding:12px;font
 
 <script>
 const GAS = 'https://script.google.com/macros/s/AKfycbxBK7c2Oledgo-jT-kRnueuU8grZxVinuocyp2iLI8u-c5Q94fZSeiemH0UkeAqdjfTlw/exec';
+const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const ext = u => u ? u + (u.includes('?') ? '&' : '?') + 'openExternalBrowser=1' : u;   // LINE 內建瀏覽器開不了行事曆檔 → 改用手機瀏覽器開
+const calBtns = r => r.ics ? `<a class="btn" style="margin-top:10px;background:var(--green)" href="${esc(ext(IS_IOS ? r.ics : r.gcal))}" target="_blank">📅 加入手機行事曆（到店前 2 小時提醒）</a>
+  <p class="mute" style="text-align:center;margin-top:4px">${IS_IOS ? '打開後按「加入全部」' : '會開啟 Google 日曆，按「儲存」'}；<a href="${esc(ext(IS_IOS ? r.gcal : r.ics))}" target="_blank">${IS_IOS ? '改用 Google 日曆' : '改用 iPhone／其他行事曆'}</a></p>` : '';
 const P = new URLSearchParams(location.search), T = (P.get('t') || '').replace(/\W/g, ''), K = (P.get('k') || '').replace(/\W/g, '');
 const $ = id => document.getElementById(id), m = $('m');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -208,7 +212,8 @@ function done(r, it) {
   m.innerHTML = `<div class="card big"><div class="ok">✓</div><h2 style="font-size:20px">預約 ${esc(r.orderNo)}</h2><p><b>${esc(it.model)}</b></p>
     <div class="pay"><b>📅 ${esc(r.visit)}</b><br>📍 ${esc(r.branch)}：${esc(r.shop.addr || '')}<br>📞 ${esc(r.shop.tel || '')}
       <p class="mute" style="margin-top:6px">機子會保留到預約當天營業結束。到店跟店員說預約編號或姓名就可以 😊<br>前一天會用 LINE 提醒您；要改時間直接回覆 LINE。</p></div>
-    <a class="btn" style="margin-top:14px" href="${map}" target="_blank">🗺️ 開啟地圖導航</a>
+    ${calBtns(r)}
+    <a class="btn" style="margin-top:10px" href="${map}" target="_blank">🗺️ 開啟地圖導航</a>
     ${lineUrl ? `<a class="btn dark" style="margin-top:10px" href="${lineUrl}">💬 回到 LINE</a>` : ''}
     <a class="btn ghost" style="margin-top:10px" href="?k=${esc(r.viewKey)}">📄 查看預約內容</a></div>`;
 }
@@ -218,6 +223,7 @@ async function view() {
   if (!d.ok) { m.innerHTML = `<div class="card big"><p style="font-weight:700">${esc(d.error)}</p></div>`; return; }
   const o = d.order;
   $('title').textContent = (o.method === 'visit' ? '預約 ' : '訂單 ') + o.orderNo;
+  if (P.get('cal') === '1' && o.ics && /已預約/.test(o.status)) { location.href = IS_IOS ? o.ics : o.gcal; }
   m.innerHTML = `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:17px">訂單 ${esc(o.orderNo)}</b><span class="status">${esc(o.status)}</span></div>
       <table style="margin-top:8px">
       <tr><td>商品</td><td><b>${esc(o.model)}</b></td></tr><tr><td>售價</td><td>${money(o.price)}</td></tr>${o.method === 'visit' ? `<tr><td>預約到店</td><td><b>${esc(o.visit)}</b>（免訂金）</td></tr>` : `<tr><td>訂金</td><td>${money(o.deposit)}（${o.method === 'bank' ? '匯款' + (o.last5 ? ' 末碼 ' + esc(o.last5) : '') : 'LINE Pay'}）</td></tr>`}
@@ -230,7 +236,7 @@ async function view() {
       <tr><td>同意條款時間</td><td>${esc(new Date(o.agreedAt).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false }))}</td></tr></table></div>` +
     checkCard(d.check, o.imei) + (o.method === 'visit' ? visitFlowCard() + visitNoteCard() : flowCard(d.holdDays, !!o.bundle) + noteCard(!!o.bundle)) +
     `<div class="card sig"><div>客人簽名：</div><div>經手人員：</div></div>
-     <div class="np"><button class="btn dark" onclick="print()">📄 下載 PDF／列印</button><p class="mute" style="text-align:center;margin-top:6px">iPhone：按下後選「分享」→「儲存到檔案」；Android：選「另存為 PDF」</p></div>`;
+     <div class="np">${/已預約/.test(o.status) ? calBtns(o) : ''}<button class="btn dark" style="margin-top:10px" onclick="print()">📄 下載 PDF／列印</button><p class="mute" style="text-align:center;margin-top:6px">iPhone：按下後選「分享」→「儲存到檔案」；Android：選「另存為 PDF」</p></div>`;
 }
 if (K) view(); else if (T) fill(); else m.innerHTML = '<div class="card big"><p>請從 LINE 的「📅 預約看機」打開這個頁面</p></div>';
 </script>
