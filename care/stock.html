@@ -375,7 +375,7 @@ function resvHtml(r, today) {
     + (r.status === 'paid' ? `<button class="more" data-ext="${r.id}">⏩ 延長</button>` : '')
     + `<button class="more" data-rv="${r.id}" data-op="cancel" style="color:var(--red)">取消保留</button>`;
   return `<div style="margin-top:6px;font-size:12px;line-height:1.6;border-left:3px solid #f5b400;padding-left:6px">${head}<br>
-    ${r.orderNo ? `<a href="../booking/order.html?k=${esc(r.viewKey || '')}" target="_blank" style="font-weight:700">訂單 ${esc(r.orderNo)}</a>・` : ''}${r.source === 'store' ? '🏪 現場・' : '💬 LINE・'}${esc(r.name || '客人')}${r.phone ? ' ' + esc(r.phone) : ''}${r.lineName && r.lineName !== r.name ? `<span class="mute">（LINE：${esc(r.lineName)}）</span>` : ''}・訂金 ${num(r.deposit) ? money(num(r.deposit)) : '無'}・${pay}${r.note ? '<br>' + esc(r.note) : ''}${bundle ? '<br>' + bundle : ''}<br>${btns}</div>`;
+    ${r.orderNo ? `<a href="../booking/order.html?k=${esc(r.viewKey || '')}" target="_blank" style="font-weight:700">訂單 ${esc(r.orderNo)}</a>・` : ''}${r.source === 'store' ? '🏪 現場・' : '💬 LINE・'}${esc(r.name || '客人')}${r.phone ? ' ' + esc(r.phone) : ''}${r.lineName && r.lineName !== r.name ? `<span class="mute">（LINE：${esc(r.lineName)}）</span>` : ''}・訂金 ${num(r.deposit) ? money(num(r.deposit)) : '無'}・${pay}${r.note ? '<br>' + esc(r.note) : ''}${bundle ? '<br>' + bundle : ''}${r.accItems ? `<br>🎧 加購配件（取機時付 <b>${money(num(r.accPay))}</b>${num(r.accOff) ? `，已折 ${money(num(r.accOff))}` : ''}，對帳後要備貨）<br><span class="mute">${esc(r.accItems).replace(/\n/g, '<br>')}</span>` : ''}<br>${btns}</div>`;
 }
 const doneSent = new Set();
 function autoDone(r) {   // 已經在每日登打賣出 → 訂金單自動結案
