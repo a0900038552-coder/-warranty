@@ -111,6 +111,13 @@ function bundleOpt(b, i) {
     <b>${esc(b.name)}</b>${b.desc ? `<span class="mute" style="display:block">${esc(b.desc)}</span>` : ''}
     ${calc ? `<div style="font-size:13px;margin-top:4px">${calc}</div>` : ''}<div style="font-size:14px">${price}</div></div></label>`;
 }
+const PROMO = { min: 1000, off: 100 };
+const accTot = items => { const sum = items.reduce((s, x) => s + Number(x.price || 0), 0), off = Math.floor(sum / PROMO.min) * PROMO.off; return { sum, off, pay: sum - off }; };
+function accCard(acc) {
+  if (!acc || !(acc.items || []).length) return '';
+  return `<div class="card"><h2>🎧 加購配件（取機時付）</h2>${acc.items.map((x, i) => `<label class="opt on"><input type="checkbox" name="acc" value="${i}" checked><div style="flex:1"><b>${esc(x.name)}</b><span class="mute">${money(x.price)}</span></div></label>`).join('')}
+    <div id="accSum" style="margin-top:10px;text-align:right"></div><p class="mute" style="margin-top:4px">配件每滿 ${money(PROMO.min)} 折 ${money(PROMO.off)}。不要的可以取消勾選；確認入帳後會連同手機一起幫您備貨。</p></div>`;
+}
 function prodCard(it, dep, shop) {
   return `<div class="card"><div class="prod">${(it.photos || [])[0] ? `<img src="${photo(it.photos[0])}" alt="">` : ''}<div>
     <span class="nm">${esc(it.model)}</span><span class="mute">${esc(it.color || '')}</span><div class="price">${money(it.price)}</div>
@@ -124,7 +131,7 @@ async function fill() {
   if (!d.ok) { m.innerHTML = `<div class="card big"><p style="font-weight:700">${esc(d.error)}</p></div>`; return; }
   const it = d.item, bs = d.bundles || [];
   $('title').textContent = '填寫訂單';
-  m.innerHTML = prodCard(it, d.deposit, d.shop) + checkCard(d.check, d.imei) + flowCard(d.holdDays) + noteCard() +
+  m.innerHTML = prodCard(it, d.deposit, d.shop) + accCard(d.acc) + checkCard(d.check, d.imei) + flowCard(d.holdDays) + noteCard() +
     (bs.length ? `<div class="card"><h2>🎁 選擇禮包</h2>${bs.map((b, i) => bundleOpt(b, i)).join('')}
       <p class="mute" style="margin-top:8px">加購價取機時再付。店員確認入帳後會為您備貨；若因個人因素取消或逾期未取，會從訂金扣除禮包原價。</p></div>` : '') +
     `<div class="card"><h2>付款方式</h2>
@@ -136,12 +143,18 @@ async function fill() {
       <label class="f">手機號碼</label><input class="t" id="phone" inputmode="tel" autocomplete="tel" placeholder="09xxxxxxxx"></div>
     <div class="card"><label class="agree"><input type="checkbox" id="agree"><span>我已閱讀並同意以上檢測報告、購買流程、注意事項與訂金規則</span></label><div class="err" id="err"></div></div>`;
   m.querySelectorAll('.opt input').forEach(x => x.addEventListener('change', () => m.querySelectorAll(`.opt input[name="${x.name}"]`).forEach(y => y.closest('.opt').classList.toggle('on', y.checked))));
+  const accItems = (d.acc && d.acc.items) || [];
+  const keptAcc = () => [...m.querySelectorAll('input[name="acc"]:checked')].map(x => Number(x.value));
+  const drawAcc = () => { const el = $('accSum'); if (!el) return; const t = accTot(keptAcc().map(i => accItems[i]));
+    el.innerHTML = t.sum ? `配件 ${money(t.sum)}${t.off ? ` − 滿額折 ${money(t.off)}` : ''} ＝ <b style="color:var(--red);font-size:18px">${money(t.pay)}</b>` : '<span class="mute">沒有加購配件</span>'; };
+  m.querySelectorAll('input[name="acc"]').forEach(x => x.addEventListener('change', () => { x.closest('.opt').classList.toggle('on', x.checked); drawAcc(); }));
+  drawAcc();
   if (!d.pay.lp !== !d.pay.bank) { const only = m.querySelector('input[name="method"]'); if (only) { only.checked = true; only.closest('.opt').classList.add('on'); } }
   $('bar').style.display = 'block'; $('go').disabled = false; $('go').textContent = '確認送出訂單';
   $('go').onclick = async () => {
     const err = $('err'); err.textContent = '';
     const body = { t: T, name: $('name').value.trim(), phone: $('phone').value.trim(), agree: $('agree').checked,
-      bundle: (m.querySelector('input[name="bundle"]:checked') || {}).value ?? '', method: (m.querySelector('input[name="method"]:checked') || {}).value || '' };
+      acc: keptAcc(), bundle: (m.querySelector('input[name="bundle"]:checked') || {}).value ?? '', method: (m.querySelector('input[name="method"]:checked') || {}).value || '' };
     if (bs.length && body.bundle === '') return err.textContent = '請選擇禮包';
     if (!body.method) return err.textContent = '請選擇付款方式';
     if (!body.name) return err.textContent = '請填寫姓名';
@@ -177,7 +190,8 @@ async function view() {
       <table style="margin-top:8px">
       <tr><td>商品</td><td><b>${esc(o.model)}</b></td></tr><tr><td>售價</td><td>${money(o.price)}</td></tr><tr><td>訂金</td><td>${money(o.deposit)}（${o.method === 'bank' ? '匯款' + (o.last5 ? ' 末碼 ' + esc(o.last5) : '') : 'LINE Pay'}）</td></tr>
       ${o.bundle ? `<tr><td>禮包</td><td>${esc(o.bundle)}${o.bundleAdd ? '（加購 ' + money(o.bundleAdd) + '）' : '（免費）'}<div class="mute">${esc(o.bundleDesc || '')}${o.bundleValue ? '・原價 ' + money(o.bundleValue) : ''}</div></td></tr>` : ''}
-      <tr><td>尾款（取機時付）</td><td><b>${money(Number(o.price) - Number(o.deposit) + Number(o.bundleAdd || 0))}</b></td></tr>
+      ${o.accItems ? `<tr><td>加購配件</td><td>${o.accItems.split('\n').map(esc).join('<br>')}<div class="mute">配件 ${money(o.accSum)}${Number(o.accOff) ? ' − 滿額折 ' + money(o.accOff) : ''} ＝ ${money(o.accPay)}</div></td></tr>` : ''}
+      <tr><td>尾款（取機時付）</td><td><b>${money(Number(o.price) - Number(o.deposit) + Number(o.bundleAdd || 0) + Number(o.accPay || 0))}</b></td></tr>
       <tr><td>取機門市</td><td>${esc(o.branch)}<div class="mute">${esc(d.shop.addr || '')} ${esc(d.shop.tel || '')}</div></td></tr>
       <tr><td>訂購人</td><td>${esc(o.name)} ${esc(o.phone)}</td></tr>
       ${o.holdUntil ? `<tr><td>保留到</td><td><b>${esc(o.holdUntil)}</b> 營業結束</td></tr>` : o.confirmBy ? `<tr><td>對帳期限</td><td>${esc(o.confirmBy)}</td></tr>` : ''}
