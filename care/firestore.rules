@@ -17,5 +17,11 @@ service cloud.firestore {
     match /{document=**} {
       allow read, write: if isStaff();
     }
+    // 官網中古機現貨頁（a0900038552-coder.github.io/used-phones）要讓客人不用登入就能讀「這一筆」。
+    // 裡面只有客人本來就看得到的欄位（機型、售價、照片、驗機結果），不含成本、IMEI、最低價。
+    // 只開「讀」，寫入一樣只有員工。
+    match /settings/used_showcase {
+      allow read: if true;
+    }
   }
 }

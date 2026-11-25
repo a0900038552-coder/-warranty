@@ -228,7 +228,8 @@ function publishLine(m) {
     .filter(x => num(x.d.price) != null && !x.d.lineHide && !resv[x.b.id])
     .sort((a, b) => (b.b.date || '').localeCompare(a.b.date || ''))
     .map(({ b, d }) => ({ id: b.id, model: niceModel(buyModel(b)), branch: b.branch || '', price: num(d.price), color: d.color || '', cond: d.cond || '',
-      battery: d.battery || '', waterproof: !!d.waterproof, box: !!d.box, cable: !!d.cable, acc: d.acc || '', photos: (d.photos || []).slice(0, MAX_PH) }));
+      battery: d.battery || '', waterproof: !!d.waterproof, box: !!d.box, cable: !!d.cable, acc: d.acc || '', photos: (d.photos || []).slice(0, MAX_PH),
+      check: pubCheck(d.check) }));
   const json = JSON.stringify(items);
   let last = null; try { last = localStorage.getItem('line-showcase'); } catch {}
   if (json === last) return;
@@ -487,6 +488,13 @@ const CHECK_ITEMS = [
   ['fcam', '前鏡頭拍照', OK3, '正常'], ['rcam', '後鏡頭拍照', OK3, '正常'], ['btn', '機身所有按鈕', OK3, '正常'], ['spk', '喇叭和聽筒', OK3, '正常'],
   ['mic', '麥克風錄音', OK3, '正常'], ['port', '充電口', OK3, '正常'], ['qi', '無線充電', OK3, '正常'], ['nfc', 'NFC', OK3, '正常'],
   ['prox', '距離感應', OK3, '正常'], ['light', '自動亮度感應', OK3, '正常']];
+// 公開給客人看的驗機表（官網中古機頁／LINE 現貨清單用）：只放檢測項目、電池、保固天數、驗機日期；不含 IMEI、備註、檢測人員
+function pubCheck(c) {
+  if (!c || typeof c !== 'object') return null;
+  const o = {};
+  ['battery', 'days', 'date', ...CHECK_ITEMS.map(x => x[0])].forEach(k => { if (c[k] != null && String(c[k]).trim() !== '') o[k] = String(c[k]).trim(); });
+  return Object.keys(o).length ? o : null;
+}
 function checkForm(b, d) {
   const c = d.check || {};
   return new Promise(resolve => {
