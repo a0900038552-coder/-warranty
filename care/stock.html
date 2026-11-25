@@ -99,7 +99,7 @@ tr.detail td{background:#fafbfc}
       <div class="dgrid" style="margin-top:6px">
         <div><label>收購日</label><input type="date" name="date" required></div>
         <div><label>分店</label><select name="branch"><option>楠梓店</option><option>德賢店</option></select></div>
-        <div><label>機型 *</label><input name="model" required placeholder="例：iPhone 14 Pro 256G"></div>
+        <div><label>機型 *</label><input name="model" required placeholder="例：iPhone 14 Pro 256G（跟同行調來賣的，前面打 *，例 *iPhone 15 128G）"></div>
         <div><label>收購成本 *</label><input name="cost" required inputmode="numeric" placeholder="例：12000"></div>
         <div><label>IMEI</label><input name="imei" inputmode="numeric"></div>
         <div><label>機況</label><input name="cond" placeholder="例：9成新、背蓋小刮"></div>
@@ -147,7 +147,7 @@ const days = (a, b) => Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00
 function toast(m) { const t = $('toast'); t.textContent = m; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2400); }
 
 // 機型比對用：大寫、去空白、去 iPhone 字樣
-const mkey = s => String(s || '').toUpperCase().replace(/IPHONE/g, '').replace(/[\s\-_/／]+/g, '');
+const mkey = s => String(s || '').toUpperCase().replace(/^[\s*＊]+/, '').replace(/IPHONE/g, '').replace(/[\s\-_/／]+/g, '');
 const BUY_RE = /^\s*支出\s*[:：]\s*中古機回收\s*[:：]?\s*/;
 const isBuy = r => BUY_RE.test(r.item || '');
 const buyModel = r => String(r.item || '').replace(BUY_RE, '').trim();
@@ -227,7 +227,7 @@ function publishLine(m) {
   const items = allBuys().filter(b => m[b.id]?.status === 'stock').map(b => ({ b, d: details[b.id] || {} }))
     .filter(x => num(x.d.price) != null && !x.d.lineHide && !resv[x.b.id])
     .sort((a, b) => (b.b.date || '').localeCompare(a.b.date || ''))
-    .map(({ b, d }) => ({ id: b.id, model: niceModel(buyModel(b)), branch: b.branch || '', price: num(d.price), color: d.color || '', cond: d.cond || '',
+    .map(({ b, d }) => ({ id: b.id, model: niceModel(buyModel(b).replace(/^[\s*＊]+/, '')), peer: /^[\s]*[*＊]/.test(buyModel(b)), branch: b.branch || '', price: num(d.price), color: d.color || '', cond: d.cond || '',
       battery: d.battery || '', waterproof: !!d.waterproof, box: !!d.box, cable: !!d.cable, acc: d.acc || '', photos: (d.photos || []).slice(0, MAX_PH),
       check: pubCheck(d.check) }));
   const json = JSON.stringify(items);

@@ -4,6 +4,7 @@
 
 export const MODELS = [
   // ── iPhone ──
+  ['iPhone', 'iPhone 18 Pro Max', 'USB-C'], ['iPhone', 'iPhone 18 Pro', 'USB-C'], ['iPhone', 'iPhone Duo', 'USB-C'],
   ['iPhone', 'iPhone 17 Pro Max', 'USB-C'], ['iPhone', 'iPhone 17 Pro', 'USB-C'], ['iPhone', 'iPhone Air', 'USB-C'], ['iPhone', 'iPhone 17', 'USB-C'],
   ['iPhone', 'iPhone 16e', 'USB-C'],
   ['iPhone', 'iPhone 16 Pro Max', 'USB-C'], ['iPhone', 'iPhone 16 Pro', 'USB-C'], ['iPhone', 'iPhone 16 Plus', 'USB-C'], ['iPhone', 'iPhone 16', 'USB-C'],
