@@ -28,7 +28,7 @@
 | `index.html` | 保固管理（Repair CARE+）：查保固、手動新增、Excel 匯入、預約時段管理、LINE 綁定狀態 | `records`、`slot_blocks` |
 | `ledger.html` | 每日登打（銷售報表）：輸入時自動存檔，並**自動連動**保固、調貨、購物金 | `ledger`、`ledger_meta`、`ledger_cash`、`ledger_bak*`、`settings/staff`、`records`、`transfers`、`credit` |
 | `quotes.html` | 報價查詢（報價小幫手／復原者Ai機器人記下的群組報價） | `quotes` |
-| `stock.html` | 中古機庫存；自動整理 LINE「中古機現貨」清單；LINE 訂金對帳（收到訂金／取消保留） | `used_stock`、`settings/used_showcase`、`reservations` |
+| `stock.html` | 中古機庫存；自動整理 LINE「中古機現貨」清單（官網中古機頁 `used-phones` repo 也讀同一份，含照片與公開驗機表）；LINE 訂金對帳（收到訂金／取消保留） | `used_stock`、`settings/used_showcase`、`reservations` |
 | `photos.html` | 公開的中古機照片頁（LINE 卡片「看全部照片」開這頁；只顯示網址帶的雲端硬碟照片，不讀資料庫） | — |
 | `watch.html` | ⚠️ 注意客人：經常預約不來、保留逾期未取等紀錄（手動記＋預約「未到」自動記）；別的頁面輸入電話會跳 ⚠️ | `watchlist` |
 | `notes.html` | 退貨／待辦：廠商購物金、兩店調貨欠條、待辦 | `credit`、`todos`、`transfers` |
@@ -41,7 +41,7 @@
 | `guard.js` | 登入回報給 GAS；新裝置登入會通知老闆 LINE；名單外帳號踢出 | — |
 | `pin.js` | 分店密碼（防手滑改到別間店，**不是**資安） | — |
 | `ask.js` | 取代 `confirm()` 的頁內確認視窗（內嵌瀏覽器會擋 confirm） | — |
-| `firestore.rules` | 資料庫權限：只有白名單 Email 可讀寫（要到 Firebase 主控台手動發布） | — |
+| `firestore.rules` | 資料庫權限：只有白名單 Email 可讀寫；唯一例外 `settings/used_showcase` 公開可讀（官網中古機頁用）（要到 Firebase 主控台手動發布） | — |
 | `terms/` | 兩店保固條款圖（LINE 機器人會傳），換圖要改 GAS 的 `TERMS_VER` | — |
 | `cards/`、`richmenu*.jpg` | LINE 配件卡片、圖文選單圖 | — |
 
