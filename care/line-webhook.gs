@@ -85,6 +85,8 @@ function doGet(e) {
   if (p.action === 'basicIds') return json_({ nanzi: basicId_('nanzi'), dexian: basicId_('dexian') });
   if (p.action === 'autoReplyTransfer') return json_(addTransferReply_());
   if (p.action === 'orderView') return json_(orderView_(String(p.k || '')));
+  if (p.action === 'ics') return visitIcs_(String(p.k || ''));
+  if (p.action === 'visitReminderSetup') return json_(setupVisitReminder());
   if (p.action === 'autoReplyTest') {   // 測試：這句話在某間店會不會觸發自動回覆（不會真的傳訊息）
     var st = STORES[p.store] || STORES.nanzi, rows = autoReplyRows_(), q = String(p.q || '').replace(/\s+/g, '').toLowerCase(), hit = -1;
     for (var i = 0; i < rows.length; i++) { var r = rows[i]; if ((r.branch === '全部' || r.branch === st.branch) && r.keys.some(function (k) { return q.indexOf(k) >= 0; })) { hit = i; break; } }
@@ -1059,6 +1061,79 @@ function visitLabel_(date, time) {
   var d = new Date(date + 'T12:00:00+08:00');
   return Utilities.formatDate(d, 'Asia/Taipei', 'M/d') + '（' + WD_ZH[Number(Utilities.formatDate(d, 'Asia/Taipei', 'u')) % 7] + '）' + (time ? ' ' + time : '');
 }
+// 行事曆：iPhone 用 .ics（內建行事曆，到店前 2 小時提醒）、Android 用 Google 日曆連結
+function visitWhen_(r) {   // 回傳 UTC 開始／結束（yyyyMMddTHHmmssZ），看機 30 分鐘
+  var st = new Date(r.holdUntil + 'T' + (r.visitTime || '11:00') + ':00+08:00'), en = new Date(st.getTime() + 30 * 60000);
+  var f = function (d) { return Utilities.formatDate(d, 'UTC', "yyyyMMdd'T'HHmmss'Z'"); };
+  return { start: f(st), end: f(en) };
+}
+function visitCalText_(r) {
+  var shop = SHOP_INFO[r.branch] || {};
+  return { title: '復原者看機：' + r.model, loc: '復原者手機維修 ' + r.branch + ' ' + (shop.addr || ''),
+    desc: '預約編號 ' + r.orderNo + '\n' + r.branch + ' ' + (shop.tel || '') + '\n到店跟店員說預約編號或姓名就可以，不用付訂金。\n要改時間請直接回覆 LINE。' };
+}
+function visitGcal_(r) {
+  var w = visitWhen_(r), t = visitCalText_(r);
+  return 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent(t.title) + '&dates=' + w.start + '/' + w.end +
+    '&details=' + encodeURIComponent(t.desc) + '&location=' + encodeURIComponent(t.loc) + '&ctz=Asia/Taipei';
+}
+function visitIcs_(k) {
+  k = k.replace(/\W/g, '');
+  var r = k.length >= 16 ? fsQuery_('reservations', { fieldFilter: { field: { fieldPath: 'viewKey' }, op: 'EQUAL', value: { stringValue: k } } }, 1)[0] : null;
+  if (!r || r.method !== 'visit') return ContentService.createTextOutput('找不到預約').setMimeType(ContentService.MimeType.TEXT);
+  var w = visitWhen_(r), t = visitCalText_(r), esc = function (x) { return String(x).replace(/\\/g, '\\\\').replace(/[,;]/g, '\\$&').replace(/\n/g, '\\n'); };
+  var ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//grandmasterfix//visit//ZH', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'BEGIN:VEVENT',
+    'UID:' + r.orderNo + '-' + k.slice(0, 8) + '@grandmasterfix.com.tw', 'DTSTAMP:' + Utilities.formatDate(new Date(), 'UTC', "yyyyMMdd'T'HHmmss'Z'"),
+    'DTSTART:' + w.start, 'DTEND:' + w.end, 'SUMMARY:' + esc(t.title), 'LOCATION:' + esc(t.loc), 'DESCRIPTION:' + esc(t.desc),
+    'BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + esc(t.title), 'TRIGGER:-PT2H', 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+  return ContentService.createTextOutput(ics).setMimeType(ContentService.MimeType.ICAL);
+}
+// 預約成功 → 在客人的 LINE 聊天室推一張確認卡（時間、門市、導航、電話、加入行事曆、查看預約）
+function visitConfirmPush_(r, store) {
+  if (!r.userId) return false;
+  var st = STORES[store] || storeByBranch_(r.branch), shop = SHOP_INFO[r.branch] || {}, tel = String(shop.tel || '').replace(/[^\d]/g, '');
+  var map = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent('復原者手機維修 ' + (shop.addr || ''));
+  var cal = ORDER_URL + '?k=' + r.viewKey + '&cal=1&openExternalBrowser=1';
+  var bubble = { type: 'bubble', size: 'kilo',
+    body: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [
+      { type: 'text', text: '✅ 預約看機成功', weight: 'bold', size: 'lg', color: '#15803d' },
+      { type: 'text', text: r.model, weight: 'bold', wrap: true },
+      { type: 'text', text: '📅 ' + visitLabel_(r.holdUntil, r.visitTime), size: 'md', weight: 'bold', color: '#d71920', margin: 'md' },
+      { type: 'text', text: '📍 ' + r.branch + '：' + (shop.addr || ''), size: 'sm', wrap: true },
+      { type: 'text', text: '預約編號 ' + r.orderNo + '・免訂金\n到店跟店員說編號或姓名就可以，驗機滿意再購買 😊', size: 'xs', color: '#6b7280', wrap: true, margin: 'md' }] },
+    footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [
+      { type: 'button', style: 'primary', color: '#d71920', height: 'sm', action: { type: 'uri', label: '📅 加入手機行事曆', uri: cal } },
+      { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
+        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'uri', label: '🗺️ 導航', uri: map } },
+        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'uri', label: '📞 電話', uri: 'tel:' + tel } }] },
+      { type: 'button', style: 'link', height: 'sm', action: { type: 'uri', label: '查看預約內容', uri: ORDER_URL + '?k=' + r.viewKey } }] } };
+  var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', { method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    headers: { Authorization: 'Bearer ' + prop_(st.tokenProp) }, payload: JSON.stringify({ to: r.userId, messages: [{ type: 'flex', altText: '預約看機成功：' + visitLabel_(r.holdUntil, r.visitTime), contents: bubble }] }) });
+  return res.getResponseCode() === 200;
+}
+// 當天到店前 2 小時提醒（每小時跑一次）。執行一次 setupVisitReminder 建立觸發器
+function setupVisitReminder() {
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'visitReminder') ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('visitReminder').timeBased().everyHours(1).create();
+  return { ok: true, at: '每小時檢查一次，到店前 2 小時提醒' };
+}
+function visitReminder() {
+  var now = new Date(), today = Utilities.formatDate(now, 'Asia/Taipei', 'yyyy-MM-dd'), sent = 0;
+  activeResv_().forEach(function (r) {
+    if (r.method !== 'visit' || r.status !== 'paid' || r.holdUntil !== today || r.remindedToday || !r.userId) return;
+    var at = new Date(today + 'T' + (r.visitTime || '11:00') + ':00+08:00').getTime(), left = (at - now.getTime()) / 60000;
+    if (left > 150 || left < 0) return;   // 到店前 2.5 小時內才提醒（每小時跑一次，避免漏掉）
+    if (r.createdAt && at - Date.parse(r.createdAt) < 3 * 3600000) { patchDoc_('reservations/' + r._id, { remindedToday: true }); return; }   // 剛約不久的不用再提醒
+    var st = STORES[r.store] || storeByBranch_(r.branch), shop = SHOP_INFO[r.branch] || {};
+    var map = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent('復原者手機維修 ' + (shop.addr || ''));
+    var text = '⏰ 提醒您：今天 ' + r.visitTime + ' 預約到「' + r.branch + '」看「' + r.model + '」\n📍 ' + (shop.addr || '') + '\n🗺️ 導航：' + map +
+      '\n\n會晚到或不來了，直接回覆訊息跟我們說就好 🙏';
+    var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', { method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      headers: { Authorization: 'Bearer ' + prop_(st.tokenProp) }, payload: JSON.stringify({ to: r.userId, messages: [{ type: 'text', text: text }] }) });
+    if (res.getResponseCode() === 200) { patchDoc_('reservations/' + r._id, { remindedToday: true }); sent++; }
+  });
+  return sent;
+}
 function orderItem_(id) {
   var it = showcaseItem_(id); if (!it) return null;
   var u = getDoc_('used_stock/' + id) || {}, c = u.check || {};
@@ -1107,12 +1182,14 @@ function orderSubmit_(req) {
     orderNo: orderNo, viewKey: viewKey, imeiMasked: o.imei, agreedAt: now.toISOString(), status: 'paid', holdUntil: slot.date, visitTime: visitTime, confirmBy: '',
     createdAt: now.toISOString(), updatedAt: now.toISOString() });
   c.remove('ord_' + t); if (d.userId) c.remove('addon_' + d.userId);
+  try { visitConfirmPush_({ userId: d.userId, model: itemTitle_(o.it), branch: o.it.branch, holdUntil: slot.date, visitTime: visitTime, orderNo: orderNo, viewKey: viewKey }, d.store); } catch (e) { console.error(e); }
   var w = getDoc_('watchlist/' + phone) || (d.userId ? getDoc_('watchlist/L_' + d.userId) : null);
   notifyOwner_('📅 新預約看機 ' + orderNo + '\n' + itemTitle_(o.it) + '（' + o.it.branch + '）售價 ' + money_(o.it.price) +
     '\n到店：' + visitLabel_(slot.date, visitTime) + '\n客人：' + name + ' ' + phone +
     (ac ? '\n🎧 想加購配件 ' + ac.items.length + ' 件（' + money_(ac.pay) + (ac.off ? '，已折 ' + money_(ac.off) : '') + '，交機時確認）：\n' + ac.items.map(function (x) { return '・' + x.name + ' ' + money_(x.price); }).join('\n') : '') +
     (w ? '\n⚠️ 這位客人在「注意客人」有紀錄' : '') + '\n機子已自動保留到 ' + visitLabel_(slot.date) + ' 營業結束，沒來會自動釋出。');
-  return { ok: true, orderNo: orderNo, viewKey: viewKey, id: rid, visit: visitLabel_(slot.date, visitTime), shop: SHOP_INFO[o.it.branch] || {}, branch: o.it.branch, basicId: basicId_(d.store) };
+  var calR = { model: itemTitle_(o.it), branch: o.it.branch, holdUntil: slot.date, visitTime: visitTime, orderNo: orderNo };
+  return { ok: true, orderNo: orderNo, viewKey: viewKey, id: rid, visit: visitLabel_(slot.date, visitTime), gcal: visitGcal_(calR), ics: WEBHOOK_EXEC + '?action=ics&k=' + viewKey, shop: SHOP_INFO[o.it.branch] || {}, branch: o.it.branch, basicId: basicId_(d.store) };
 }
 function orderView_(k) {
   k = k.replace(/\W/g, ''); if (k.length < 16) return { ok: false, error: '找不到訂單' };
@@ -1124,7 +1201,7 @@ function orderView_(k) {
     : { pending: r.reported ? '已回報付款，等待對帳' : '等待付款', paid: '已確認訂金，保留中', done: '已取機', cancelled: '已取消', expired: '逾期未對帳，已取消' };
   return { ok: true, order: { orderNo: r.orderNo, model: r.model, branch: r.branch, price: r.price, deposit: r.deposit, method: r.method, last5: r.last5 ? '*' + String(r.last5).slice(-3) : '',
     name: r.name, phone: String(r.phone || '').replace(/^(\d{4})\d{3}/, '$1***'), bundle: r.bundle, bundleDesc: r.bundleDesc, bundleAdd: r.bundleAdd, bundleValue: r.bundleValue,
-    visit: r.method === 'visit' ? visitLabel_(r.holdUntil, r.visitTime) : '',
+    visit: r.method === 'visit' ? visitLabel_(r.holdUntil, r.visitTime) : '', gcal: r.method === 'visit' ? visitGcal_(r) : '', ics: r.method === 'visit' ? WEBHOOK_EXEC + '?action=ics&k=' + k : '',
     accItems: r.accItems || '', accSum: r.accSum || 0, accOff: r.accOff || 0, accPay: r.accPay || 0,
     imei: r.imeiMasked || '', status: ST[r.status] || r.status, holdUntil: r.holdUntil || '', confirmBy: r.confirmBy ? deadlineLabel_(r.confirmBy) : '', agreedAt: r.agreedAt || r.createdAt },
     check: chk, holdDays: HOLD_DAYS, shop: SHOP_INFO[r.branch] || {} };
