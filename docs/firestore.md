@@ -86,6 +86,12 @@ id = `{來源key}_{hash}`；`src`, `site`, `model`, `modelKey`, `item`, `part`, 
 ### `used_stock` — 中古機庫存
 `date`, `branch`, `model`, `cost`(收購成本), `imei`, `cond`, `price`, `minPrice`, `note`, `manual`, `color`, `battery`, `acc`, `waterproof`, `box`, `cable`, `status`, `check`(驗機表：ver, carrier, account, orig, look, screen, touch, grade, bio, cell, wifi, bt, fcam, rcam, btn, spk, mic, port, qi, nfc, prox, light, battery, days 本店保固天數（預設 30）, memo, date, by), `lineHide`(不在 LINE 上架), `photos`(照片的 Google 雲端硬碟檔案 ID 陣列，第一張是封面), `createdAt/By`, `updatedAt/By`。
 
+### `accessories` — 配件商品（`acc.html` 配件管理）
+`name`, `cat`（手機殼／保護貼／鏡頭貼／充電線／充電器／行動電源／耳機／掛繩・其他）, `price`, `avail`（現貨／可調貨）, `order`（排序）, `desc`（客人看得到的說明）, `all`（通用＝所有手機）, `conn`（充電線接頭 USB-C／Lightning，同接頭手機自動配對）, `models`（適用機型，名稱來自 `care/models.js` 的 `MODELS`）, `photos`（雲端硬碟檔案 ID，第一張封面）, `note`（內部備註，不公開）, `hide`（先不上架）, `createdAt/By`, `updatedAt/By`。
+
+### `settings/acc_showcase` — 官網配件清單
+`json`（沒勾 `hide`、有售價的配件：id, name, cat, price, avail, all, conn, models, photos, desc；**不含** note）、`count`、`updatedAt/By`。`acc.html` 資料有變就自動重寫；官網（repo `used-phones`）用 Firestore REST 讀這 1 筆（`firestore.rules` 開放公開讀取）。
+
 ### `watchlist` — 注意客人（經常預約不來、保留逾期未取、付款／糾紛等）
 文件 ID＝09 開頭 10 碼電話；只有 LINE、沒有電話的用 `L_<LINE userId>`（查詢只要 getDoc 1 筆）。
 `phone`, `name`, `entries`[陣列：`date`, `branch`, `type`（預約未到／保留逾期未取／付款問題／退換貨糾紛／其他）, `note`, `by`, `at`, `ref`（booking:<id>／resv:<id>）], `count`, `lastAt`, `updatedAt/By`。
