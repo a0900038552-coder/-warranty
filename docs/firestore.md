@@ -96,7 +96,7 @@ id = `{來源key}_{hash}`；`src`, `site`, `model`, `modelKey`, `item`, `part`, 
 LINE 的由 GAS 建立、現場的由 `stock.html`「🔒 現場保留」直接建立（status 直接是 paid）；店員在 `stock.html` 按「收到訂金／取消保留」（經 GAS `?action=resv` 通知客人）；每日登打賣出後庫存頁自動改 done。有 pending／paid 的機子不會出現在 LINE 現貨。
 
 ### `settings/used_showcase` — LINE 中古機現貨清單
-`json`（在庫＋有建議售價＋沒勾 `lineHide` 的機子：model, branch, price, color, cond, battery, waterproof, box, cable, acc, photos；**不含**成本、IMEI、最低價）、`count`、`updatedAt/By`。由 `stock.html` 開頁時自動整理，清單有變才寫；GAS `usedShowcase_` 讀這 1 筆組成 LINE 卡片。
+`json`（在庫＋有建議售價＋沒勾 `lineHide` 的機子：id, model, branch, price, color, cond, battery, waterproof, box, cable, acc, photos, check（公開驗機表：battery, days, date 與各檢測項目；**不含** IMEI、memo、by）；**不含**成本、IMEI、最低價）、`count`、`updatedAt/By`。由 `stock.html` 開頁時自動整理，清單有變才寫；GAS `usedShowcase_` 讀這 1 筆組成 LINE 卡片；官網中古機頁（repo `used-phones`）也用 Firestore REST 直接讀這 1 筆（`firestore.rules` 對這筆開放公開讀取）。
 
 ### 備份
 GAS `backupFirestore()` 每月 1 號 03:00 把資料表備份到 Google Drive。清單在 GAS 的 `BACKUP_COLLECTIONS`。
