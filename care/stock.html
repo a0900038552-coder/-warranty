@@ -193,7 +193,8 @@ async function loadLedger() {
   $('list').innerHTML = '<tr><td colspan="13" class="mute" style="padding:16px">讀取中…</td></tr>';
   await tagRecent();
   // 每日登打存檔時，品項有「中古機」的列會標 used=true（收購列、售出列都是），這裡只讀這些，不用整個月的報表都讀（省讀取額度）
-  const all = (await getDocs(query(collection(db, 'ledger'), where('used', '==', true)))).docs.map(d => ({ id: d.id, ...d.data() }));
+  // 1 小時內用這台電腦的副本（約 360 筆）；按「↻ 重新整理」會強制重抓
+  const all = (await cachedDocs(query(collection(db, 'ledger'), where('used', '==', true)), 'stock-used', 1)).docs.map(d => ({ id: d.id, ...d.data() }));
   buys = all.filter(isBuy);
   sales = all.filter(isSale);
   ledgerReady = true;

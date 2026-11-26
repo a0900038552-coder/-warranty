@@ -188,6 +188,7 @@ import { pickPost } from './credit.js?v=20261118';
 import { ask } from './ask.js?v=20261116';
 import { checkPhone, peekPhone, fillWatch, watchKey } from './watch.js?v=20261121';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { cachedDocs } from './cache.js?v=20261117';
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, deleteDoc, onSnapshot, query, where, getDocs, getDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { CATS, parseItems, warrantyFields, dateFromType, ymd, normPhone, refundInfo, refundRecord } from './rules.js?v=20261115b';
 
@@ -1102,8 +1103,11 @@ function reportHTML(title, period, unit, lines, totals, cats, open) {
 const extraRows = (branch, cmap) => Object.entries(cmap).filter(([, c]) => num(c.extra)).map(([d, c]) => ({ date: d, branch, item: '支出:多錢（點錢調整）', amount: String(num(c.extra)), _extra: true }));
 async function fetchMonth(branch, ym) {
   if (branch === $('branch').value && ym === $('month').value) return { rows: Object.values(rows).concat(extraRows(branch, cash)), carry: num($('carry').value) };
-  const [snap, meta, cs] = await Promise.all([getDocs(query(collection(db, 'ledger'), where('bm', '==', `${branch}_${ym}`))), getDoc(doc(db, 'ledger_meta', `${branch}_${ym}`)),
-    getDocs(query(collection(db, 'ledger_cash'), where('bm', '==', `${branch}_${ym}`)))]);
+  // 省讀取額度：上上個月以前的報表幾乎不會再改，20 小時內用這台電腦的副本（年報一次要讀兩店整年，約 3,000 筆）
+  const t = new Date(), lm = new Date(t.getFullYear(), t.getMonth() - 1, 1), lastYm = `${lm.getFullYear()}-${String(lm.getMonth() + 1).padStart(2, '0')}`;
+  const old = ym < lastYm, get = (q, k) => old ? cachedDocs(q, 'rep-' + k + '-' + branch + '_' + ym) : getDocs(q);
+  const [snap, meta, cs] = await Promise.all([get(query(collection(db, 'ledger'), where('bm', '==', `${branch}_${ym}`)), 'l'), getDoc(doc(db, 'ledger_meta', `${branch}_${ym}`)),
+    get(query(collection(db, 'ledger_cash'), where('bm', '==', `${branch}_${ym}`)), 'c')]);
   const cmap = {}; cs.forEach(d => { const x = d.data(); cmap[x.date] = x; });
   return { rows: snap.docs.map(d => d.data()).concat(extraRows(branch, cmap)), carry: meta.exists() ? Number(meta.data().carry || 0) : null };
 }
