@@ -134,7 +134,7 @@ function publish() {
   const list = Object.values(items).filter(x => !x.hide && num(x.price) != null && x.name)
     .sort((a, b) => CATS.indexOf(a.cat) - CATS.indexOf(b.cat) || (a.order ?? 999) - (b.order ?? 999) || String(a.name).localeCompare(String(b.name)))
     .map(x => ({ id: x.id, name: x.name, cat: x.cat || '掛繩・其他', price: num(x.price), avail: x.avail || '可調貨', all: !!x.all, conn: x.conn || '',
-      models: x.all ? [] : (x.models || []), photos: (x.photos || []).slice(0, 4), desc: x.desc || '' }));
+      models: x.all ? [] : (x.models || []), photos: (x.photos || []).slice(0, 4), desc: x.desc || '', pick: !!x.pick }));
   const json = JSON.stringify(list);
   let last = null; try { last = localStorage.getItem('acc-showcase'); } catch {}
   if (json === last) return;
@@ -173,7 +173,7 @@ function render() {
     return `<h3 class="cat">${esc(c || '未分類')} <small>${g.length} 項</small></h3><div class="list">${g.map(x => `
       <div class="it ${x.hide ? 'off' : ''}" data-id="${x.id}">
         ${x.photos?.[0] ? `<img src="${thumb(x.photos[0])}" alt="" loading="lazy">` : '<div class="noimg">🎧</div>'}
-        <div><div class="nm">${esc(x.name)}${x.hide ? '<span class="pill m">先不上架</span>' : ''}<span class="pill ${x.avail === '現貨' ? 'g' : 'a'}">${esc(x.avail || '可調貨')}</span></div>
+        <div><div class="nm">${x.pick ? '⭐ ' : ''}${esc(x.name)}${x.hide ? '<span class="pill m">先不上架</span>' : ''}<span class="pill ${x.avail === '現貨' ? 'g' : 'a'}">${esc(x.avail || '可調貨')}</span></div>
           <div class="fit">${esc(fitText(x))}</div></div>
         <div class="px">${money(num(x.price))}</div>
       </div>`).join('')}</div>`;
@@ -216,6 +216,7 @@ function drawEd() {
     <div><label>照片（第一張是封面，最多 4 張）</label><div class="ph">${x.photos.map((pid, i) => `<figure class="${i ? '' : 'cover'}"><img src="${thumb(pid)}" alt=""><figcaption>${i ? `<button type="button" data-cv="${i}">★ 封面</button>` : '<span style="color:var(--red);font-weight:700">封面</span>'}<button type="button" data-dl="${i}">✕</button></figcaption></figure>`).join('')}
       ${x.photos.length < 4 ? `<label class="add">${uploading ? '上傳中…' : '📷<span>加照片</span>'}<input type="file" accept="image/*" multiple hidden id="phin" ${uploading ? 'disabled' : ''}></label>` : ''}</div></div>
     <div><label>內部備註（客人看不到）</label><input name="note" value="${esc(x.note)}" placeholder="進貨廠商、成本…"></div>
+    <label class="chk"><input type="checkbox" name="pick" ${x.pick ? 'checked' : ''}> ⭐ 推薦：中古機「建議搭配」套組優先放這款（同分類沒有推薦的，就自動挑中間價位）</label>
     <label class="chk"><input type="checkbox" name="hide" ${x.hide ? 'checked' : ''}> 先不上架（官網看不到）</label>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn dark">儲存</button>
@@ -255,7 +256,7 @@ function drawEd() {
     if (uploading) return toast('照片還在上傳，等一下');
     if (num(cur.price) == null) return toast('⚠️ 售價要填數字');
     const data = { name: cur.name.trim(), cat: cur.cat, price: num(cur.price), avail: cur.avail, order: num(cur.order), desc: (cur.desc || '').trim(), all: !!cur.all, conn: cur.conn || '',
-      models: cur.all ? [] : cur.models, photos: cur.photos, note: (cur.note || '').trim(), hide: !!cur.hide, updatedAt: new Date().toISOString(), updatedBy: auth.currentUser.email };
+      models: cur.all ? [] : cur.models, photos: cur.photos, note: (cur.note || '').trim(), hide: !!cur.hide, pick: !!cur.pick, updatedAt: new Date().toISOString(), updatedBy: auth.currentUser.email };
     try {
       if (cur.id) await setDoc(doc(db, 'accessories', cur.id), data, { merge: true });
       else await addDoc(collection(db, 'accessories'), { ...data, createdAt: data.updatedAt, createdBy: data.updatedBy });
@@ -266,7 +267,7 @@ function drawEd() {
 function readForm(f) {
   const E = f.elements;   // 用 elements 取欄位（f.name 會拿到表單本身的 name 屬性）
   ['name', 'cat', 'price', 'avail', 'order', 'desc', 'conn', 'note'].forEach(k => cur[k] = E.namedItem(k).value);
-  cur.all = E.namedItem('all').checked; cur.hide = E.namedItem('hide').checked;
+  cur.all = E.namedItem('all').checked; cur.hide = E.namedItem('hide').checked; cur.pick = E.namedItem('pick').checked;
 }
 function close() { $('ed').classList.add('hidden'); $('ed').innerHTML = ''; cur = null; }
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && cur && !uploading) close(); });
