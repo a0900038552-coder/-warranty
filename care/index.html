@@ -410,7 +410,7 @@ onAuthStateChanged(auth, user => {
     bindings = s.docs.map(d => ({ id: d.id, ...d.data() })); render();
   }, err));
   unsubs.push(onSnapshot(collection(db, 'bookings'), s => {
-    bookings = s.docs.map(d => ({ id: d.id, ...d.data() })); renderBookings();
+    bookings = s.docs.map(d => normBk({ id: d.id, ...d.data() })); renderBookings();
   }, err));
   unsubs.push(onSnapshot(collection(db, 'slot_blocks'), s => {
     blocks = new Set(s.docs.map(d => d.id)); renderSlots();
@@ -996,6 +996,19 @@ function nextDays(n) {
 const dLabel = d => `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}（週${WEEK[d.getDay()]}）`;
 const blockId = (br, d, slot) => `${br}_${ymd(d)}_${slot}`;
 
+// 統一預約狀態：沒有 LINE 的＝電話預約；狀態空白或寫法不同時，電話預約當「已確認」、其他當「待確認」（才不會只在「全部」看得到）
+const BK_KNOWN = ['pending', 'proposed', 'confirmed', 'declined', 'done', 'noshow', 'cancelled'];
+function normBk(b) {
+  if (!b.lineUserId) b.source = 'phone';
+  const st = String(b.status || '').trim().toLowerCase();
+  b.status = BK_KNOWN.includes(st) ? st : st === 'canceled' ? 'cancelled' : b.source === 'phone' ? 'confirmed' : 'pending';
+  return b;
+}
+// 預約時間排序用：「2026/11/28（六）15:00」→ 數字；讀不到日期的排最後
+function bkWhen(b) {
+  const t = String(b.confirmedTime || b.proposedTime || b.wish || ''), d = t.match(/(\d{4})\/(\d{1,2})\/(\d{1,2})/), h = t.match(/(\d{1,2}):(\d{2})/);
+  return d ? new Date(+d[1], d[2] - 1, +d[3], h ? +h[1] : 0, h ? +h[2] : 0).getTime() : 9e15;
+}
 function renderBookings() {
   const br = $('branchFilter').value, st = $('bkStatus').value;
   const open = bookings.filter(b => (!br || b.branch === br) && (b.status === 'pending' || b.status === 'proposed')).length;
@@ -1003,7 +1016,9 @@ function renderBookings() {
   const list = bookings.filter(b => (!br || b.branch === br) && (
     st === '' ? true : st === 'open' ? ['pending', 'proposed'].includes(b.status) :
     st === 'closed' ? ['done', 'declined', 'noshow', 'cancelled'].includes(b.status) : b.status === st))
-    .sort((a, b) => st === 'closed' ? String(b.createdAt).localeCompare(a.createdAt) : String(a.createdAt).localeCompare(b.createdAt));
+    .sort((a, b) => st === 'closed' ? String(b.createdAt).localeCompare(a.createdAt)
+      : st === 'confirmed' ? bkWhen(a) - bkWhen(b) || String(a.createdAt).localeCompare(b.createdAt)   // 已確認：照預約時間，最近的在上面
+      : String(a.createdAt).localeCompare(b.createdAt));
   $('bkList').innerHTML = list.length ? list.map(b => {
     const time = b.confirmedTime || b.proposedTime || b.wish;
     const other = b.branch === '楠梓店' ? '德賢店' : '楠梓店';
