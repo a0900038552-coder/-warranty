@@ -1163,6 +1163,7 @@ $('pbAdd').onclick = () => {
         body: JSON.stringify({ idToken: await auth.currentUser.getIdToken(), b }) });
       const j = await res.json();
       if (!j.ok) throw new Error(j.error || '失敗');
+      if (!j.id) throw new Error('後端還沒更新（Apps Script 要部署新版本），這筆沒有存進去');
       m.remove();
       if ($('bkStatus').value !== 'confirmed' && $('bkStatus').value !== '') { $('bkStatus').value = 'confirmed'; renderBookings(); }
       toast(j.watch ? '✅ 已新增　' + j.watch.split('\n')[0] : `✅ 已新增電話預約：${b.name}　${b.wish}`);

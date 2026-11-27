@@ -27,6 +27,7 @@ header{background:var(--ink);color:#fff;padding:10px 16px;border-bottom:4px soli
 .hd select,.hd input[type=month]{background:#2a2d35;color:#fff;border:1px solid #444;border-radius:8px;padding:5px 8px}
 .hbtn{background:none;border:1px solid #555;color:#ddd;border-radius:8px;padding:5px 11px;cursor:pointer;white-space:nowrap;text-decoration:none;font-size:13px}
 .nbadge{display:inline-block;min-width:18px;margin-left:5px;padding:0 5px;border-radius:99px;background:var(--red);color:#fff;font-size:11px;font-weight:700;text-align:center;line-height:17px}
+.nbadge.bk-nz{background:#2563eb}.nbadge.bk-dx{background:#16a34a}.nbadge.bk-nz+.nbadge.bk-dx{margin-left:3px}
 .hbtn.pri{background:var(--red);border-color:var(--red);color:#fff;font-weight:700}
 main{max-width:1280px;margin:0 auto;padding:12px 12px 80px}
 .sum{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
@@ -151,7 +152,7 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
     <button class="hbtn" id="printBtn">🖨 列印</button>
     <button class="hbtn" id="xlsxBtn">⬇ 匯出 Excel</button>
     <button class="hbtn" id="impBtn">📥 匯入舊報表</button><button class="hbtn hidden" id="undoImp" title="把這個月恢復成匯入前的樣子">↩️ 還原上次匯入</button><input type="file" id="impFile" accept=".xlsx,.xls" class="hidden">
-    <button class="hbtn" id="bkBtn" title="查看預約">📅 查看預約<span class="nbadge hidden" id="bkBadge"></span></button><a class="hbtn" href="notes.html" id="notesLink">📒 退貨／待辦<span class="nbadge hidden" id="notesBadge"></span></a><a class="hbtn" href="quotes.html">💰 報價</a><a class="hbtn" href="stock.html">📱 中古機庫存</a><a class="hbtn" href="watch.html">⚠️ 注意客人</a>
+    <button class="hbtn" id="bkBtn" title="查看預約">📅 查看預約<span class="nbadge bk-nz hidden" id="bkBadgeNz"></span><span class="nbadge bk-dx hidden" id="bkBadgeDx"></span></button><a class="hbtn" href="notes.html" id="notesLink">📒 退貨／待辦<span class="nbadge hidden" id="notesBadge"></span></a><a class="hbtn" href="quotes.html">💰 報價</a><a class="hbtn" href="stock.html">📱 中古機庫存</a><a class="hbtn" href="watch.html">⚠️ 注意客人</a>
     <a class="hbtn" href="./">← 保固系統</a>
   </div></header>
   <main>
@@ -257,8 +258,12 @@ function listenBookings() {
 function renderBk() {
   const br = $('branch').value, mine = bks.filter(b => b.branch === br);
   const pend = mine.filter(b => b.status === 'pending').length;
-  const badge = $('bkBadge'); badge.textContent = pend; badge.classList.toggle('hidden', !pend);
-  $('bkBtn').title = `${br}：待確認 ${pend} 筆、等客人回覆 ${mine.filter(b => b.status === 'proposed').length} 筆、已確認 ${mine.filter(b => b.status === 'confirmed').length} 筆`;
+  // 按鈕上兩個數字：藍＝楠梓、綠＝德賢，各自還沒處理完的預約（待確認＋等客人回覆＋已確認）
+  const sum = name => { const a = bks.filter(b => b.branch === name);
+    return { n: a.length, p: a.filter(b => b.status === 'pending').length, r: a.filter(b => b.status === 'proposed').length, c: a.filter(b => b.status === 'confirmed').length }; };
+  const nz = sum('楠梓店'), dx = sum('德賢店');
+  [['bkBadgeNz', '楠', nz], ['bkBadgeDx', '德', dx]].forEach(([id, ch, x]) => { const el = $(id); el.textContent = ch + ' ' + x.n; el.classList.toggle('hidden', !x.n); });
+  $('bkBtn').title = [['楠梓店（藍）', nz], ['德賢店（綠）', dx]].map(([n, x]) => `${n}：共 ${x.n} 筆（待確認 ${x.p}、等客人回覆 ${x.r}、已確認 ${x.c}）`).join('\n');
   const order = { pending: 0, proposed: 1, confirmed: 2 };
   const list = mine.sort((a, b) => order[a.status] - order[b.status] || String(b.createdAt || '').localeCompare(String(a.createdAt || ''))).slice(0, 15);
   $('bkPanel').innerHTML = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><b>📅 ${esc(br)}預約</b><span class="sub">待確認 ${pend}・已確認 ${mine.filter(b => b.status === 'confirmed').length}</span>
