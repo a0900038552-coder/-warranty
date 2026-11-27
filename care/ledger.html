@@ -299,9 +299,24 @@ function start() {
   load();
 }
 
+/* ─── 開頁／換分店／換月份：自動捲到最新的日期（不用一直往下拉）─── */
+let jumpPending = false;
+function jumpLatest() {
+  if (!jumpPending) return;
+  if (document.activeElement?.closest?.('#days')) { jumpPending = false; return; }   // 已經在打字就不要亂跳
+  const secs = document.querySelectorAll('#days section.day'), last = secs[secs.length - 1];
+  if (!last) return;
+  requestAnimationFrame(() => {
+    const hh = document.querySelector('header')?.offsetHeight || 0;
+    window.scrollTo({ top: Math.max(0, last.getBoundingClientRect().top + window.scrollY - hh - 8) });
+  });
+}
+['wheel', 'touchmove', 'keydown'].forEach(ev => window.addEventListener(ev, () => { jumpPending = false; }, { passive: true }));   // 自己捲動過就不再自動跳
+
 /* ─── 讀取（即時同步，兩人同時打也會互相看到）─── */
 function load() {
   if (unsub) unsub(); if (unsubMeta) unsubMeta(); if (unsubCash) unsubCash(); cash = {};
+  jumpPending = true;
   rows = {}; extraDays = new Set(); meta = null;
   const t = new Date(), cur = ymd(t);
   if (cur.slice(0, 7) === $('month').value && t.getDay() !== 0) extraDays.add(cur);
@@ -318,6 +333,8 @@ function load() {
       if (!structural) patchRow(rows[id]);
     });
     if (structural) render(); else totals();
+    jumpLatest();
+    if (!snap.metadata.fromCache) setTimeout(() => { jumpLatest(); jumpPending = false; }, 300);   // 伺服器資料到了再對準一次，之後就不跳
     setSync(snap.metadata.hasPendingWrites ? '儲存中…' : '已同步');
   }, er => toast('⚠️ 讀取失敗：' + er.message));
   unsubCash = onSnapshot(query(collection(db, 'ledger_cash'), where('bm', '==', bm())), s => {
