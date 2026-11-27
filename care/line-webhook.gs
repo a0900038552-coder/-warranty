@@ -56,7 +56,10 @@ function doPost(e) {
   try {
     var p = (e && e.parameter) || {};
     if (p.action === 'staff') return json_(staffAction_(JSON.parse(e.postData.contents || '{}')));
-    if (p.action === 'phoneBooking') return json_(phoneBookingWeb_(JSON.parse(e.postData.contents || '{}')));
+    if (p.action === 'phoneBooking') {   // 出錯要回訊息給網頁，不能只回 ok（網頁會以為成功）
+      try { return json_(phoneBookingWeb_(JSON.parse(e.postData.contents || '{}'))); }
+      catch (err) { console.error(err); var em = String(err.message || err); return json_({ ok: false, error: em.indexOf('429') >= 0 || /RESOURCE_EXHAUSTED|quota/i.test(em) ? '資料庫今天的免費額度用完了，明天再試，或先用紙本記' : '後端錯誤：' + em.slice(0, 120) }); }
+    }
     if (p.action === 'login') return json_(loginAlert_(JSON.parse(e.postData.contents || '{}')));
     if (p.action === 'refundNotice') return json_(refundNotice_(JSON.parse(e.postData.contents || '{}')));
     if (p.action === 'usedPhoto') return json_(usedPhoto_(JSON.parse(e.postData.contents || '{}')));

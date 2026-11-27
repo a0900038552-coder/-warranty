@@ -1173,16 +1173,31 @@ $('pbAdd').onclick = () => {
     const b = { branch: q('pb-br').value, name: q('pb-name').value.trim(), phone, model: q('pb-model').value.trim(), issues,
       note: q('pb-note').value.trim(), price: q('pb-price').value.trim(), wish: `${y}/${mo}/${d}（${WEEK[wd]}）${tv}` };
     const btn = q('pb-ok'); btn.disabled = true; btn.textContent = '新增中…';
+    // Apps Script 有時要跑 10～30 秒：一邊等回應、一邊看預約清單，資料先進來就算成功；超過 40 秒才算失敗
+    const since = new Date(Date.now() - 60e3).toISOString();
+    const landed = () => bookings.find(x => x.source === 'phone' && x.phone === b.phone && x.wish === b.wish && String(x.createdAt || '') >= since);
+    const ctl = new AbortController();
+    let tick = 0; const timer = setInterval(() => { tick++; btn.textContent = `新增中…（${tick} 秒）`; }, 1000);
+    const done = (msg) => { clearInterval(timer); ctl.abort(); m.remove();
+      if ($('bkStatus').value !== 'confirmed' && $('bkStatus').value !== '') $('bkStatus').value = 'confirmed';
+      renderBookings(); toast(msg); };
     try {
-      const res = await fetch(GAS_URL + '?action=phoneBooking', { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ idToken: await auth.currentUser.getIdToken(), b }) });
-      const j = await res.json();
+      const viaList = new Promise(res => { const h = setInterval(() => { if (landed()) { clearInterval(h); res({ ok: true, id: landed().id, fromList: true }); } if (ctl.signal.aborted) clearInterval(h); }, 800); });
+      const viaGas = (async () => {
+        const res = await fetch(GAS_URL + '?action=phoneBooking', { method: 'POST', signal: ctl.signal, headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ idToken: await auth.currentUser.getIdToken(), b }) });
+        return res.json();
+      })();
+      const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('等太久了（40 秒）。可能網路不穩或 Apps Script 忙碌；請先看清單有沒有這筆，沒有再按一次。')), 40e3));
+      const j = await Promise.race([viaList, viaGas, timeout]);
       if (!j.ok) throw new Error(j.error || '失敗');
-      if (!j.id) throw new Error('後端還沒更新（Apps Script 要部署新版本），這筆沒有存進去');
-      m.remove();
-      if ($('bkStatus').value !== 'confirmed' && $('bkStatus').value !== '') { $('bkStatus').value = 'confirmed'; renderBookings(); }
-      toast(j.watch ? '✅ 已新增　' + j.watch.split('\n')[0] : `✅ 已新增電話預約：${b.name}　${b.wish}`);
-    } catch (er) { toast('⚠️ ' + er.message); btn.disabled = false; btn.textContent = '新增預約'; }
+      if (!j.id) throw new Error('後端沒有回傳編號，這筆可能沒存進去（Apps Script 要「部署 → 新版本」）。請看清單確認。');
+      done(j.watch ? '✅ 已新增　' + j.watch.split('\n')[0] : `✅ 已新增電話預約：${b.name}　${b.wish}`);
+    } catch (er) {
+      clearInterval(timer);
+      if (landed()) { done(`✅ 已新增電話預約：${b.name}　${b.wish}`); return; }
+      ctl.abort(); toast('⚠️ ' + (er.name === 'AbortError' ? '已中斷' : er.message)); btn.disabled = false; btn.textContent = '新增預約';
+    }
   };
 };
 $('branchFilter').addEventListener('change', () => { renderBookings(); renderSlots(); });
