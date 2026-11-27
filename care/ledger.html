@@ -30,7 +30,8 @@ header{background:var(--ink);color:#fff;padding:10px 16px;border-bottom:4px soli
 .hbtn.pri{background:var(--red);border-color:var(--red);color:#fff;font-weight:700}
 main{max-width:1280px;margin:0 auto;padding:12px 12px 80px}
 .sum{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
-#bkPanel{background:#fff;border:1px solid var(--line);border-left:4px solid var(--red);border-radius:12px;padding:10px 14px;margin-bottom:12px}
+#bkPanel{background:#fff;border:1px solid var(--line);border-left:4px solid var(--red);border-radius:12px;padding:10px 14px;margin-bottom:12px;
+  position:fixed;left:50%;transform:translateX(-50%);width:min(980px,calc(100% - 24px));top:70px;max-height:calc(100vh - 90px);overflow:auto;z-index:40;box-shadow:0 12px 36px rgba(0,0,0,.22)}
 #bkPanel .bk{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;padding:6px 0;border-top:1px solid #f0f0f0}#bkPanel .bk:first-of-type{border-top:0}
 #bkPanel .st{font-size:12px;font-weight:700;border-radius:99px;padding:1px 8px;white-space:nowrap}
 #bkPanel .st.pending{background:#fee2e2;color:#c00}#bkPanel .st.proposed{background:#fef3c7;color:#b45309}#bkPanel .st.confirmed{background:#dcfce7;color:#15803d}
@@ -247,7 +248,7 @@ function listenBookings() {
   onSnapshot(query(collection(db, 'bookings'), where('status', 'in', ['pending', 'proposed', 'confirmed'])), s => {
     if (!bkFirst) s.docChanges().forEach(c => {
       const b = c.doc.data();
-      if (c.type === 'added' && b.status === 'pending' && b.branch === $('branch').value) { toast(`📅 新預約：${b.name || ''}　${b.wish || ''}`); $('bkPanel').classList.remove('hidden'); }
+      if (c.type === 'added' && b.status === 'pending' && b.branch === $('branch').value) { toast(`📅 新預約：${b.name || ''}　${b.wish || ''}（按上方「📅 預約」查看）`); }
     });
     bkFirst = false;
     bks = s.docs.map(d => ({ id: d.id, ...d.data() })); renderBk();
@@ -269,7 +270,11 @@ function renderBk() {
       : '<div class="sub" style="padding:6px 0">目前沒有預約</div>');
   fillWatch(db, $('bkPanel'));
 }
-$('bkBtn').onclick = () => $('bkPanel').classList.toggle('hidden');
+// 預約清單浮在畫面上（不管捲到哪裡，按了就出現在頁首下面）
+function bkPlace() { $('bkPanel').style.top = ((document.querySelector('header')?.getBoundingClientRect().bottom || 60) + 8) + 'px'; }
+$('bkBtn').onclick = () => { bkPlace(); $('bkPanel').classList.toggle('hidden'); };
+window.addEventListener('resize', () => { if (!$('bkPanel').classList.contains('hidden')) bkPlace(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') $('bkPanel').classList.add('hidden'); });
 $('bkPanel').addEventListener('click', e => { if (e.target.id === 'bkClose') $('bkPanel').classList.add('hidden'); });
 
 // 「退貨／待辦」按鈕上的紅色數字：未完成待辦＋購物金已用完、該登打的退貨（只算目前這間店）
