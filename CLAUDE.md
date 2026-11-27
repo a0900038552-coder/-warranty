@@ -25,7 +25,7 @@
 ### `care/` — 主力系統（`care-warranty`）
 | 檔案 | 功能 | 寫入的資料表 |
 |---|---|---|
-| `index.html` | 保固管理（Repair CARE+）：查保固、手動新增、Excel 匯入、預約時段管理、LINE 綁定狀態 | `records`、`slot_blocks` |
+| `index.html` | 保固管理（Repair CARE+）：查保固、手動新增、Excel 匯入、預約管理（含 📞 新增電話預約，經 GAS 寫入）、預約時段管理、LINE 綁定狀態 | `records`、`slot_blocks` |
 | `ledger.html` | 每日登打（銷售報表）：輸入時自動存檔，並**自動連動**保固、調貨、購物金 | `ledger`、`ledger_meta`、`ledger_cash`、`ledger_bak*`、`settings/staff`、`records`、`transfers`、`credit` |
 | `quotes.html` | 報價查詢（報價小幫手／復原者Ai機器人記下的群組報價） | `quotes` |
 | `stock.html` | 中古機庫存；自動整理 LINE「中古機現貨」清單（官網中古機頁 `used-phones` repo 也讀同一份，含照片與公開驗機表）；LINE 訂金對帳（收到訂金／取消保留） | `used_stock`、`settings/used_showcase`、`reservations` |
@@ -75,5 +75,6 @@
 - 保固天數／品項分類不對 → `care/rules.js` ＋ `docs/business-rules.md`
 - 每日登打欄位、毛利、分潤 → `care/ledger.html`（`FIELDS`、`SPLIT`、`save()`、`syncWarranty()`）
 - LINE 回覆、預約、CARE+ 綁定 → `care/line-webhook.gs`（`handleEvent_`、`bindCare_`、`handleBooking_`）
+- 電話預約（網頁新增／私訊機器人）解析錯 → `line-webhook.gs` 的 `parsePhoneBooking_`、`createPhoneBooking_`；網頁表單在 `care/index.html` 的 `pbAdd`
 - 報價機器人解析錯 → `line-webhook.gs` 的 `parseQuoteLines_`、`lookupQuotes_`（`quotes.html` 也有一份 `parseQuoteLines_`，兩邊要一起改）
 - 比價網站爬不到 → `line-webhook.gs` 的 `WEB_SOURCES`、`refreshWebPrices`

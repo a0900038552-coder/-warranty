@@ -8,6 +8,7 @@ Google Apps Script，一支程式處理所有 LINE 事件。**改完要手動貼
 | `POST ?store=nanzi` / `?store=dexian` | `handleEvent_` | 兩店官方帳號 webhook |
 | `POST ?store=quote` | `handleQuoteWebhook_` → `quoteEvent_` | 復原者Ai機器人（報價小幫手）群組訊息 |
 | `POST ?action=staff` | `staffAction_` | 員工在保固系統按預約「確認／改時間／婉拒」→ Push 給客人 |
+| `POST ?action=phoneBooking` | `phoneBookingWeb_` | 保固系統「📞 新增電話預約」→ 建 `bookings`（source=phone，已確認，不傳 LINE） |
 | `POST ?action=login` | `loginAlert_` | `guard.js` 登入回報，新裝置通知老闆 |
 | `POST ?action=refundNotice` | `refundNotice_` | 保固系統退修卡片按「LINE 通知客人」→ 用該店官方帳號 Push 保固終止通知給有綁定的客人；寫 `records.notifiedAt` |
 | `GET ?action=blocks&store=` | `blocksFor_` | LIFF 預約表單讀不開放時段 |
@@ -16,6 +17,7 @@ Google Apps Script，一支程式處理所有 LINE 事件。**改完要手動貼
 - **CARE+ 綁定**：客人傳電話／「CARE+ 09…」→ `bindCare_`（寫 `care_bindings`、`line_users`）
 - **封鎖／加回好友**：`handleEvent_` 的 unfollow/follow → `line_users.status`
 - **預約**：LIFF 送出的文字 → `isBookingIntent_` / `handleBooking_`（寫 `bookings` ＋試算表）；客人接受改時間 → `acceptProposal_`
+- **📞 電話預約**：老闆／店員私訊復原者Ai機器人「電話預約 德賢 王先生 0912345678 iPhone 15 換電池 11/28 15:00 備註:先報價」→ `parsePhoneBooking_` 解析（也吃 LIFF 那種「姓名：」分行格式；只打「電話預約」回格式說明）→ `createPhoneBooking_`（寫 `bookings`＋試算表、查注意客人）→ 回確認＋「取消這筆」（`取消電話預約 #id` → `cancelPhoneBookingBot_`）。缺分店會給「楠梓店／德賢店」按鈕重送。員工按確認／婉拒／轉店時 `staffAction_` 看到沒有 `lineUserId` 就不推播；改時間用 `type: 'reschedule'`
 - **報價機器人**：`parseQuoteLines_`（解析「機型 零件 價格」）、`lookupQuotes_`（查價）、`contextQuotes_`（上下文記憶，CacheService）
 - **同業價格**：`WEB_SOURCES`、`refreshWebPrices`（每天 06:00）；傻傻修價目是圖片，價格手動登打在 `SASA_DATA`
 - **圖文選單**：`setupRichMenu`、`createMenu_`

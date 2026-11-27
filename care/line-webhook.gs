@@ -56,6 +56,7 @@ function doPost(e) {
   try {
     var p = (e && e.parameter) || {};
     if (p.action === 'staff') return json_(staffAction_(JSON.parse(e.postData.contents || '{}')));
+    if (p.action === 'phoneBooking') return json_(phoneBookingWeb_(JSON.parse(e.postData.contents || '{}')));
     if (p.action === 'login') return json_(loginAlert_(JSON.parse(e.postData.contents || '{}')));
     if (p.action === 'refundNotice') return json_(refundNotice_(JSON.parse(e.postData.contents || '{}')));
     if (p.action === 'usedPhoto') return json_(usedPhoto_(JSON.parse(e.postData.contents || '{}')));
@@ -1463,10 +1464,19 @@ function staffAction_(req) {
     upd.branch = to; upd.transferredFrom = b.branch; upd.transferredAt = now;
     if (req.notify) text = '📍 預約分店變更\n\n您的預約已改到：復原者' + to + '\n（' + STORE_ADDR[to] + '）\n🕐 ' + (b.confirmedTime || b.proposedTime || b.wish) +
       '\n📱 ' + b.model + '｜' + b.issues + '\n\n如有問題請直接在此聊天室告訴我們，謝謝！';
+  } else if (req.type === 'reschedule') {
+    // 電話預約改時間：直接改，不傳 LINE（客人沒有 LINE，是電話講好的）
+    if (!req.time) return { ok: false, error: '請選擇新的時間' };
+    upd.status = 'confirmed'; upd.confirmedTime = req.time;
   } else if (req.type === 'done' || req.type === 'noshow' || req.type === 'cancel') {
     upd.status = { done: 'done', noshow: 'noshow', cancel: 'cancelled' }[req.type];   // 不通知客人
   } else return { ok: false, error: '未知的操作' };
 
+  if (text && !b.lineUserId) {
+    // 電話預約沒有 LINE：確認／婉拒只改狀態；轉店照轉、不通知
+    if (req.type === 'propose') return { ok: false, error: '電話預約請用「改時間」直接修改' };
+    text = '';
+  }
   if (text) {
     var msg = { type: 'text', text: text };
     if (quick) msg.quickReply = quick;
@@ -1493,6 +1503,218 @@ function acceptProposal_(ev, store, token, userId, id) {
   if (!reply_(ev.replyToken, token, [{ type: 'text', text: msg }, ADDON_TEXT_, ADDON_IMG_])) return;
   patchDoc_('bookings/' + id, { status: 'confirmed', confirmedTime: b.proposedTime, updatedAt: new Date().toISOString(), updatedBy: 'customer' });
   sheetStatus_(id, 'confirmed', b.proposedTime);
+}
+
+/* ───────── 📞 電話預約（客人打電話來約；老闆／店員新增，不會傳 LINE 給客人）─────────
+ * 兩個入口，寫進同一個 bookings（source: 'phone'，沒有 lineUserId，直接是「已確認」）：
+ *  1. 保固系統 → 預約分頁「📞 新增電話預約」→ POST ?action=phoneBooking（員工 idToken）
+ *  2. 私訊復原者Ai機器人：「電話預約 德賢 王先生 0912345678 iPhone 15 換電池 11/28 15:00 備註:先報價」
+ * 欄位跟 LIFF 預約表單一樣（姓名、電話、機型、問題、希望時間、備註），另可填預估金額。
+ */
+var PHONE_BK_HELP = '📞 電話預約格式（一行或分行都可以）：\n\n' +
+  '電話預約 德賢 王先生 0912345678 iPhone 15 換電池 11/28 15:00 備註:先報價\n\n' +
+  '・分店：楠梓／德賢（必填）\n・電話（必填）\n・日期：11/28、明天、週六…（必填）\n' +
+  '・時間：15:00、3點、下午3點半（可不填）\n・機型＋問題（必填其一）\n・預估金額：$1800 或 1800元（可不填）\n・備註：寫在「備註」後面（可不填）\n\n' +
+  '也可以照 LINE 預約表單的格式分行打：\n電話預約\n分店：德賢\n姓名：王先生\n電話：0912345678\n機型：iPhone 15\n問題：換電池\n時間：11/28 15:00';
+var CN_NUM_ = { '一': 1, '二': 2, '兩': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10, '十一': 11, '十二': 12 };
+
+function normPhone_(s) {
+  var d = String(s || '').replace(/\D/g, '').replace(/^886/, '0');
+  if (/^9\d{8}$/.test(d)) d = '0' + d;
+  return d;
+}
+function staffEmail_(idToken) {
+  var who = UrlFetchApp.fetch('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' + FIREBASE_API_KEY, {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true, payload: JSON.stringify({ idToken: idToken || '' }) });
+  if (who.getResponseCode() !== 200) return '';
+  return String((JSON.parse(who.getContentText()).users || [{}])[0].email || '').toLowerCase();
+}
+// 注意客人：1 支電話只讀 1 筆
+function watchOf_(phone) {
+  if (!/^09\d{8}$/.test(phone)) return null;
+  var w = getDoc_('watchlist/' + phone);
+  return w && w.entries && w.entries.length ? w : null;
+}
+function watchText_(w) {
+  if (!w) return '';
+  var last = w.entries[w.entries.length - 1] || {};
+  return '⚠️ 注意客人：這支電話有 ' + w.entries.length + ' 筆紀錄\n最近：' + [last.date, last.branch, last.type, last.note].filter(Boolean).join(' ');
+}
+function phoneWish_(ymd, time) {   // 跟 LIFF 一樣的寫法：2026/11/28（六）15:00
+  var p = ymd.split('-').map(Number), wd = new Date(Date.UTC(p[0], p[1] - 1, p[2])).getUTCDay();
+  return p[0] + '/' + p[1] + '/' + p[2] + '（' + WD_ZH[wd] + '）' + (time || '');
+}
+
+function createPhoneBooking_(f, by, via) {
+  var store = storeByBranch_(f.branch);
+  if (!store) throw new Error('分店不正確');
+  var now = new Date().toISOString();
+  var doc = { branch: f.branch, store: storeKey_(store), lineUserId: '', source: 'phone', via: via,
+    name: f.name || '', phone: f.phone || '', model: f.model || '', issues: f.issues || '', wish: f.wish || '', note: f.note || '',
+    status: 'confirmed', confirmedTime: f.wish || '', createdAt: now, createdBy: by, updatedAt: now, updatedBy: by };
+  if (f.price) doc.price = f.price;
+  var id = createDoc_('bookings', doc);
+  var sid = PropertiesService.getScriptProperties().getProperty('BOOKING_SHEET_ID');
+  if (sid) {
+    try {
+      SpreadsheetApp.openById(sid).getSheets()[0].appendRow([
+        Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy/MM/dd HH:mm'), f.branch,
+        f.name || '', "'" + (f.phone || ''), f.model || '', f.issues || '', f.wish || '', ('📞電話預約 ' + (f.note || '')).trim(), STATUS_ZH.confirmed, id ]);
+    } catch (err) { console.error('電話預約寫入試算表失敗：' + err); }
+  }
+  var w = null; try { w = watchOf_(f.phone); } catch (e) {}
+  return { id: id, watch: w };
+}
+
+/* 入口 1：保固系統網頁 */
+function phoneBookingWeb_(req) {
+  var email = staffEmail_(req.idToken);
+  if (!email) return { ok: false, error: '登入已失效，請重新登入' };
+  if (ALLOWED_EMAILS.indexOf(email) < 0 || email === BOT_EMAIL) return { ok: false, error: '沒有權限' };
+  var b = req.b || {}, f = {
+    branch: String(b.branch || ''), name: String(b.name || '').trim().slice(0, 30), phone: normPhone_(b.phone),
+    model: String(b.model || '').trim().slice(0, 60), issues: String(b.issues || '').trim().slice(0, 100),
+    wish: String(b.wish || '').trim().slice(0, 60), note: String(b.note || '').trim().slice(0, 300),
+    price: String(b.price || '').trim().replace(/[元$＄]|NT\$?/gi, '').trim().slice(0, 30) };
+  if (!STORE_ADDR[f.branch]) return { ok: false, error: '請選擇分店' };
+  if (!f.name) return { ok: false, error: '請填姓名' };
+  if (!/^0\d{8,9}$/.test(f.phone)) return { ok: false, error: '電話格式不對（09 開頭 10 碼，或市話含區碼）' };
+  if (!f.model && !f.issues) return { ok: false, error: '請填機型或問題' };
+  if (!f.wish) return { ok: false, error: '請選日期' };
+  var r = createPhoneBooking_(f, email, 'web');
+  return { ok: true, id: r.id, watch: r.watch ? watchText_(r.watch) : '' };
+}
+
+/* 入口 2：私訊復原者Ai機器人（只有老闆、已登記的店員） */
+function parsePhoneBooking_(text) {
+  var s = String(text || '').replace(/^\s*(📞\s*)?(電話)?預約\s*[:：]?/, '');
+  var f = { branch: '', name: '', phone: '', model: '', issues: '', note: '', price: '' }, timeTxt = '';
+  // 分行、有標籤的寫法（跟 LIFF 送出的格式一樣）
+  var LABEL = { '分店': 'branch', '門市': 'branch', '姓名': 'name', '名字': 'name', '電話': 'phone', '手機': 'phone', '機型': 'model',
+    '問題': 'issues', '項目': 'issues', '維修': 'issues', '時間': 'time', '希望時間': 'time', '日期': 'time', '預約時間': 'time',
+    '備註': 'note', '金額': 'price', '預估': 'price', '預估金額': 'price', '報價': 'price' };
+  var rest = [];
+  s.split(/\n/).forEach(function (line) {
+    var m = line.match(/^\s*(希望時間|預約時間|預估金額|分店|門市|姓名|名字|電話|手機|機型|問題|項目|維修|時間|日期|備註|金額|預估|報價)\s*[:：]\s*(.*)$/);
+    if (!m) { rest.push(line); return; }
+    var k = LABEL[m[1]], v = m[2].trim();
+    if (k === 'time') timeTxt += ' ' + v; else if (k === 'note' && f.note) f.note += '；' + v; else f[k] = v;
+  });
+  s = rest.join(' ');
+  // 備註：「備註」後面全部
+  var m = s.match(/(?:備註|备注)\s*[:：]?\s*(.*)$/);
+  if (m) { f.note = (f.note ? f.note + '；' : '') + m[1].trim(); s = s.slice(0, m.index); }
+  // 分店
+  var brTxt = f.branch + ' ' + s;
+  f.branch = /德賢/.test(brTxt) ? '德賢店' : /楠梓/.test(brTxt) ? '楠梓店' : '';
+  s = s.replace(/(楠梓|德賢)店?/g, ' ');
+  // 電話（先抓手機，再抓市話）
+  if (f.phone) f.phone = normPhone_(f.phone);
+  else if ((m = s.match(/(?:\+?886[\s\-]?|0)9\d{2}[\s\-]?\d{3}[\s\-]?\d{3}/)) || (m = s.match(/(?:^|[^\d])(0\d{1,2}[\s\-]?\d{6,8})(?!\d)/))) {
+    var hit = m[1] && m[0] !== m[1] ? m[1] : m[0];
+    f.phone = normPhone_(hit); s = s.replace(hit, ' ');
+  }
+  // 預估金額：$1800、1800元、預估1800、報價 1500～2000
+  if (f.price) f.price = f.price.replace(/[元$＄]|NT\$?/gi, '').trim();
+  else if ((m = s.match(/(?:預估|報價|金額|價格)\s*[:：]?\s*\$?\s*(\d[\d,]*(?:\s*[～~\-]\s*\d[\d,]*)?)\s*元?/)) || (m = s.match(/[$＄]\s*(\d[\d,]*(?:\s*[～~\-]\s*\$?\d[\d,]*)?)/)) || (m = s.match(/(\d[\d,]*(?:\s*[～~\-]\s*\d[\d,]*)?)\s*元/))) {
+    f.price = m[1].replace(/,/g, '').replace(/\s+/g, '').replace(/[~\-]/g, '～').replace(/\$/g, ''); s = s.replace(m[0], ' ');
+  }
+  // 日期
+  var DATE_RES = [/(?:\d{4}\s*[\/年\-]\s*)?\d{1,2}\s*[\/月]\s*\d{1,2}\s*[日號号]?/, /大後天|後天|明天|明日|今天|今日/,
+    /(?:下下|下個?|這個?|本)?(?:週|周|星期|禮拜)[一二三四五六日天]/, /(?:^|[^\d:：])\d{1,2}\s*[日號号]/];
+  var dTxt = timeTxt;
+  DATE_RES.forEach(function (re) { var x = s.match(re); if (x && !dTxt.match(re)) { dTxt += ' ' + x[0]; s = s.replace(x[0], ' '); } });
+  var d = dTxt.trim() ? parseWantDate_(dTxt.replace(/\s+/g, '').replace(/^\d{4}[\/年\-]/, '')) : null;
+  if (d && d.past) {   // 打 1/5 但現在是 11 月 → 明年
+    var p = d.ymd.split('-').map(Number), now = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd');
+    var ny = (p[0] + 1) + '-' + d.ymd.slice(5);
+    if (Date.parse(now) - Date.parse(d.ymd) > 60 * 864e5) { d.ymd = ny; d.past = false; d.wd = new Date(Date.parse(ny)).getUTCDay(); d.sunday = d.wd === 0; }
+  }
+  // 時間：15:00、15:00-17:00、3點、下午3點半、晚上七點
+  var tAll = timeTxt + ' ' + s, time = '', hour = null;
+  if ((m = tAll.match(/(\d{1,2})\s*[:：]\s*(\d{2})(?:\s*[~～\-–到]\s*(\d{1,2})\s*[:：]\s*(\d{2}))?/))) {
+    hour = +m[1]; time = pad2_(hour) + ':' + m[2] + (m[3] ? '–' + pad2_(+m[3]) + ':' + m[4] : '');
+  } else if ((m = tAll.match(/(早上|上午|中午|下午|傍晚|晚上)?\s*(\d{1,2}|十[一二]?|[一二兩三四五六七八九])\s*[點点時]\s*(半|(\d{1,2})\s*分?)?/))) {
+    hour = /^\d+$/.test(m[2]) ? +m[2] : CN_NUM_[m[2]];
+    if ((/下午|傍晚|晚上/.test(m[1] || '') || (!m[1] && hour <= 9)) && hour < 12) hour += 12;
+    time = pad2_(hour) + ':' + (m[3] === '半' ? '30' : m[4] ? pad2_(+m[4]) : '00');
+  }
+  if (m && time) s = s.replace(m[0], ' ');
+  f.wish = d ? phoneWish_(d.ymd, time) : '';
+  // 剩下的字：姓名、機型、問題
+  var toks = s.replace(/[，,、。;；\t]+/g, ' ').trim().split(/\s+/).filter(String);
+  var isIssue = function (t) { return ISSUE_RULES.some(function (r) { return r[2].test(t); }) || /換|修|檢測|轉移|救|貼|更新|升級|清潔/.test(t); };
+  if (!f.name) {
+    var ni = -1;
+    toks.forEach(function (t, i) { if (ni < 0 && !/\d/.test(t) && /(先生|小姐|太太|女士|媽媽|爸爸|阿姨|伯伯|大哥|大姐|哥|姐|姊)$/.test(t)) ni = i; });
+    if (ni < 0) toks.forEach(function (t, i) {
+      if (ni < 0 && /^[一-鿿]{2,4}$/.test(t) && !isIssue(t) && !/^(蘋果|三星|小米|紅米|華碩|索尼|谷歌|摺疊|平板|手錶|中古|二手|手機)/.test(t)) ni = i;
+    });
+    if (ni >= 0) f.name = toks.splice(ni, 1)[0];
+  }
+  var r = toks.join(' ');
+  if (!f.model && !f.issues) {
+    var cut = -1;
+    toks.forEach(function (t, i) { if (cut < 0 && isIssue(t)) cut = i; });
+    if (cut < 0) { var mm = r.match(/[一-鿿]/); f.model = mm ? r.slice(0, mm.index).trim() : r; f.issues = mm ? r.slice(mm.index).trim() : ''; }
+    else { f.model = toks.slice(0, cut).join(' '); f.issues = toks.slice(cut).join(' '); }
+  } else if (!f.model) f.model = r;
+  else if (!f.issues) f.issues = r;
+  f.model = f.model.slice(0, 60); f.issues = f.issues.slice(0, 100); f.note = f.note.slice(0, 300); f.name = f.name.slice(0, 30);
+  var miss = [];
+  if (!f.branch) miss.push('分店');
+  if (!/^0\d{8,9}$/.test(f.phone)) miss.push('電話');
+  if (!d) miss.push('日期');
+  else if (d.past) miss.push('日期（' + d.label + ' 已經過了）');
+  if (!f.model && !f.issues) miss.push('機型／問題');
+  return { f: f, miss: miss, sunday: d && d.sunday, hour: hour };
+}
+function pad2_(n) { return (n < 10 ? '0' : '') + n; }
+
+function phoneBookingBot_(ev, token, by, text) {
+  var body = text.replace(/^\s*(📞\s*)?(電話)?預約\s*[:：]?/, '').trim();
+  if (!body) { reply_(ev.replyToken, token, PHONE_BK_HELP); return; }
+  var p = parsePhoneBooking_(text), f = p.f;
+  if (p.miss.length) {
+    var msg = { type: 'text', text: '⚠️ 還沒新增，缺：' + p.miss.join('、') + '\n\n我看到的：\n' +
+      ['分店：' + (f.branch || '？'), '姓名：' + (f.name || '？'), '電話：' + (f.phone || '？'), '機型：' + (f.model || '？'), '問題：' + (f.issues || '？'), '時間：' + (f.wish || '？')].join('\n') +
+      '\n\n補上後整句再傳一次。打「電話預約」看格式。' };
+    // 只缺分店 → 給兩個按鈕，按了直接重送
+    if (p.miss.length === 1 && p.miss[0] === '分店' && text.length < 280) msg.quickReply = { items: ['楠梓', '德賢'].map(function (b) {
+      return { type: 'action', action: { type: 'message', label: b + '店', text: '電話預約 ' + b + ' ' + body } }; }) };
+    reply_(ev.replyToken, token, [msg]);
+    return;
+  }
+  if (!f.name) f.name = '（電話客人）';
+  var r;
+  try { r = createPhoneBooking_(f, by, 'bot'); }
+  catch (err) {
+    console.error(err);
+    reply_(ev.replyToken, token, '⚠️ 沒有存成功（' + (String(err.message).indexOf('429') >= 0 ? '資料庫今天額度用完' : '資料庫忙碌') + '），請稍後再傳一次。');
+    return;
+  }
+  var warn = [];
+  if (p.sunday) warn.push('⚠️ 這天是週日（公休），確定的話不用理會。');
+  if (p.hour !== null && (p.hour < 11 || p.hour >= 21)) warn.push('⚠️ 時間在營業時間（11:00–21:00）外，確定的話不用理會。');
+  if (r.watch) warn.push(watchText_(r.watch));
+  var out = '✅ 已新增電話預約（' + f.branch + '）\n\n' +
+    '👤 ' + f.name + '　' + f.phone + '\n📱 ' + (f.model || '—') + '｜' + (f.issues || '—') + '\n🕐 ' + f.wish +
+    (f.price ? '\n💰 預估 ' + (/^\d+$/.test(f.price) ? 'NT$ ' + Number(f.price).toLocaleString() : f.price) : '') +
+    (f.note ? '\n📝 ' + f.note : '') + '\n\n狀態：已確認（不會傳 LINE 給客人）' +
+    (warn.length ? '\n\n' + warn.join('\n') : '') + '\n\n解析錯了？按「取消這筆」再重傳一次，或到保固系統修改。';
+  reply_(ev.replyToken, token, [{ type: 'text', text: out, quickReply: { items: [
+    { type: 'action', action: { type: 'message', label: '取消這筆', text: '取消電話預約 #' + r.id } },
+    { type: 'action', action: { type: 'uri', label: '打開預約管理', uri: 'https://a0900038552-coder.github.io/-warranty/care/#booking' } }
+  ] } }]);
+}
+function cancelPhoneBookingBot_(ev, token, by, id) {
+  id = String(id || '').replace(/[^\w\-]/g, '');
+  var b = id ? getDoc_('bookings/' + id) : null;
+  if (!b || b.source !== 'phone') { reply_(ev.replyToken, token, '找不到這筆電話預約 🤔'); return; }
+  if (b.status === 'cancelled') { reply_(ev.replyToken, token, '這筆已經取消過了 👍'); return; }
+  patchDoc_('bookings/' + id, { status: 'cancelled', updatedAt: new Date().toISOString(), updatedBy: by });
+  sheetStatus_(id, 'cancelled', '');
+  reply_(ev.replyToken, token, '🗑 已取消：' + b.name + '　' + b.wish + '（' + b.branch + '）');
 }
 
 var STATUS_ZH = { pending: '待確認', confirmed: '已確認', proposed: '已提議改時間', declined: '已婉拒', done: '已完成', noshow: '未到', cancelled: '已取消（未通知）' };
@@ -1608,6 +1830,11 @@ function quoteEvent_(ev, token, props) {
       reply_(ev.replyToken, token, '✅ 已加入店員。之後您在群組回的價格也會記成「我們的報價」。'); return;
     }
     if (uid !== owner && teamIds_(props).indexOf(uid) < 0) return;   // 私訊只處理老闆和已登記的店員
+    // 📞 電話預約：「電話預約 德賢 王先生 0912… iPhone 15 換電池 11/28 15:00」
+    var who0 = uid === owner ? 'LINE:老闆' : 'LINE:店員' + uid.slice(-4);
+    if (/^\s*(📞\s*)?(電話)?預約/.test(text)) { phoneBookingBot_(ev, token, who0, text); return; }
+    var cm = text.match(/^取消電話預約\s*#\s*([\w\-]+)/);
+    if (cm) { cancelPhoneBookingBot_(ev, token, who0, cm[1]); return; }
   }
   var mine = !!uid && (uid === owner || teamIds_(props).indexOf(uid) >= 0);
   var gid0 = src.groupId || src.roomId || '';

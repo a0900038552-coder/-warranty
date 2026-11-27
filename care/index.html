@@ -127,6 +127,12 @@ th{color:var(--mute);font-weight:600}
 .bk-meta{font-size:13px;color:var(--mute);margin-top:2px}
 .bk .row-actions{margin-top:10px}
 .bk .btn{padding:6px 12px;font-size:13px}
+.bk.phone{background:#fffdf5}
+.chip-phone{background:#fef3c7;color:#92400e}
+.pb-chips{display:flex;flex-wrap:wrap;gap:6px}
+.pb-chips span{border:1.5px solid #d1d5db;border-radius:99px;padding:6px 12px;font-size:13px;font-weight:700;background:#fff;cursor:pointer;user-select:none}
+.pb-chips span.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.modal .panel label{margin-top:10px}
 .slots{display:grid;grid-template-columns:110px repeat(6,1fr);gap:4px;font-size:12px;overflow-x:auto}
 .slots div{padding:6px 4px;text-align:center;border-radius:6px}
 .slots .h{font-weight:700;color:var(--mute)}
@@ -233,6 +239,8 @@ th{color:var(--mute);font-weight:600}
           </select></div>
       </div>
       <p class="hint">按「確認」「改時間」「婉拒」會用 LINE 通知客人（每則扣 1 則訊息額度）；「取消」「完成」「未到」只改狀態，不會通知、不扣額度。分店依右上角選擇。</p>
+      <div class="row-actions"><button class="btn btn-dark" id="pbAdd">📞 新增電話預約</button></div>
+      <p class="hint">客人打電話來約的，在這裡新增（直接是「已確認」，不會傳 LINE）。也可以私訊復原者Ai機器人：<b>電話預約 德賢 王先生 0912345678 iPhone 15 換電池 11/28 15:00</b></p>
     </div>
     <div id="bkList"></div>
     <div class="panel">
@@ -998,19 +1006,21 @@ function renderBookings() {
     .sort((a, b) => st === 'closed' ? String(b.createdAt).localeCompare(a.createdAt) : String(a.createdAt).localeCompare(b.createdAt));
   $('bkList').innerHTML = list.length ? list.map(b => {
     const time = b.confirmedTime || b.proposedTime || b.wish;
-    const acts = {
+    const other = b.branch === '楠梓店' ? '德賢店' : '楠梓店';
+    const phoneActs = `<button class="btn btn-dark" data-bk="done" data-id="${b.id}">已完成</button><button class="btn btn-ghost" data-bk="noshow" data-id="${b.id}">未到</button><button class="btn btn-ghost" data-bk="reschedule" data-id="${b.id}">🕐 改時間</button><button class="btn btn-ghost" data-bk="transfer" data-id="${b.id}">🔀 轉到${other}</button><button class="btn btn-ghost" data-bk="cancel" data-id="${b.id}">🗑 取消</button>`;
+    const acts = b.source === 'phone' ? (['pending', 'confirmed'].includes(b.status) ? phoneActs : '') : {
       pending: `<button class="btn btn-primary" data-bk="confirm" data-id="${b.id}">✅ 確認</button><button class="btn btn-dark" data-bk="propose" data-id="${b.id}">🔄 改時間</button><button class="btn btn-ghost" data-bk="decline" data-id="${b.id}">婉拒</button><button class="btn btn-ghost" data-bk="transfer" data-id="${b.id}">🔀 轉到${b.branch === '楠梓店' ? '德賢店' : '楠梓店'}</button><button class="btn btn-ghost" data-bk="cancel" data-id="${b.id}">🗑 取消（不通知）</button>`,
       proposed: `<button class="btn btn-ghost" data-bk="confirm" data-id="${b.id}">客人電話確認了</button><button class="btn btn-ghost" data-bk="propose" data-id="${b.id}">再改時間</button><button class="btn btn-ghost" data-bk="decline" data-id="${b.id}">婉拒</button><button class="btn btn-ghost" data-bk="transfer" data-id="${b.id}">🔀 轉到${b.branch === '楠梓店' ? '德賢店' : '楠梓店'}</button><button class="btn btn-ghost" data-bk="cancel" data-id="${b.id}">🗑 取消（不通知）</button>`,
       confirmed: `<button class="btn btn-dark" data-bk="done" data-id="${b.id}">已完成</button><button class="btn btn-ghost" data-bk="noshow" data-id="${b.id}">未到</button><button class="btn btn-ghost" data-bk="propose" data-id="${b.id}">改時間</button><button class="btn btn-ghost" data-bk="transfer" data-id="${b.id}">🔀 轉到${b.branch === '楠梓店' ? '德賢店' : '楠梓店'}</button><button class="btn btn-ghost" data-bk="cancel" data-id="${b.id}">🗑 取消（不通知）</button>`
     }[b.status] || '';
-    return `<div class="bk ${b.status}">
+    return `<div class="bk ${b.status}${b.source === 'phone' ? ' phone' : ''}">
       <div class="bk-top"><div><div class="bk-time">${esc(time)}</div>
         <div class="bk-meta">${b.status === 'proposed' ? '原希望：' + esc(b.wish) + '　→ 已提議新時間，等客人按接受' : ''}</div></div>
-        <span class="badge" style="background:${BK_COLOR[b.status]};color:#fff">${BK_ZH[b.status] || b.status}</span></div>
+        <span>${b.source === 'phone' ? '<span class="chip chip-phone">📞 電話預約</span> ' : ''}<span class="badge" style="background:${BK_COLOR[b.status]};color:#fff">${BK_ZH[b.status] || b.status}</span></span></div>
       <div style="margin-top:6px"><b>${esc(b.name)}</b>　<a href="tel:${esc(b.phone)}">${esc(b.phone)}</a> <span data-watch="${esc(b.phone)}"></span>　${esc(b.branch)}${b.price ? `　<b style="color:var(--green)">💰 預估 ${esc(/^\d+$/.test(b.price) ? 'NT$ ' + Number(b.price).toLocaleString() : b.price)}</b>` : ''}${b.transferredFrom ? `<span style="color:#6b7280;font-size:12px">（從${esc(b.transferredFrom)}轉來）</span>` : ''}</div>
       <div>📱 ${esc(b.model)}｜${esc(b.issues)}</div>
       ${b.note ? `<div class="bk-meta">備註：${esc(b.note)}</div>` : ''}
-      <div class="bk-meta">申請：${esc(String(b.createdAt || '').slice(0, 16).replace('T', ' '))}${b.updatedBy ? '　最後處理：' + esc(b.updatedBy) : ''}</div>
+      <div class="bk-meta">${b.source === 'phone' ? '新增' : '申請'}：${esc(String(b.createdAt || '').slice(0, 16).replace('T', ' '))}${b.source === 'phone' && b.createdBy ? '（' + esc(b.createdBy) + (b.via === 'bot' ? '・機器人' : '') + '）' : ''}${b.updatedBy ? '　最後處理：' + esc(b.updatedBy) : ''}</div>
       ${acts ? `<div class="row-actions">${acts}</div>` : ''}</div>`;
   }).join('') : '<div class="panel hint">目前沒有預約。</div>';
   fillWatch(db, $('bkList'));   // 注意客人：每支電話只讀 1 次（30 分鐘內不重讀）
@@ -1039,18 +1049,18 @@ $('slotGrid').addEventListener('click', async e => {
   } catch (er) { toast('⚠️ ' + er.message); }
 });
 
-function pickTime(cur) {
+function pickTime(cur, o = {}) {
   const ds = nextDays(14);
   const dOpts = ds.map(d => `<option value="${dLabel(d)}">${dLabel(d)}</option>`).join('');
   const sOpts = SLOTS.map(x => `<option>${x}</option>`).join('');
   return new Promise(res => {
     const m = document.createElement('div'); m.className = 'modal';
-    m.innerHTML = `<div class="panel"><h2>建議新的時間</h2><p class="hint" style="margin-bottom:8px">客人原本希望：${esc(cur)}</p>
+    m.innerHTML = `<div class="panel"><h2>${o.title || '建議新的時間'}</h2><p class="hint" style="margin-bottom:8px">${o.curLabel || '客人原本希望'}：${esc(cur)}</p>
       <div class="grid"><div><label>日期</label><select id="pt-d">${dOpts}</select></div><div><label>時段</label><select id="pt-s">${sOpts}</select></div></div>
-      <label style="margin-top:10px">原因（可不填，會顯示給客人）</label><input id="pt-r" placeholder="例如：當天時段已滿">
-      <div class="row-actions"><button class="btn btn-primary" id="pt-ok">傳送給客人</button><button class="btn btn-ghost" id="pt-no">取消</button></div></div>`;
+      ${o.noReason ? '' : '<label style="margin-top:10px">原因（可不填，會顯示給客人）</label><input id="pt-r" placeholder="例如：當天時段已滿">'}
+      <div class="row-actions"><button class="btn btn-primary" id="pt-ok">${o.ok || '傳送給客人'}</button><button class="btn btn-ghost" id="pt-no">取消</button></div></div>`;
     document.body.appendChild(m);
-    m.querySelector('#pt-ok').onclick = () => { res({ time: m.querySelector('#pt-d').value + m.querySelector('#pt-s').value, reason: m.querySelector('#pt-r').value.trim() }); m.remove(); };
+    m.querySelector('#pt-ok').onclick = () => { res({ time: m.querySelector('#pt-d').value + m.querySelector('#pt-s').value, reason: (m.querySelector('#pt-r')?.value || '').trim() }); m.remove(); };
     m.querySelector('#pt-no').onclick = () => { res(null); m.remove(); };
   });
 }
@@ -1068,6 +1078,9 @@ $('bkList').addEventListener('click', async e => {
     req.time = t; req.price = pr.trim().replace(/[元$＄]|NT\$?/gi, '').trim();
   } else if (type === 'propose') {
     const r = await pickTime(b.wish); if (!r) return; Object.assign(req, r);
+  } else if (type === 'reschedule') {
+    const r = await pickTime(b.confirmedTime || b.wish, { title: '改時間（電話預約）', curLabel: '目前時間', ok: '改好了', noReason: true }); if (!r) return;
+    req.time = r.time;
   } else if (type === 'decline') {
     const r = await askText(`婉拒 ${b.name} 的預約，並用 LINE 通知。\n原因（可空白，會顯示給客人）：`, '');
     if (r === null) return; req.reason = r.trim();
@@ -1075,7 +1088,7 @@ $('bkList').addEventListener('click', async e => {
     const to = b.branch === '楠梓店' ? '德賢店' : '楠梓店';
     if (!await ask(`把 ${b.name} 的預約從「${b.branch}」轉到「${to}」？\n\n時間不變：${b.confirmedTime || b.proposedTime || b.wish}`, { ok: '轉過去', danger: false })) return;
     req.to = to;
-    req.notify = await ask(`要用 LINE 通知 ${b.name} 改到${to}嗎？\n\n（會傳一則訊息，用掉 1 則訊息額度；已經電話講好的可以不通知）`, { ok: '通知客人', cancel: '不用通知', danger: false });
+    req.notify = b.source === 'phone' ? false : await ask(`要用 LINE 通知 ${b.name} 改到${to}嗎？\n\n（會傳一則訊息，用掉 1 則訊息額度；已經電話講好的可以不通知）`, { ok: '通知客人', cancel: '不用通知', danger: false });
   } else if (type === 'cancel') {
     if (!await ask(`取消 ${b.name} 的預約？\n\n只會改成「已取消」，不會傳 LINE 給客人、不扣訊息額度。`)) return;
   }
@@ -1089,13 +1102,73 @@ $('bkList').addEventListener('click', async e => {
       addWatch(db, auth.currentUser.email, { phone: b.phone, name: b.name, branch: b.branch, type: '預約未到', note: `預約 ${b.confirmedTime || b.wish || ''}（${b.model || ''} ${b.issues || ''}）`.trim(), ref: 'booking:' + b.id })
         .then(() => toast('已標記未到，並記到「⚠️ 注意客人」')).catch(() => {});
     }
-    toast(type === 'transfer' ? `🔀 已轉到${req.to}${req.notify ? '，並用 LINE 通知客人' : '（未通知客人）'}` : ['done', 'noshow', 'cancel'].includes(type) ? '已更新狀態（未通知客人）' : '✅ 已用 LINE 通知客人');
+    toast(type === 'transfer' ? `🔀 已轉到${req.to}${req.notify ? '，並用 LINE 通知客人' : '（未通知客人）'}` : ['done', 'noshow', 'cancel', 'reschedule'].includes(type) || b.source === 'phone' ? '已更新（電話預約不會傳 LINE）' : '✅ 已用 LINE 通知客人');
   } catch (er) {
     toast('⚠️ ' + er.message);
     btn.closest('.row-actions')?.querySelectorAll('button').forEach(x => x.disabled = false);
   }
 });
 $('bkStatus').onchange = renderBookings;
+
+/* ── 📞 電話預約：欄位跟 LINE 預約表單一樣；直接是「已確認」，不傳 LINE（GAS 寫進 bookings＋預約試算表）── */
+const PB_ISSUES = ['換電池', '螢幕維修', '尾插／充電', '泡水', '不開機／主機板', '鏡頭', '其他'];
+$('pbAdd').onclick = () => {
+  const br = $('branchFilter').value || homeBranch(auth.currentUser?.email) || '楠梓店';
+  const m = document.createElement('div'); m.className = 'modal';
+  m.innerHTML = `<div class="panel"><h2>📞 新增電話預約</h2>
+    <div class="grid">
+      <div><label>分店 *</label><select id="pb-br"><option${br === '楠梓店' ? ' selected' : ''}>楠梓店</option><option${br === '德賢店' ? ' selected' : ''}>德賢店</option></select></div>
+      <div><label>姓名 *</label><input id="pb-name" placeholder="例：王先生"></div>
+      <div><label>電話 *</label><input id="pb-phone" type="tel" inputmode="numeric" placeholder="09xxxxxxxx"><div id="pb-watch"></div></div>
+      <div><label>品牌＋型號</label><input id="pb-model" placeholder="例：iPhone 13 / Samsung A52"></div>
+    </div>
+    <label>問題（可複選）</label><div class="pb-chips" id="pb-issues">${PB_ISSUES.map(t => `<span data-v="${t}">${t}</span>`).join('')}</div>
+    <label>補充說明</label><textarea id="pb-note" rows="2" placeholder="例：螢幕右下角破裂、先報價…"></textarea>
+    <div class="grid">
+      <div><label>日期 *</label><input id="pb-date" type="date" value="${ymd(new Date())}"></div>
+      <div><label>時間（可不填）</label><input id="pb-time" type="time" step="900"></div>
+      <div><label>預估金額（可不填）</label><input id="pb-price" placeholder="例：1800 或 1500～2000"></div>
+    </div>
+    <label>或選時段</label><div class="pb-chips" id="pb-slots">${SLOTS.map(x => `<span data-v="${x}">${x}</span>`).join('')}</div>
+    <p class="hint">直接存成「已確認」，不會傳 LINE 給客人。</p>
+    <div class="row-actions"><button class="btn btn-primary" id="pb-ok">新增預約</button><button class="btn btn-ghost" id="pb-no">取消</button></div></div>`;
+  document.body.appendChild(m);
+  const q = id => m.querySelector('#' + id);
+  let slot = '';
+  q('pb-issues').onclick = e => { const c = e.target.closest('span[data-v]'); if (c) c.classList.toggle('on'); };
+  q('pb-slots').onclick = e => {
+    const c = e.target.closest('span[data-v]'); if (!c) return;
+    slot = slot === c.dataset.v ? '' : c.dataset.v;
+    m.querySelectorAll('#pb-slots span').forEach(x => x.classList.toggle('on', x.dataset.v === slot));
+    if (slot) q('pb-time').value = '';
+  };
+  q('pb-time').oninput = () => { if (q('pb-time').value) { slot = ''; m.querySelectorAll('#pb-slots span').forEach(x => x.classList.remove('on')); } };
+  q('pb-phone').onchange = async () => { q('pb-watch').innerHTML = badgeHtml(await checkPhone(db, q('pb-phone').value)); };
+  q('pb-no').onclick = () => m.remove();
+  q('pb-ok').onclick = async () => {
+    const phone = q('pb-phone').value.replace(/\D/g, '').replace(/^886/, '0').replace(/^9(\d{8})$/, '09$1');
+    const issues = [...m.querySelectorAll('#pb-issues span.on')].map(x => x.dataset.v).join('、');
+    const dv = q('pb-date').value, tv = q('pb-time').value || slot;
+    if (!q('pb-name').value.trim()) return toast('⚠️ 請填姓名');
+    if (!/^0\d{8,9}$/.test(phone)) return toast('⚠️ 電話格式不對（09 開頭 10 碼，或市話含區碼）');
+    if (!q('pb-model').value.trim() && !issues) return toast('⚠️ 請填機型或選問題');
+    if (!dv) return toast('⚠️ 請選日期');
+    const [y, mo, d] = dv.split('-').map(Number), wd = new Date(y, mo - 1, d).getDay();
+    if (wd === 0 && !await ask(`${mo}/${d} 是週日（公休），確定要約這天？`, { ok: '確定', danger: false })) return;
+    const b = { branch: q('pb-br').value, name: q('pb-name').value.trim(), phone, model: q('pb-model').value.trim(), issues,
+      note: q('pb-note').value.trim(), price: q('pb-price').value.trim(), wish: `${y}/${mo}/${d}（${WEEK[wd]}）${tv}` };
+    const btn = q('pb-ok'); btn.disabled = true; btn.textContent = '新增中…';
+    try {
+      const res = await fetch(GAS_URL + '?action=phoneBooking', { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ idToken: await auth.currentUser.getIdToken(), b }) });
+      const j = await res.json();
+      if (!j.ok) throw new Error(j.error || '失敗');
+      m.remove();
+      if ($('bkStatus').value !== 'confirmed' && $('bkStatus').value !== '') { $('bkStatus').value = 'confirmed'; renderBookings(); }
+      toast(j.watch ? '✅ 已新增　' + j.watch.split('\n')[0] : `✅ 已新增電話預約：${b.name}　${b.wish}`);
+    } catch (er) { toast('⚠️ ' + er.message); btn.disabled = false; btn.textContent = '新增預約'; }
+  };
+};
 $('branchFilter').addEventListener('change', () => { renderBookings(); renderSlots(); });
 
 function toast(m) { const t = $('toast'); t.textContent = m; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2800); }
