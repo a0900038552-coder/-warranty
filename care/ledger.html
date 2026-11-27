@@ -151,7 +151,7 @@ tr.err td:first-child{box-shadow:inset 3px 0 0 var(--red)}
     <button class="hbtn" id="printBtn">🖨 列印</button>
     <button class="hbtn" id="xlsxBtn">⬇ 匯出 Excel</button>
     <button class="hbtn" id="impBtn">📥 匯入舊報表</button><button class="hbtn hidden" id="undoImp" title="把這個月恢復成匯入前的樣子">↩️ 還原上次匯入</button><input type="file" id="impFile" accept=".xlsx,.xls" class="hidden">
-    <button class="hbtn" id="bkBtn" title="預約">📅 預約<span class="nbadge hidden" id="bkBadge"></span></button><a class="hbtn" href="notes.html" id="notesLink">📒 退貨／待辦<span class="nbadge hidden" id="notesBadge"></span></a><a class="hbtn" href="quotes.html">💰 報價</a><a class="hbtn" href="stock.html">📱 中古機庫存</a><a class="hbtn" href="watch.html">⚠️ 注意客人</a>
+    <button class="hbtn" id="bkBtn" title="查看預約">📅 查看預約<span class="nbadge hidden" id="bkBadge"></span></button><a class="hbtn" href="notes.html" id="notesLink">📒 退貨／待辦<span class="nbadge hidden" id="notesBadge"></span></a><a class="hbtn" href="quotes.html">💰 報價</a><a class="hbtn" href="stock.html">📱 中古機庫存</a><a class="hbtn" href="watch.html">⚠️ 注意客人</a>
     <a class="hbtn" href="./">← 保固系統</a>
   </div></header>
   <main>
@@ -248,7 +248,7 @@ function listenBookings() {
   onSnapshot(query(collection(db, 'bookings'), where('status', 'in', ['pending', 'proposed', 'confirmed'])), s => {
     if (!bkFirst) s.docChanges().forEach(c => {
       const b = c.doc.data();
-      if (c.type === 'added' && b.status === 'pending' && b.branch === $('branch').value) { toast(`📅 新預約：${b.name || ''}　${b.wish || ''}（按上方「📅 預約」查看）`); }
+      if (c.type === 'added' && b.status === 'pending' && b.branch === $('branch').value) { toast(`📅 新預約：${b.name || ''}　${b.wish || ''}（按上方「📅 查看預約」）`); }
     });
     bkFirst = false;
     bks = s.docs.map(d => ({ id: d.id, ...d.data() })); renderBk();
